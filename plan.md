@@ -204,7 +204,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | done | 2026-11-05 17:54 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
 | T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | done | 2026-11-05 18:10 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | done | 2026-11-05 18:24 | T-004 | Opens in FreeCAD as a valid solid in mm units |
-| T-007 | CI: Headless STEP verification using FreeCAD | qa | | todo | | T-006 | CI job fails if exported STEP file is not a valid solid |
+| T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | in-progress | 2026-11-05 18:30 | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | | todo | | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | | todo | | T-001 | `docker build` succeeds, successfully unions blade + hub |
 | T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
@@ -377,6 +377,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-005** | 2026-11-05 18:10 | geom-1 | T-006 | **Accepted**
   The lead confirmed in-session on 2026-11-05 that the exported STL opens correctly ("stl works") and instructed geom-1 to continue, which approves the **T-006** takeover (`crates/blade-cad/`). Scope: implement the §8 `CadKernel` trait (`blade_solid`, `hub_solid`, `write_step`) and the truck-backed STEP export, plus workspace membership. `blade-cad` is native/server-side per §2, so it is exempt from the wasm32 constraint that applies to model/geom/mesh/aero; no booleans in the STEP path (F-lead1-002), and OCCT remains an optional feature only per D-lead1-004.
   refs: plan.md §7 T-006, §8, §2, F-geom1-005 | supersedes: –
+- **D-geom1-006** | 2026-11-05 18:30 | geom-1 | T-007 | **Accepted**
+  The lead approved in-session on 2026-11-05 (question prompt) that geom-1 takes over **T-007** (qa role: headless STEP verification CI). Since no `qa` agent exists in this workspace, geom-1 owns the deliverable under qa's §4 paths: `.github/workflows/step-check.yml` (the CI job) and `tests/step_check.py` (the FreeCAD-driven checker). The job must fail when an exported STEP is not a valid solid; the checker is exercised locally through both a valid and a deliberately corrupt STEP because no git remote exists to actually run GitHub Actions (L-geom1-001). `blade-cad` continues to be the only body feeding the check. No §8 signatures are touched.
+  refs: plan.md §7 T-007, §4 (qa row), L-geom1-008 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -467,4 +470,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [NOTE] 2026-11-05T18:10+07:00 agent=geom-1 note="lead confirmed the fixture STL opens in a slicer; T-005 -> done"
 [RE-ACK] 2026-11-05T18:10+07:00 agent=geom-1 mem=v9 last_entry=H-geom1-004 note="lead said 'stl works next' -> T-006 takeover approved (D-geom1-005); implementing blade-cad CadKernel + truck STEP export"
 [END] 2026-11-05T18:24+07:00 agent=geom-1 mem=v10 note="T-006 done: crates/blade-cad CadKernel (blade 4-face solid, hub 12-face hollow cylinder, write_step); STEP exports target/naca4412.{blade,assembly}.step; FreeCAD 1.1.1 headless -> VALID, mm units, z 60..600 exact, volumes 126544.68 (blade) + 559831.81 (hub) mm^3, 0.04% above STL volume; 79 workspace tests + fmt/clippy/wasm32 clean; T-006 -> done"
+[RE-ACK] 2026-11-05T18:30+07:00 agent=geom-1 mem=v10 last_entry=H-geom1-005 note="lead approved T-007 qa-role takeover (D-geom1-006) in-session; authoring .github/workflows/step-check.yml + tests/step_check.py, verifying both valid and corrupt STEP locally before claiming done"
 ```
