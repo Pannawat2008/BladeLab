@@ -207,7 +207,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | done | 2026-11-05 19:15 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | geom-1 | done | 2026-11-05 19:55 | T-001 | `docker build` succeeds, successfully unions blade + hub |
-| T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
+| T-010 | Finalize kernel decision (truck vs occt) | lead | geom-1 | in-progress | 2026-11-05 20:10 | T-005..T-009 | Recorded as a Decision in §9.3 |
 
 ### Phase 1 — MVP
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
@@ -512,4 +512,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T19:15+07:00 agent=geom-1 mem=v12 note="T-008 done: crates/blade-wasm build_mesh(design_json, overrides_json) wraps resolve->sections->loft->tessellate; web/ Vite+Three.js viewer renders blade (0 console errors), live twist/chord edits rebuild in 0.5 ms browser / 0.43 avg 0.80 max ms in Node bench (budget 50 ms); baseline matches STL (1771/3538/126493.7 mm^3/span 60..600); 83 workspace tests + fmt/clippy clean; wasm 292 kB, vite build bundles it; npm run wasm regenerates glue (wasm-bindgen 0.2.130)"
 [RE-ACK] 2026-11-05T19:20+07:00 agent=geom-1 mem=v12 last_entry=H-geom1-007 note="lead: 'next' -> T-009 server-role takeover approved (D-geom1-008); building deploy/ Docker image with a Manifold boolean engine and unioning fixture blade+hub STLs; Docker Desktop engine not running yet, starting it for local verification"
 [END] 2026-11-05T19:55+07:00 agent=geom-1 mem=v13 note="T-009 done: deploy/manifold Docker image (trixie, 117MB) with manifold3d 0.4.1 union runner; docker build --no-cache clean; union of fixture blade+hub STL = single watertight solid (genus 0, NoError), self-check PASS (8000/7000/10000 mm^3 exact), blade 126493.727 + hub 558932.941 = union 685426.668 mm^3; independent Node validator: 4050 tris, 0 boundary/non-manifold edges; Docker Desktop started to run it; gotchas: maniclot-csg-sys git-clones C++ at build time, runtime base must match rust:1-slim glibc (trixie)"
+[RE-ACK] 2026-11-05T20:10+07:00 agent=geom-1 mem=v13 last_entry=H-geom1-008 note="lead: 'next' -> T-010 kernel-decision takeover approved (all deps T-005..T-009 done); recording the final truck-vs-occt Decision in §9.3 from in-session evidence (truck=STEP, Manifold=server booleans, occt=optional feature)"
 ```
