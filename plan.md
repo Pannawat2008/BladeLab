@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 21**
-> **LAST_UPDATED: 2026-11-05 23:43 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 22**
+> **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
 
@@ -217,7 +217,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
-| T-106 | ts-rs: Automated generation of TS types from blade-model | web | | todo | | T-002 | CI checks that generated types match latest Rust structs |
+| T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | in-progress | 2026-11-06 00:13 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | | todo | | T-005 | CI fails if geometry changes unexpectedly |
 
 ### Phase 2 — Advanced Tuning & Full STEP Support
@@ -425,6 +425,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-013** | 2026-11-05 23:39 | geom-1 | T-103 | **Accepted**
   The lead's "Next" instruction in-session on 2026-11-05 approves the **T-103** takeover (`server` role: `crates/blade-server/` + root `Cargo.toml` workspace membership). Scope: Axum HTTP server exposing `POST /api/v1/export` for `stl`, `3mf`, and `step` (`blade`, `hub`, `assembly`), backed by a `blake3`-keyed in-memory artifact cache (`ETag` + `X-BladeLab-Cache: HIT|MISS`) and panic containment (`catch_unwind` + `spawn_blocking` recovery so panics return 500 JSON without crashing the server). No §8 signatures are modified.
   refs: plan.md §7 T-103, §2, §3 | supersedes: –
+- **D-geom1-014** | 2026-11-06 00:13 | geom-1 | T-106 | **Accepted**
+  The lead's "do nex" instruction in-session on 2026-11-06 approves the **T-106** takeover (`web` role: `ts-rs` bindings on `blade-model` schema types, generated `web/src/types/blade-model.ts`, and a test/CI check verifying that the committed TS definitions match the latest Rust structs). `ts-rs` is pure Rust and `wasm32`-clean; no §8 function signatures are modified.
+  refs: plan.md §7 T-106, §2, §6.2 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -588,4 +591,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T23:36+07:00 agent=geom-1 mem=v19 note="T-104 done: blade_mesh::write_3mf (pure-Rust OPC ZIP + 3MF Core XML in mm, wasm32-clean) + crates/blade-cli (`bladelab export design.json --format stl|3mf|step`); FreeCAD STEP check PASS + Python zipfile/XML 3MF check PASS; 103 workspace tests + fmt/clippy/wasm32 clean; F-geom1-018, H-geom1-012 recorded"
 [RE-ACK] 2026-11-05T23:39:00+07:00 agent=geom-1 mem=v19 last_entry=H-geom1-012 task=T-103 note="lead: 'Next' -> claiming T-103 (crates/blade-server Axum POST /api/v1/export with blake3 caching and panic containment) under D-geom1-013"
 [END] 2026-11-05T23:43+07:00 agent=geom-1 mem=v21 note="T-103 done: crates/blade-server Axum POST /api/v1/export (stl, 3mf, step) with canonical blake3 caching (ETag + HIT/MISS + 304) and panic containment (CatchPanicLayer + spawn_blocking catch_unwind); 106 workspace tests + fmt/clippy/wasm32 clean; F-geom1-019, H-geom1-013 recorded"
+[RE-ACK] 2026-11-06T00:13:00+07:00 agent=geom-1 mem=v21 last_entry=H-geom1-013 task=T-106 note="lead: 'do nex' -> claiming T-106 (ts-rs automated TS type generation from blade-model + CI drift check) under D-geom1-014"
 ```
