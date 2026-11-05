@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 18**
-> **LAST_UPDATED: 2026-11-05 23:31 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 19**
+> **LAST_UPDATED: 2026-11-05 23:36 (UTC+7) by geom-1**
 
 ---
 
@@ -215,7 +215,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | done | 2026-11-05 23:29 | T-010 | Matches hand-calculated fixture values |
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
-| T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | in-progress | 2026-11-05 23:31 | T-005, T-006 | Generates valid files for all formats |
+| T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | | todo | | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | | todo | | T-005 | CI fails if geometry changes unexpectedly |
@@ -357,6 +357,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-017** | 2026-11-05 23:29 | geom-1 | T-101
   Layer-1 Schmitz optimum-rotor formulas (`crates/blade-geom/src/schmitz.rs` and `CurveSource::Schmitz` in `blade-model`): at radial station `r = span_ratio · R` with local speed ratio `λ_r = λ · span_ratio`, optimal inflow angle `φ(r) = (2/3)·atan2(1, λ_r)`, optimal chord `c(r) = (16πr / (B·C_l))·sin²(φ(r)/2)`, and optimal twist `β(r) = φ_deg(r) − α_design`. Canonical fixture `fixtures/naca4412-schmitz.json` (`R = 600 mm`, `r_hub = 60 mm`, `B = 3`, `λ = 4.5`, `C_l = 1.0`, `α_design = 6°`, 11 stations) resolves to root `c = 140.151186546 mm` / `β = 37.848169788°`, peak chord at station 1 (`r/R = 0.19`, `λ_r = 0.855`) `c = 153.892536875 mm` / `β = 26.979704985°`, and tip `c = 53.316582840 mm` / `β = 2.352538473°`, matching independent IEEE-754 reference calculations to `< 1e-12` and lofting within `1e-6 mm`.
   refs: crates/blade-geom/src/schmitz.rs, crates/blade-model/src/{schema,validate,resolve}.rs, fixtures/naca4412-schmitz.json | supersedes: –
+- **F-geom1-018** | 2026-11-05 23:36 | geom-1 | T-104
+  `blade_mesh::write_3mf(&Mesh)` serialises an OPC ZIP (`STORE`, method 0, IEEE 802.3 CRC-32) containing `[Content_Types].xml`, `_rels/.rels`, and `3D/3dmodel.model` (`unit="millimeter"`, 3MF Core 2015/02 namespace) in pure Rust with zero external/C++ dependencies (`wasm32`-clean). `crates/blade-cli` (`bladelab` binary + `blade_cli::export_design_bytes`) exports any valid `Design` to `stl`, `3mf`, or `step` (`--part blade|hub|assembly`), gating mesh exports on `check_mesh(&mesh).is_valid_solid()`. Verified: `target/cli.naca4412.step` passes FreeCAD `tests/step_check.py` (`valid=True`, 1 solid, `126544.7 mm³`); `target/cli.naca4412.3mf` passes Python `zipfile.testzip()` and XML check (`unit="millimeter"`, 1771 vertices, 3538 triangles); `target/cli.naca4412.stl` is 176 984 bytes.
+  refs: crates/blade-mesh/src/threemf.rs, crates/blade-cli/src/{lib,main}.rs, crates/blade-cli/tests/cli_export.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -535,6 +538,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-101 is `done`. `blade_geom::schmitz` implements `SchmitzParams`, `SchmitzStation`, `schmitz_inflow_angle_deg`, `schmitz_chord_mm`, `schmitz_twist_deg`, `schmitz_station`, and `schmitz_distribution`; `blade_model::CurveSource` gained `Schmitz { design_cl, design_alpha_deg }` (P-geom1-002 / D-geom1-011) with full validation and Layer-3 override compatibility; `fixtures/naca4412-schmitz.json` provides the 11-station canonical Schmitz fixture. Workspace is now at **97 tests** (up from 86), all green alongside `cargo fmt --check`, `clippy --workspace --all-targets -- -D warnings`, and `wasm32-unknown-unknown` builds.
   **Next:** T-201 (Layer 2 Bézier curves and `evalexpr` formulas) is now unblocked (`Depends: T-101`); T-103/T-104 (server/CLI export), T-105/T-106 (web UI & `ts-rs`), and T-107 (qa golden tests) are all ready to claim.
   **Cautions:** Schmitz chord requires `hub_radius_mm > 0` because `c(0) = 0 mm` violates positive section chord; `validate()` enforces this when `chord_mm` uses `CurveSource::Schmitz`.
+- **H-geom1-012** | 2026-11-05 23:36 | geom-1 | T-104 | Recipient: lead, server, qa
+  **Progress:** T-104 is `done`. `crates/blade-cli` provides the `bladelab` CLI (`bladelab export <design.json> --format <stl|3mf|step> [-o <output>] [--part <blade|hub|assembly>]`) and the pure in-memory `export_design_bytes(json, format, part)` driver, backed by `blade_mesh::write_3mf`, `blade_mesh::write_stl`, and `blade_cad::TruckKernel`. Verified across both linear and Schmitz fixtures: 6 new tests (2 in `blade-mesh`, 4 in `blade-cli` including binary subprocess execution), FreeCAD headless STEP check (`PASS`), Python `zipfile` + 3MF XML check (`3MF_OK`), fmt/clippy/wasm32 clean; workspace total is now **103 tests**.
+  **Next:** T-103 (`blade-server` `POST /api/v1/export` with `blake3` caching) can call `blade_cli::export_design_bytes` (or share its logic) directly inside `spawn_blocking` / `catch_unwind`; T-107 (golden tests) can snapshot all 3 export formats.
+  **Cautions:** `--part hub` and `--part assembly` require `--format step` in `blade-cli` because unified mesh booleans belong exclusively to Manifold on the server (`D-lead1-005` / `T-203`).
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -568,4 +575,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [ACK-NOTE] geom-1: F-lead1-001 (mm/deg, f64, wasm32-clean, no panics/NaN), D-lead1-002 (B-spline loft single geometry source), F-geom1-007/008 (schema v1 + resolve over uniform stations + Layer-3 overrides) and D-geom1-009/010 confirmed. Claiming T-101 (Schmitz Layer-1 chord/twist generation) with P-geom1-002 / D-geom1-011 Accepted.
 [END] 2026-11-05T23:29+07:00 agent=geom-1 mem=v17 note="T-101 done: blade_geom::schmitz module + blade_model::CurveSource::Schmitz + fixtures/naca4412-schmitz.json; matches 11-station hand-calculated reference values to <1e-12 and lofts within 1e-6 mm; 97 workspace tests + fmt/clippy/wasm32 clean; F-geom1-017, L-geom1-014, H-geom1-011 recorded"
 [RE-ACK] 2026-11-05T23:31:00+07:00 agent=geom-1 mem=v17 last_entry=H-geom1-011 task=T-104 note="lead: 'do next task' -> claiming T-104 (blade-cli export for stl, 3mf, step) under D-geom1-012"
+[END] 2026-11-05T23:36+07:00 agent=geom-1 mem=v19 note="T-104 done: blade_mesh::write_3mf (pure-Rust OPC ZIP + 3MF Core XML in mm, wasm32-clean) + crates/blade-cli (`bladelab export design.json --format stl|3mf|step`); FreeCAD STEP check PASS + Python zipfile/XML 3MF check PASS; 103 workspace tests + fmt/clippy/wasm32 clean; F-geom1-018, H-geom1-012 recorded"
 ```

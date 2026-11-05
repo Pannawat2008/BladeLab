@@ -1,0 +1,19 @@
+[package]
+name = "blade-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "BladeLab command-line tool for exporting designs to STL, 3MF and STEP."
+
+[[bin]]
+name = "bladelab"
+path = "src/main.rs"
+
+[dependencies]
+blade-cad = { path = "../blade-cad" }
+blade-geom = { path = "../blade-geom" }
+blade-mesh = { path = "../blade-mesh" }
+blade-model = { path = "../blade-model" }
+thiserror.workspace = true
