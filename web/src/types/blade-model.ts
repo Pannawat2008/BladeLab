@@ -73,6 +73,16 @@ chord_mm: CurveSource,
  */
 twist_deg: CurveSource, };
 
+export type BezierControlPoint = { 
+/**
+ * Normalised blade-span coordinate in `[0, 1]`.
+ */
+x: number, 
+/**
+ * Distribution value at this control point.
+ */
+y: number, };
+
 export type CurveSource = { "type": "constant", 
 /**
  * Value at every station.
@@ -93,7 +103,15 @@ design_cl?: number | null,
 /**
  * Design angle of attack `α_design` in degrees (required when used for `twist_deg`).
  */
-design_alpha_deg?: number | null, };
+design_alpha_deg?: number | null, } | { "type": "bezier", 
+/**
+ * Control points ordered from root (`x = 0`) to tip (`x = 1`).
+ */
+points: Array<BezierControlPoint>, } | { "type": "formula", 
+/**
+ * Expression in `x = r / R`, for example `"75.0 - 40.0 * x"`.
+ */
+expr: string, };
 
 export type AirfoilStation = { 
 /**

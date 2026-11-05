@@ -7,16 +7,18 @@
 //!
 //! Pipeline: `Design` (JSON) → [`validate`] → [`resolve`] → [`ResolvedBlade`].
 
+pub mod curve;
 pub mod error;
 pub mod resolve;
 pub mod schema;
 pub mod validate;
 
+pub use curve::{eval_bezier, eval_formula};
 pub use error::{ModelError, ValidationIssue};
 pub use resolve::{resolve, ResolvedAirfoil, ResolvedBlade, ResolvedStation};
 pub use schema::{
-    typescript_bindings, AirfoilSpec, AirfoilStation, CurveSource, Design, Distributions, Hub,
-    Manufacturing, Rotor, StationOverride, SCHEMA_VERSION,
+    typescript_bindings, AirfoilSpec, AirfoilStation, BezierControlPoint, CurveSource, Design,
+    Distributions, Hub, Manufacturing, Rotor, StationOverride, SCHEMA_VERSION,
 };
 pub use validate::validate;
 

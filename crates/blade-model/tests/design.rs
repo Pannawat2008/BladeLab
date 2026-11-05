@@ -222,3 +222,59 @@ fn schmitz_fixture_parses_round_trips_and_validates() {
     assert!(issue_paths.contains(&"distributions.twist_deg.design_alpha_deg".to_string()));
     assert!(issue_paths.contains(&"rotor.hub_radius_mm".to_string()));
 }
+
+#[test]
+fn bezier_and_formula_distributions_validate_and_reject_malformed_inputs_without_panicking() {
+    let mut design = typical();
+    design.distributions.chord_mm = blade_model::CurveSource::Bezier {
+        points: vec![
+            blade_model::BezierControlPoint { x: 0.0, y: 72.0 },
+            blade_model::BezierControlPoint { x: 0.35, y: 65.0 },
+            blade_model::BezierControlPoint { x: 0.7, y: 44.0 },
+            blade_model::BezierControlPoint { x: 1.0, y: 30.0 },
+        ],
+    };
+    design.distributions.twist_deg = blade_model::CurveSource::Formula {
+        expr: "(2.0 / 3.0) * deg(atan(1.0 / (tsr * x))) - 6.0".to_string(),
+    };
+    assert!(validate(&design).is_ok());
+
+    // Malformed formulas, unknown variables, division by zero, and out-of-range values
+    // must all return friendly ValidationIssues without panicking.
+    for bad_expr in [
+        "",
+        "70.0 + * 5.0",
+        "unknown_var * x + 10.0",
+        "1.0 / (x - x)",
+        "sqrt(-1.0)",
+        "-15.0 * x",
+        "\"not_a_number\"",
+    ] {
+        let mut bad = design.clone();
+        bad.distributions.chord_mm = blade_model::CurveSource::Formula {
+            expr: bad_expr.to_string(),
+        };
+        let issues = validate(&bad).expect_err(&format!("formula `{bad_expr}` must be rejected"));
+        assert!(
+            paths(&issues).contains(&"distributions.chord_mm.expr".to_string()),
+            "missing chord_mm.expr issue for `{bad_expr}`: {issues:?}"
+        );
+    }
+
+    // Invalid Bézier control points: non-monotonic x, missing endpoint, or <= 0 chord y.
+    let mut bad_bezier = design.clone();
+    bad_bezier.distributions.chord_mm = blade_model::CurveSource::Bezier {
+        points: vec![
+            blade_model::BezierControlPoint { x: 0.1, y: 70.0 },
+            blade_model::BezierControlPoint { x: 0.6, y: -5.0 },
+            blade_model::BezierControlPoint { x: 0.4, y: 40.0 },
+            blade_model::BezierControlPoint { x: 0.9, y: 30.0 },
+        ],
+    };
+    let issues = validate(&bad_bezier).expect_err("bad bezier control points");
+    let issue_paths = paths(&issues);
+    assert!(issue_paths.contains(&"distributions.chord_mm.points[0].x".to_string()));
+    assert!(issue_paths.contains(&"distributions.chord_mm.points[1].y".to_string()));
+    assert!(issue_paths.contains(&"distributions.chord_mm.points[2].x".to_string()));
+    assert!(issue_paths.contains(&"distributions.chord_mm.points[3].x".to_string()));
+}

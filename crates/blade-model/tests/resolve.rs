@@ -198,3 +198,47 @@ fn resolves_schmitz_chord_and_twist_and_applies_layer_three_overrides() {
     assert!((tip.chord_mm - 40.0).abs() < 1e-12);
     assert!((tip.twist_deg - 1.5).abs() < 1e-12);
 }
+
+#[test]
+fn resolves_bezier_and_formula_distributions_across_span() {
+    let mut design = typical();
+    design.overrides.clear();
+    // Cubic Bézier with collinear control points reduces to a linear ramp 80 -> 30 mm.
+    design.distributions.chord_mm = CurveSource::Bezier {
+        points: vec![
+            blade_model::BezierControlPoint { x: 0.0, y: 80.0 },
+            blade_model::BezierControlPoint {
+                x: 1.0 / 3.0,
+                y: 80.0 - 50.0 / 3.0,
+            },
+            blade_model::BezierControlPoint {
+                x: 2.0 / 3.0,
+                y: 80.0 - 100.0 / 3.0,
+            },
+            blade_model::BezierControlPoint { x: 1.0, y: 30.0 },
+        ],
+    };
+    // Formula in x = r / R: twist(x) = 25 * (1 - x) + 2
+    design.distributions.twist_deg = CurveSource::Formula {
+        expr: "25.0 * (1.0 - x) + 2.0".to_string(),
+    };
+
+    let blade = resolve(&design).expect("resolves bezier and formula");
+    assert_eq!(blade.stations.len(), 11);
+
+    for (idx, station) in blade.stations.iter().enumerate() {
+        let s = idx as f64 / 10.0;
+        let expected_chord = 80.0 - 50.0 * s;
+        let expected_twist = 25.0 * (1.0 - station.span_ratio) + 2.0;
+        assert!(
+            (station.chord_mm - expected_chord).abs() < 1e-6,
+            "station {idx}: chord {} vs {expected_chord}",
+            station.chord_mm
+        );
+        assert!(
+            (station.twist_deg - expected_twist).abs() < 1e-9,
+            "station {idx}: twist {} vs {expected_twist}",
+            station.twist_deg
+        );
+    }
+}

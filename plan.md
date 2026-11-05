@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 28**
+> **MEMORY_VERSION: 29**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -223,7 +223,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 2 — Advanced Tuning & Full STEP Support
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | in-progress | 2026-11-06 00:58 | T-101 | Malformed formulas return friendly errors without panicking |
+| T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
 | T-202 | Airfoil library + .dat import + blending | geom | | todo | | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | | todo | | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
@@ -378,6 +378,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-022** | 2026-11-06 00:56 | geom-1 | T-105
   `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` deliver the T-105 Layer-1 + Layer-3 workbench: (1) `DesignHistory` bounded immutable undo/redo stack (`commit`, `undo`, `redo`, `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` + toolbar buttons with counts); (2) Layer-1 rotor controls (`radius_mm`, `hub_radius_mm`, `blade_count`, `design_tsr`, `wind_speed_mps`, `station_count`) and Linear vs Schmitz distribution mode switcher; (3) `resolveStationsPreview` + Layer-3 per-station override table (`chord_mm`, `twist_deg`, row `×` clear, `Clear Overrides`). Every edit rebuilds the 3D mesh via `blade-wasm::build_mesh` in `< 1 ms` (`avg 0.46 ms`, `max 0.76 ms` over 40 edits).
   refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
+- **F-geom1-023** | 2026-11-06 01:04 | geom-1 | T-201
+  `blade_model::CurveSource` now supports `Bezier { points: Vec<BezierControlPoint> }` (`eval_bezier` solving `x(t) = s` via 48-iteration bisection over De Casteljau) and `Formula { expr: String }` (`eval_formula` via `evalexpr` 11.3.1 with bound variables `x = r/R`, `s`, `r`, `R`, `r_hub`, `B`, `tsr`, `pi` and math functions `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `abs`, `exp`, `ln`, `pow`, `deg`, `rad`). Malformed formulas, unknown variables, division by zero, `NaN`/`±∞`, and out-of-domain values are caught in `validate()` and reported as `ValidationIssue` entries without panicking.
+  refs: crates/blade-model/src/{curve,schema,validate}.rs, web/src/types/blade-model.ts | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -599,6 +602,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-105 is `done`, completing **100% of Phase 1 — MVP** (`T-101` through `T-107` all `done`). `web/` now features Layer-1 rotor & distribution controls (Linear & Schmitz), a live Layer-3 per-station override table, and an Undo/Redo history stack (`DesignHistory`). Verified by 4 Node tests in `web/scripts/types.test.mjs` (including end-to-end wasm `build_mesh` verification of Layer-1 edits, Layer-3 station overrides, and Undo/Redo exact geometry restoration), `tsc --noEmit`, `vite build`, and the 40-edit latency benchmark (`max 0.76 ms < 50 ms`). Workspace total is **110 Rust tests + 4 Node tests**, all green.
   **Next:** Phase 2 (`T-201`: Layer 2 Bézier curves and `evalexpr` formulas with variable `x = r/R`; `T-202`: Airfoil library + `.dat` import + blending; `T-203`: Unified blade+hub assembly via Manifold booleans + 3MF; `T-204`: PostgreSQL persistence; `T-205`: UI curve editor).
   **Cautions:** Range sliders (`#twist`, `#chord`) update the 3D viewport on `input` and push a single snapshot onto `DesignHistory` on `change` so dragging a slider does not flood the undo stack.
+- **H-geom1-017** | 2026-11-06 01:04 | geom-1 | T-201 | Recipient: lead, geom, web, qa
+  **Progress:** T-201 is `done`. `blade-model` implements `CurveSource::Bezier` and `CurveSource::Formula` (`evalexpr` 11.3.1, `wasm32`-clean), `web/src/types/blade-model.ts` (`ts-rs`) and `web/src/state.ts` are updated to match, and 2 new test suites in `blade-model` verify Bézier/formula resolution and non-panicking rejection of malformed formulas. Workspace total is **112 Rust tests + 4 Node tests**, all green.
+  **Next:** **T-202** (Airfoil library + `.dat` import + blending) and **T-205** (UI curve editor, value scrubbing, locking & binding, now unblocked by `T-201`).
+  **Cautions:** In `evalexpr`, integer division `1 / 3` evaluates to `0`; write float literals `1.0 / 3.0` (or `2.0 / 3.0`) in formulas when floating-point division of constants is intended.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -642,4 +649,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T00:50:00+07:00 agent=geom-1 mem=v25 last_entry=H-geom1-015 task=T-105 note="lead: 'do next' -> claiming T-105 (UI: Layer 1 controls + Layer 3 per-station table + undo/redo) under D-geom1-016"
 [END] 2026-11-06T00:56+07:00 agent=geom-1 mem=v27 note="T-105 done (closes Phase 1 MVP): web/src/state.ts + web/index.html + web/src/main.ts (Layer 1 rotor/distribution controls, Layer 3 per-station override table, DesignHistory undo/redo, live <1 ms wasm 3D updates); 110 Rust tests + 4 Node tests + tsc + vite build + bench clean; F-geom1-022, H-geom1-016 recorded"
 [RE-ACK] 2026-11-06T00:58:00+07:00 agent=geom-1 mem=v27 last_entry=H-geom1-016 task=T-201 note="lead: 'do all phase2' -> claiming T-201 (Layer 2 Bezier curves and evalexpr formulas with x = r/R) under D-geom1-017 / P-geom1-003"
+[END] 2026-11-06T01:04+07:00 agent=geom-1 mem=v29 note="T-201 done: CurveSource::Bezier + CurveSource::Formula (evalexpr 11.3.1, x = r/R) + ts-rs bindings + validation/resolve tests; 112 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-023, H-geom1-017 recorded"
 ```

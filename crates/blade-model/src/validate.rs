@@ -116,6 +116,7 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
             }
         }
         curve => check_curve(
+            design,
             curve,
             "distributions.chord_mm",
             issues,
@@ -138,6 +139,7 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
             }
         }
         curve => check_curve(
+            design,
             curve,
             "distributions.twist_deg",
             issues,
@@ -148,19 +150,104 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
 }
 
 fn check_curve(
+    design: &Design,
     curve: &CurveSource,
     path: &str,
     issues: &mut Vec<ValidationIssue>,
     accepts: impl Fn(f64) -> bool,
     message: &str,
 ) {
-    if let Some((root, tip)) = curve.bounds() {
-        if !accepts(root) {
-            issues.push(ValidationIssue::new(format!("{path}.root"), message));
+    match curve {
+        CurveSource::Constant { .. } | CurveSource::Linear { .. } => {
+            if let Some((root, tip)) = curve.bounds() {
+                if !accepts(root) {
+                    issues.push(ValidationIssue::new(format!("{path}.root"), message));
+                }
+                if !accepts(tip) {
+                    issues.push(ValidationIssue::new(format!("{path}.tip"), message));
+                }
+            }
         }
-        if !accepts(tip) {
-            issues.push(ValidationIssue::new(format!("{path}.tip"), message));
+        CurveSource::Bezier { points } => {
+            if !(2..=32).contains(&points.len()) {
+                issues.push(ValidationIssue::new(
+                    format!("{path}.points"),
+                    "must contain between 2 and 32 control points",
+                ));
+                return;
+            }
+            for (index, point) in points.iter().enumerate() {
+                if !finite(point.x) || !(0.0..=1.0).contains(&point.x) {
+                    issues.push(ValidationIssue::new(
+                        format!("{path}.points[{index}].x"),
+                        "must be within [0, 1]",
+                    ));
+                }
+                if !accepts(point.y) {
+                    issues.push(ValidationIssue::new(
+                        format!("{path}.points[{index}].y"),
+                        message,
+                    ));
+                }
+                if index > 0
+                    && finite(point.x)
+                    && finite(points[index - 1].x)
+                    && point.x + RATIO_EPS < points[index - 1].x
+                {
+                    issues.push(ValidationIssue::new(
+                        format!("{path}.points[{index}].x"),
+                        "control-point x coordinates must be non-decreasing",
+                    ));
+                }
+            }
+            if finite(points[0].x) && points[0].x.abs() > RATIO_EPS {
+                issues.push(ValidationIssue::new(
+                    format!("{path}.points[0].x"),
+                    "first Bézier control point must start at x = 0",
+                ));
+            }
+            let last_idx = points.len() - 1;
+            if finite(points[last_idx].x) && (points[last_idx].x - 1.0).abs() > RATIO_EPS {
+                issues.push(ValidationIssue::new(
+                    format!("{path}.points[{last_idx}].x"),
+                    "last Bézier control point must end at x = 1",
+                ));
+            }
         }
+        CurveSource::Formula { expr } => {
+            let hub_ratio = if positive(design.rotor.radius_mm)
+                && finite(design.rotor.hub_radius_mm)
+                && design.rotor.hub_radius_mm >= 0.0
+                && design.rotor.hub_radius_mm < design.rotor.radius_mm
+            {
+                design.rotor.hub_radius_mm / design.rotor.radius_mm
+            } else {
+                0.1
+            };
+            let samples = design.rotor.station_count.clamp(2, 200);
+            for idx in 0..samples {
+                let s = f64::from(idx) / f64::from(samples - 1);
+                let span_ratio = hub_ratio + (1.0 - hub_ratio) * s;
+                match crate::curve::eval_formula(expr, &design.rotor, span_ratio, s) {
+                    Ok(value) => {
+                        if !accepts(value) {
+                            issues.push(ValidationIssue::new(
+                                format!("{path}.expr"),
+                                format!(
+                                    "formula evaluated to {value:.4} at x = {span_ratio:.4}, {message}"
+                                ),
+                            ));
+                            break;
+                        }
+                    }
+                    Err(err_msg) => {
+                        issues.push(ValidationIssue::new(format!("{path}.expr"), err_msg));
+                        break;
+                    }
+                }
+            }
+        }
+        CurveSource::Schmitz { .. } => {}
     }
 }
 

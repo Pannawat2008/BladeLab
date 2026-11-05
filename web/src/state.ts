@@ -3,9 +3,112 @@
 // - Layer 1 rotor & distribution helpers (Linear / Constant / Schmitz)
 // - Layer 3 per-station resolution and override editing
 
-import type { CurveSource, Design, Rotor, StationOverride } from "./types/blade-model";
+import type {
+  BezierControlPoint,
+  CurveSource,
+  Design,
+  Rotor,
+  StationOverride,
+} from "./types/blade-model";
 
 export const RATIO_EPS = 1e-9;
+
+export function evalBezierPoints(points: BezierControlPoint[], s: number): number {
+  if (points.length === 0) return 0;
+  if (points.length === 1) return points[0]!.y;
+  const clamped = Math.min(1, Math.max(0, s));
+  if (clamped <= 0) return points[0]!.y;
+  if (clamped >= 1) return points[points.length - 1]!.y;
+
+  const deCasteljau = (coord: "x" | "y", t: number): number => {
+    const work = points.map((p) => p[coord]);
+    const n = work.length;
+    for (let k = 1; k < n; k++) {
+      for (let i = 0; i < n - k; i++) {
+        work[i] = (1 - t) * work[i]! + t * work[i + 1]!;
+      }
+    }
+    return work[0]!;
+  };
+
+  let lo = 0;
+  let hi = 1;
+  for (let iter = 0; iter < 48; iter++) {
+    const mid = 0.5 * (lo + hi);
+    if (deCasteljau("x", mid) < clamped) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return deCasteljau("y", 0.5 * (lo + hi));
+}
+
+export function evalFormulaPreview(
+  expr: string,
+  rotor: Rotor,
+  spanRatio: number,
+  s: number,
+): number {
+  const trimmed = expr.trim();
+  if (!trimmed) return 0;
+  try {
+    const fn = new Function(
+      "x",
+      "s",
+      "r",
+      "R",
+      "r_hub",
+      "B",
+      "tsr",
+      "pi",
+      "sin",
+      "cos",
+      "tan",
+      "asin",
+      "acos",
+      "atan",
+      "atan2",
+      "sqrt",
+      "abs",
+      "exp",
+      "ln",
+      "pow",
+      "deg",
+      "rad",
+      `"use strict"; return Number(${trimmed.replace(/\^/g, "**")});`,
+    );
+    const val = Number(
+      fn(
+        spanRatio,
+        s,
+        spanRatio * rotor.radius_mm,
+        rotor.radius_mm,
+        rotor.hub_radius_mm,
+        rotor.blade_count,
+        rotor.design_tsr,
+        Math.PI,
+        Math.sin,
+        Math.cos,
+        Math.tan,
+        Math.asin,
+        Math.acos,
+        Math.atan,
+        Math.atan2,
+        Math.sqrt,
+        Math.abs,
+        Math.exp,
+        Math.log,
+        Math.pow,
+        (rad: number) => (rad * 180) / Math.PI,
+        (deg: number) => (deg * Math.PI) / 180,
+      ),
+    );
+    return Number.isFinite(val) ? val : 0;
+  } catch {
+    return 0;
+  }
+}
 
 export interface ResolvedStationRow {
   index: number;
@@ -46,6 +149,10 @@ export function evalChordCurve(curve: CurveSource, rotor: Rotor, spanRatio: numb
       const sinHalf = Math.sin(0.5 * phiRad);
       return ((16.0 * Math.PI * rMm) / (rotor.blade_count * cl)) * sinHalf * sinHalf;
     }
+    case "bezier":
+      return evalBezierPoints(curve.points, s);
+    case "formula":
+      return evalFormulaPreview(curve.expr, rotor, spanRatio, s);
   }
 }
 
@@ -65,6 +172,10 @@ export function evalTwistCurve(curve: CurveSource, rotor: Rotor, spanRatio: numb
       const phiDeg = ((2.0 / 3.0) * Math.atan2(1.0, localTsr) * 180.0) / Math.PI;
       return phiDeg - alphaDeg;
     }
+    case "bezier":
+      return evalBezierPoints(curve.points, s);
+    case "formula":
+      return evalFormulaPreview(curve.expr, rotor, spanRatio, s);
   }
 }
 

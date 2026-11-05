@@ -100,11 +100,23 @@ pub struct Distributions {
     pub twist_deg: CurveSource,
 }
 
+/// A 2D control point `(x, y)` for a Layer-2 Bézier distribution curve (`T-201`).
+///
+/// `x` is the normalised blade span coordinate in `[0, 1]` (`0` = blade root,
+/// `1` = blade tip), and `y` is the value (`chord_mm` or `twist_deg`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+pub struct BezierControlPoint {
+    /// Normalised blade-span coordinate in `[0, 1]`.
+    pub x: f64,
+    /// Distribution value at this control point.
+    pub y: f64,
+}
+
 /// A spanwise value source.
 ///
 /// Values are defined over the *blade span*: `root` is the value at
 /// `span_ratio = hub_radius_mm / radius_mm` and `tip` the value at
-/// `span_ratio = 1`. Bézier and formula sources arrive with T-201.
+/// `span_ratio = 1`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CurveSource {
@@ -136,15 +148,28 @@ pub enum CurveSource {
         #[ts(optional = nullable)]
         design_alpha_deg: Option<f64>,
     },
+    /// Layer-2 Bézier curve defined by control points over `x ∈ [0, 1]` (`T-201`).
+    Bezier {
+        /// Control points ordered from root (`x = 0`) to tip (`x = 1`).
+        points: Vec<BezierControlPoint>,
+    },
+    /// Layer-2 analytic formula evaluated via `evalexpr` (`T-201`).
+    ///
+    /// Primary variable is `x = r / R` (`span_ratio`), with `s`, `r`, `R`,
+    /// `r_hub`, `B`, `tsr`, and `pi` also bound in scope.
+    Formula {
+        /// Expression in `x = r / R`, for example `"75.0 - 40.0 * x"`.
+        expr: String,
+    },
 }
 
 impl CurveSource {
     /// Evaluates the curve at blade-span position `s ∈ [0, 1]`
     /// (`0` = hub, `1` = tip).
     ///
-    /// For [`Self::Schmitz`], full evaluation requires rotor parameters and the
-    /// radial `span_ratio = r / R`; prefer [`Self::eval_chord`] and
-    /// [`Self::eval_twist`].
+    /// For [`Self::Schmitz`] and [`Self::Formula`], full evaluation requires
+    /// rotor parameters and the radial `span_ratio = r / R`; prefer
+    /// [`Self::eval_chord`] and [`Self::eval_twist`].
     #[must_use]
     pub fn eval(&self, s: f64) -> f64 {
         match self {
@@ -154,6 +179,19 @@ impl CurveSource {
                 design_cl,
                 design_alpha_deg,
             } => design_cl.or(*design_alpha_deg).unwrap_or(0.0),
+            Self::Bezier { points } => crate::curve::eval_bezier(points, s),
+            Self::Formula { expr } => {
+                let dummy = Rotor {
+                    radius_mm: 600.0,
+                    hub_radius_mm: 60.0,
+                    blade_count: 3,
+                    design_tsr: 4.5,
+                    wind_speed_mps: 8.0,
+                    pitch_axis_ratio: 0.25,
+                    station_count: 11,
+                };
+                crate::curve::eval_formula(expr, &dummy, s, s).unwrap_or(0.0)
+            }
         }
     }
 
@@ -174,6 +212,10 @@ impl CurveSource {
                     * sin_half
                     * sin_half
             }
+            Self::Bezier { points } => crate::curve::eval_bezier(points, s),
+            Self::Formula { expr } => {
+                crate::curve::eval_formula(expr, rotor, span_ratio, s).unwrap_or(0.0)
+            }
         }
     }
 
@@ -192,6 +234,10 @@ impl CurveSource {
                 let phi_deg = ((2.0 / 3.0) * (1.0_f64).atan2(local_tsr)).to_degrees();
                 phi_deg - alpha_deg
             }
+            Self::Bezier { points } => crate::curve::eval_bezier(points, s),
+            Self::Formula { expr } => {
+                crate::curve::eval_formula(expr, rotor, span_ratio, s).unwrap_or(0.0)
+            }
         }
     }
 
@@ -200,7 +246,7 @@ impl CurveSource {
         match self {
             Self::Constant { value } => Some((*value, *value)),
             Self::Linear { root, tip } => Some((*root, *tip)),
-            Self::Schmitz { .. } => None,
+            Self::Schmitz { .. } | Self::Bezier { .. } | Self::Formula { .. } => None,
         }
     }
 }
@@ -304,6 +350,7 @@ pub fn typescript_bindings() -> String {
         Design::decl(),
         Rotor::decl(),
         Distributions::decl(),
+        BezierControlPoint::decl(),
         CurveSource::decl(),
         AirfoilStation::decl(),
         AirfoilSpec::decl(),
