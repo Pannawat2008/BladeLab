@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 34**
+> **MEMORY_VERSION: 35**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -226,7 +226,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
 | T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | done | 2026-11-06 01:23 | T-102 | Yields a single watertight manifold part |
-| T-204 | PostgreSQL persistence: designs, versioning | server | geom-1 | in-progress | 2026-11-06 01:24 | T-103 | Full CRUD + version tracking functional |
+| T-204 | PostgreSQL persistence: designs, versioning | server | geom-1 | done | 2026-11-06 01:27 | T-103 | Full CRUD + version tracking functional |
 | T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
 
 ### Phase 3 — Simulation & Testing
@@ -387,6 +387,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-025** | 2026-11-06 01:23 | geom-1 | T-203
   `blade_cad::assembly::{hub_mesh, assembly_mesh}` and `deploy/manifold` deliver unified blade+hub assembly meshes and 3MF export: `assembly_mesh` opens the blade's root cap and topologically welds the `P`-vertex root contour into sector 0 of the hub's `+z` annular cap via a transition collar (`P + 4` punctured-quad fan + `2P` collar triangles), yielding a **single connected, genus-1 watertight 2-manifold solid** (`boundary_edges == 0`, `non_manifold_edges == 0`, `inconsistent_edges == 0`, `degenerate_triangles == 0`, `connected_components == 1`) across all 5 canonical fixtures (both round and D-flat bores). `blade-cli` and `blade-server` (`POST /api/v1/export`) now support `--part hub` and `--part assembly` for `stl`, `3mf`, and `step`.
   refs: crates/blade-cad/src/assembly.rs, crates/blade-cli/src/lib.rs, deploy/manifold/src/main.rs | supersedes: –
+- **F-geom1-026** | 2026-11-06 01:27 | geom-1 | T-204
+  `crates/blade-server/migrations/0001_designs.sql` (`POSTGRES_SCHEMA_SQL`) and `crates/blade-server/src/store.rs` (`DesignStore`, `DesignRecord`, `DesignSummary`, `DesignVersionRecord`) implement persistent design storage and immutable version tracking (`1, 2, ...`, `blake3` content digest, revision notes, and append-only version restore). `crates/blade-server` exposes `POST /api/v1/designs`, `GET /api/v1/designs`, `GET /api/v1/designs/{id}`, `PUT /api/v1/designs/{id}`, `DELETE /api/v1/designs/{id}`, `GET /api/v1/designs/{id}/versions`, `GET /api/v1/designs/{id}/versions/{version}`, and `POST /api/v1/designs/{id}/versions/{version}/restore`, validating every payload via `blade_model::validate`.
+  refs: crates/blade-server/migrations/0001_designs.sql, crates/blade-server/src/{store,lib}.rs, crates/blade-server/tests/api_designs.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -634,6 +637,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-203 is `done`. `blade_cad::{hub_mesh, assembly_mesh}` and `deploy/manifold` produce unified watertight blade+hub manifold solids and `.3mf` / `.stl` exports; `blade-cli` and `blade-server` (`POST /api/v1/export`) now support `part=hub` and `part=assembly` across all 3 formats (`stl`, `3mf`, `step`). Verified across all 5 canonical fixtures (`check_mesh.is_valid_solid() == true`, `connected_components == 1`). Workspace total is **118 Rust tests + 4 Node tests**, all green.
   **Next:** **T-204** (PostgreSQL persistence: designs, versioning) and **T-205** (UI: Curve editor, value scrubbing, locking & binding).
   **Cautions:** `assembly_mesh` stays in `blade-cad` (native/server-side) while `deploy/manifold` provides the containerized `manifold3d` C++ boolean runner, keeping core crates 100% boolean-free and `wasm32`-clean (`D-lead1-005`).
+- **H-geom1-020** | 2026-11-06 01:27 | geom-1 | T-204 | Recipient: lead, server, web, qa
+  **Progress:** T-204 is `done`. `crates/blade-server` now provides `migrations/0001_designs.sql`, `DesignStore`, and the full `/api/v1/designs` CRUD + version history REST API (`create`, `list`, `get`, `update`, `delete`, `list_versions`, `get_version`, `restore_version`), verified by integration tests in `crates/blade-server/tests/api_designs.rs`. Workspace total is **120 Rust tests + 4 Node tests**, all green.
+  **Next:** **T-205** (`UI: Curve editor, value scrubbing, locking & binding`), the final task in **Phase 2**!
+  **Cautions:** Restoring an older version via `POST /api/v1/designs/{id}/versions/{version}/restore` creates a new head version (`current_version + 1`) rather than rewriting history, keeping `design_versions` strictly append-only.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -683,4 +690,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T01:16:00+07:00 agent=geom-1 mem=v31 last_entry=H-geom1-018 task=T-203 note="lead: 'do all phase2' -> claiming T-203 (Unified blade+hub assembly via Manifold booleans + 3MF) under D-geom1-019"
 [END] 2026-11-06T01:23+07:00 agent=geom-1 mem=v33 note="T-203 done: blade_cad::{hub_mesh, assembly_mesh} + deploy/manifold 3MF/overlap union + blade-cli/blade-server assembly 3MF/STL export; single connected watertight manifold solid across all 5 fixtures; 118 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-025, H-geom1-019 recorded"
 [RE-ACK] 2026-11-06T01:24:00+07:00 agent=geom-1 mem=v33 last_entry=H-geom1-019 task=T-204 note="lead: 'do all phase2' -> claiming T-204 (PostgreSQL persistence: designs, versioning) under D-geom1-020"
+[END] 2026-11-06T01:27+07:00 agent=geom-1 mem=v35 note="T-204 done: crates/blade-server/migrations/0001_designs.sql + DesignStore + /api/v1/designs CRUD and version history endpoints; 120 Rust tests + 4 Node tests + fmt/clippy clean; F-geom1-026, H-geom1-020 recorded"
 ```

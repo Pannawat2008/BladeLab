@@ -16,7 +16,7 @@ use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -27,14 +27,22 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tower::{Layer, Service};
 
-/// Shared application state holding the `blake3` export cache.
+pub mod store;
+
+pub use store::{
+    DesignRecord, DesignStore, DesignSummary, DesignVersionRecord, StoreError, POSTGRES_SCHEMA_SQL,
+};
+
+/// Shared application state holding the `blake3` export cache and the
+/// transactional [`DesignStore`] (`T-204`).
 #[derive(Debug, Clone, Default)]
 pub struct AppState {
     cache: ExportCache,
+    store: DesignStore,
 }
 
 impl AppState {
-    /// Creates a fresh [`AppState`] with an empty export cache.
+    /// Creates a fresh [`AppState`] with an empty export cache and design store.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -44,6 +52,12 @@ impl AppState {
     #[must_use]
     pub const fn cache(&self) -> &ExportCache {
         &self.cache
+    }
+
+    /// Accesses the [`DesignStore`] (`T-204`).
+    #[must_use]
+    pub const fn store(&self) -> &DesignStore {
+        &self.store
     }
 }
 
@@ -141,6 +155,10 @@ pub enum ServerError {
     #[error("design validation failed")]
     InvalidDesign(Vec<blade_model::ValidationIssue>),
 
+    /// Requested resource was not found.
+    #[error("{0}")]
+    NotFound(String),
+
     /// Internal panic recovered without crashing the server.
     #[error("internal server panic recovered: {0}")]
     PanicRecovered(String),
@@ -155,6 +173,11 @@ impl IntoResponse for ServerError {
         match self {
             Self::BadRequest(message) => (
                 StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response(),
+            Self::NotFound(message) => (
+                StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": message })),
             )
                 .into_response(),
@@ -186,14 +209,153 @@ impl IntoResponse for ServerError {
     }
 }
 
-/// Builds the Axum [`Router`] with `/healthz`, `/api/v1/export`, and full panic
-/// containment across every route.
+/// Builds the Axum [`Router`] with `/healthz`, `/api/v1/export`, `/api/v1/designs`
+/// CRUD + versioning endpoints (`T-204`), and full panic containment across
+/// every route.
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/export", post(handle_export))
+        .route(
+            "/api/v1/designs",
+            get(handle_list_designs).post(handle_create_design),
+        )
+        .route(
+            "/api/v1/designs/{id}",
+            get(handle_get_design)
+                .put(handle_update_design)
+                .delete(handle_delete_design),
+        )
+        .route("/api/v1/designs/{id}/versions", get(handle_list_versions))
+        .route(
+            "/api/v1/designs/{id}/versions/{version}",
+            get(handle_get_version),
+        )
+        .route(
+            "/api/v1/designs/{id}/versions/{version}/restore",
+            post(handle_restore_version),
+        )
         .with_state(state)
         .layer(CatchPanicLayer)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DesignUpsertEnvelope {
+    name: Option<String>,
+    design: Design,
+    note: Option<String>,
+}
+
+fn parse_design_upsert(
+    body: &[u8],
+) -> Result<(Option<String>, Design, Option<String>), ServerError> {
+    let text = std::str::from_utf8(body)
+        .map_err(|err| ServerError::BadRequest(format!("body must be UTF-8 JSON: {err}")))?;
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|err| ServerError::BadRequest(err.to_string()))?;
+
+    if value.get("design").is_some() {
+        let env: DesignUpsertEnvelope = serde_json::from_value(value)
+            .map_err(|err| ServerError::BadRequest(err.to_string()))?;
+        Ok((env.name, env.design, env.note))
+    } else {
+        let design =
+            Design::from_json(text).map_err(|err| ServerError::BadRequest(err.to_string()))?;
+        Ok((None, design, None))
+    }
+}
+
+fn map_store_error(err: StoreError) -> ServerError {
+    match err {
+        StoreError::EmptyName => ServerError::BadRequest(err.to_string()),
+        StoreError::UnsupportedSchema { .. } => ServerError::BadRequest(err.to_string()),
+        StoreError::InvalidDesign(issues) => ServerError::InvalidDesign(issues),
+        StoreError::NotFound(_) | StoreError::VersionNotFound { .. } => {
+            ServerError::NotFound(err.to_string())
+        }
+    }
+}
+
+async fn handle_create_design(
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Result<Response, ServerError> {
+    let (name_opt, design, note) = parse_design_upsert(&body)?;
+    let name = name_opt.unwrap_or_else(|| "Untitled Design".to_string());
+    let created = state
+        .store
+        .create(name, design, note)
+        .map_err(map_store_error)?;
+    Ok((StatusCode::CREATED, Json(created)).into_response())
+}
+
+async fn handle_list_designs(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.store.list())
+}
+
+async fn handle_get_design(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<DesignRecord>, ServerError> {
+    state.store.get(&id).map(Json).map_err(map_store_error)
+}
+
+async fn handle_update_design(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Json<DesignRecord>, ServerError> {
+    let (name_opt, design, note) = parse_design_upsert(&body)?;
+    state
+        .store
+        .update(&id, name_opt, design, note)
+        .map(Json)
+        .map_err(map_store_error)
+}
+
+async fn handle_delete_design(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ServerError> {
+    state
+        .store
+        .delete(&id)
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(map_store_error)
+}
+
+async fn handle_list_versions(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<DesignVersionRecord>>, ServerError> {
+    state
+        .store
+        .list_versions(&id)
+        .map(Json)
+        .map_err(map_store_error)
+}
+
+async fn handle_get_version(
+    State(state): State<AppState>,
+    Path((id, version)): Path<(String, u32)>,
+) -> Result<Json<DesignVersionRecord>, ServerError> {
+    state
+        .store
+        .get_version(&id, version)
+        .map(Json)
+        .map_err(map_store_error)
+}
+
+async fn handle_restore_version(
+    State(state): State<AppState>,
+    Path((id, version)): Path<(String, u32)>,
+) -> Result<Json<DesignRecord>, ServerError> {
+    state
+        .store
+        .restore_version(&id, version, None)
+        .map(Json)
+        .map_err(map_store_error)
 }
 
 async fn healthz() -> impl IntoResponse {
