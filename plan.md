@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 20**
-> **LAST_UPDATED: 2026-11-05 23:39 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 21**
+> **LAST_UPDATED: 2026-11-05 23:43 (UTC+7) by geom-1**
 
 ---
 
@@ -214,7 +214,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 |---|---|---|---|---|---|---|---|
 | T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | done | 2026-11-05 23:29 | T-010 | Matches hand-calculated fixture values |
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
-| T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | in-progress | 2026-11-05 23:39 | T-005, T-006 | Integration tests pass; panics do not crash server |
+| T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | | todo | | T-002 | CI checks that generated types match latest Rust structs |
@@ -360,6 +360,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-018** | 2026-11-05 23:36 | geom-1 | T-104
   `blade_mesh::write_3mf(&Mesh)` serialises an OPC ZIP (`STORE`, method 0, IEEE 802.3 CRC-32) containing `[Content_Types].xml`, `_rels/.rels`, and `3D/3dmodel.model` (`unit="millimeter"`, 3MF Core 2015/02 namespace) in pure Rust with zero external/C++ dependencies (`wasm32`-clean). `crates/blade-cli` (`bladelab` binary + `blade_cli::export_design_bytes`) exports any valid `Design` to `stl`, `3mf`, or `step` (`--part blade|hub|assembly`), gating mesh exports on `check_mesh(&mesh).is_valid_solid()`. Verified: `target/cli.naca4412.step` passes FreeCAD `tests/step_check.py` (`valid=True`, 1 solid, `126544.7 mm³`); `target/cli.naca4412.3mf` passes Python `zipfile.testzip()` and XML check (`unit="millimeter"`, 1771 vertices, 3538 triangles); `target/cli.naca4412.stl` is 176 984 bytes.
   refs: crates/blade-mesh/src/threemf.rs, crates/blade-cli/src/{lib,main}.rs, crates/blade-cli/tests/cli_export.rs | supersedes: –
+- **F-geom1-019** | 2026-11-05 23:43 | geom-1 | T-103
+  `crates/blade-server` (Axum 0.8.9, Tokio 1.54, `blake3` 1.8.7) exposes `GET /healthz` and `POST /api/v1/export` supporting both `{ "design": ..., "format": "stl|3mf|step", "part": "blade|hub|assembly" }` envelopes and bare `Design` JSON bodies with `?format=...&part=...` query parameters. Cache keys hash canonicalized `Design` JSON + format + part via `blake3` (so whitespace differences still hit cache), emitting `ETag`, `X-BladeLab-Cache: HIT|MISS`, and `304 Not Modified` on `If-None-Match`. Panics in handlers or blocking workers are caught by `CatchPanicLayer` + `spawn_blocking(catch_unwind(...))` and converted to HTTP 500 JSON without crashing the server.
+  refs: crates/blade-server/src/{lib,main}.rs, crates/blade-server/tests/api_export.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -545,6 +548,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-104 is `done`. `crates/blade-cli` provides the `bladelab` CLI (`bladelab export <design.json> --format <stl|3mf|step> [-o <output>] [--part <blade|hub|assembly>]`) and the pure in-memory `export_design_bytes(json, format, part)` driver, backed by `blade_mesh::write_3mf`, `blade_mesh::write_stl`, and `blade_cad::TruckKernel`. Verified across both linear and Schmitz fixtures: 6 new tests (2 in `blade-mesh`, 4 in `blade-cli` including binary subprocess execution), FreeCAD headless STEP check (`PASS`), Python `zipfile` + 3MF XML check (`3MF_OK`), fmt/clippy/wasm32 clean; workspace total is now **103 tests**.
   **Next:** T-103 (`blade-server` `POST /api/v1/export` with `blake3` caching) can call `blade_cli::export_design_bytes` (or share its logic) directly inside `spawn_blocking` / `catch_unwind`; T-107 (golden tests) can snapshot all 3 export formats.
   **Cautions:** `--part hub` and `--part assembly` require `--format step` in `blade-cli` because unified mesh booleans belong exclusively to Manifold on the server (`D-lead1-005` / `T-203`).
+- **H-geom1-013** | 2026-11-05 23:43 | geom-1 | T-103 | Recipient: lead, server, web, qa
+  **Progress:** T-103 is `done`. `crates/blade-server` implements `POST /api/v1/export` (`stl`, `3mf`, `step`) with `blake3` caching (`ExportCache` + `CacheStats`) and panic containment (`CatchPanicLayer` + `spawn_blocking` `catch_unwind`). Verified by 3 integration tests in `crates/blade-server/tests/api_export.rs` (format exports, `MISS`→`HIT` cache verification across whitespace-reformatted JSON, `304 Not Modified`, 400/422 error responses, and simulated panic recovery proving subsequent requests still return `200 OK`). Workspace total is now **106 tests**, fmt/clippy/wasm32 clean.
+  **Next:** Remaining Phase 1 tasks are **T-106** (`ts-rs` automated generation of TS types from `blade-model`), **T-107** (golden tests: 5 fixtures + volume/bounding box snapshots), and **T-105** (UI: Layer 1 controls + Layer 3 per-station table). T-204 (PostgreSQL persistence) is also unblocked by T-103.
+  **Cautions:** `ExportCache` is in-memory per process; `AppState` is `Clone` (`Arc`-backed) so `T-204` can attach a `sqlx::PgPool` alongside `cache`.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -580,4 +587,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T23:31:00+07:00 agent=geom-1 mem=v17 last_entry=H-geom1-011 task=T-104 note="lead: 'do next task' -> claiming T-104 (blade-cli export for stl, 3mf, step) under D-geom1-012"
 [END] 2026-11-05T23:36+07:00 agent=geom-1 mem=v19 note="T-104 done: blade_mesh::write_3mf (pure-Rust OPC ZIP + 3MF Core XML in mm, wasm32-clean) + crates/blade-cli (`bladelab export design.json --format stl|3mf|step`); FreeCAD STEP check PASS + Python zipfile/XML 3MF check PASS; 103 workspace tests + fmt/clippy/wasm32 clean; F-geom1-018, H-geom1-012 recorded"
 [RE-ACK] 2026-11-05T23:39:00+07:00 agent=geom-1 mem=v19 last_entry=H-geom1-012 task=T-103 note="lead: 'Next' -> claiming T-103 (crates/blade-server Axum POST /api/v1/export with blake3 caching and panic containment) under D-geom1-013"
+[END] 2026-11-05T23:43+07:00 agent=geom-1 mem=v21 note="T-103 done: crates/blade-server Axum POST /api/v1/export (stl, 3mf, step) with canonical blake3 caching (ETag + HIT/MISS + 304) and panic containment (CatchPanicLayer + spawn_blocking catch_unwind); 106 workspace tests + fmt/clippy/wasm32 clean; F-geom1-019, H-geom1-013 recorded"
 ```

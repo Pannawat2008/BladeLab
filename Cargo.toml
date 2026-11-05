@@ -7,6 +7,7 @@ members = [
     "crates/blade-cad",
     "crates/blade-wasm",
     "crates/blade-cli",
+    "crates/blade-server",
 ]
 
 [workspace.package]

@@ -1,0 +1,23 @@
+[package]
+name = "blade-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "BladeLab Axum HTTP server: STL, 3MF and STEP export with blake3 caching."
+
+[[bin]]
+name = "blade-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+blade-cli = { path = "../blade-cli" }
+blade-model = { path = "../blade-model" }
+blake3 = "1"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+tower = { version = "0.5", features = ["util"] }
