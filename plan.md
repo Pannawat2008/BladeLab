@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 5**
-> **LAST_UPDATED: 2026-11-05 17:48 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 6**
+> **LAST_UPDATED: 2026-11-05 17:54 (UTC+7) by geom-1**
 
 ---
 
@@ -198,10 +198,10 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 0 — Spike: CAD Kernel Selection
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-001 | Init Cargo workspace, base CI, AGENTS.md | lead | geom-1 | in-progress | 2026-11-05 17:48 | – | `cargo test` passes, CI active, verify/record latest truck-* versions as Fact |
-| T-002 | blade-model: Design schema v1 + serde + validation | lead | geom-1 | in-progress | 2026-11-05 17:48 | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
+| T-001 | Init Cargo workspace, base CI, AGENTS.md | lead | geom-1 | in-progress | 2026-11-05 17:48 | - | `cargo test` passes, CI active, verify/record latest truck-* versions as Fact |
+| T-002 | blade-model: Design schema v1 + serde + validation | lead | geom-1 | done | 2026-11-05 17:54 | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
 | T-003 | blade-geom: 4-digit NACA (continuous), cosine resample, trailing edge thickness check | geom | geom-1 | done | 2026-11-05 17:40 | T-002 | proptest: non-overlapping points, trailing edge thickness ≥ threshold |
-| T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | in-progress | 2026-11-05 17:40 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
+| T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | done | 2026-11-05 17:54 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
 | T-005 | blade-mesh: Tessellation → binary STL export | mesh | | todo | | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | | todo | | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | | todo | | T-006 | CI job fails if exported STEP file is not a valid solid |
@@ -318,6 +318,18 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-004** | 2026-11-05 17:45 | geom-1 | –
   L-geom1-001 is resolved for the local workspace: a git repository now exists on branch `main` (initialised 2026-11-05 17:40), so claims and commits can follow §5.1/§0.3. There is still **no remote**, so `git pull --rebase` and `git push` remain impossible until a remote is configured; commits are local-only.
   refs: .gitignore, `.git` | supersedes: L-geom1-001
+- **F-geom1-005** | 2026-11-05 17:54 | geom-1 | T-001
+  Latest `truck-*` crates on crates.io (queried 2026-11-05): `truck-geometry` 0.5.0, `truck-stepio` 0.3.0, `truck-meshalgo` 0.4.0 (all published 2024-09-20). The crate simply named `truck` is an unrelated 1.0.0 package from 2020 — do not depend on it. F-lead1-003's "0.3.0" refers to `truck-stepio` and is confirmed current.
+  refs: https://crates.io/api/v1/crates/truck-geometry, /truck-stepio, /truck-meshalgo | supersedes: F-lead1-003
+- **F-geom1-006** | 2026-11-05 17:54 | geom-1 | T-001
+  Root `Cargo.toml` is a resolver-2 workspace with members `crates/blade-model` and `crates/blade-geom`, shared `workspace.package` (0.1.0, edition 2021, rust-version 1.75, MIT OR Apache-2.0, `publish = false`) and `workspace.dependencies` for serde/serde_json/thiserror/proptest. Both crates build for `wasm32-unknown-unknown`. `.github/` does not exist yet and there is no git remote, so the "CI active" half of T-001 is still unmet (CI files remain qa-owned).
+  refs: Cargo.toml, crates/*/Cargo.toml, Cargo.lock | supersedes: –
+- **F-geom1-007** | 2026-11-05 17:54 | geom-1 | T-002
+  `blade-model` schema v1 (`SCHEMA_VERSION = 1`) is `Design { schema_version, rotor, distributions, airfoils, overrides, hub, manufacturing }` with `deny_unknown_fields`; JSON is rejected with `ModelError::UnsupportedSchema` on a version mismatch. `resolve` builds stations as the sorted, `RATIO_EPS = 1e-9`-deduped union of `station_count` uniform ratios over `[hub_radius/R, 1]` and every override ratio, evaluates curves at `s = (ratio − hub_ratio)/(1 − hub_ratio)`, applies overrides, and picks the **last** `AirfoilStation` with `span_ratio ≤ ratio + RATIO_EPS`. Named airfoils currently fail with `UnsupportedAirfoil` (library is T-202).
+  refs: crates/blade-model/src/{schema,validate,resolve}.rs | supersedes: –
+- **F-geom1-008** | 2026-11-05 17:54 | geom-1 | T-002
+  `fixtures/naca4412-linear.json` is the canonical end-to-end fixture: R = 600 mm, hub r = 60 mm, 3 blades, TSR 4.5, 8 m/s, pitch axis 0.25, 11 stations; chord 70 → 35 mm and twist 20° → 3° (linear over the blade span); NACA 4412 assigned at 0.0 and 1.0; layer-3 tip override chord 32 mm / twist 2°; hub 120/12/50 mm; min TE 0.05 mm, wall 1.2 mm. `build_sections` uses `SECTION_SAMPLES_PER_SURFACE = 81`, giving 161 points per contour.
+  refs: fixtures/naca4412-linear.json, crates/blade-geom/src/sections.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -374,6 +386,12 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-003** | 2026-11-05 17:45 | geom-1 | T-004
   `clippy -- -D warnings` rejects negated float comparisons (`!(a > b)`) via `neg_cmp_op_on_partial_ord`; use `a.partial_cmp(&b) != Some(Ordering::Greater)` for strict ordering checks (span monotonicity, station monotonicity).
   refs: crates/blade-geom/src/surface.rs, src/distribution.rs | supersedes: –
+- **L-geom1-004** | 2026-11-05 17:54 | geom-1 | T-002
+  Airfoil and constant-curve tests must account for the fixture's own layer choices: it defines an airfoil station at `span_ratio = 1.0` and a tip override. Inserting a mid-span airfoil therefore only applies up to (not including) the tip station, and a `Constant` curve test must clear `design.overrides` first or the tip override keeps winning. Assert the exact rule ("last station ≤ ratio") rather than "applies to the tip".
+  refs: crates/blade-model/tests/resolve.rs | supersedes: –
+- **L-geom1-005** | 2026-11-05 17:54 | geom-1 | T-002
+  In PowerShell, piping cargo through `2>&1 | Select-String` reports `NativeCommandError`/exit 1 because cargo writes progress to stderr, even when the build succeeds. Trust cargo's own `Finished` / `test result: ok` lines instead of `$LASTEXITCODE`.
+  refs: – | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -391,6 +409,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-004 geometry core is implemented and green: `Section3D::{new, from_airfoil}`, `Point3`, `BladeSurface::{point_at, point_at_span_mm, section_at, control_points, knots, degree, section_params}` and `loft(&[Section3D])` with pass-through error ≤ 1e-6 mm. 21 unit + 6 proptest + 3 doctests pass; fmt/clippy/wasm32 clean.
   **Next:** `build_sections(&ResolvedBlade)` (layer 1 + layer 3 merge → sections) still waits for `blade-model` `ResolvedBlade` (T-002). mesh/cad can already consume `BladeSurface` with explicitly built sections.
   **Cautions:** sections must share identical topology and strictly increasing span stations; this is an interpolating surface, so control-point count grows 1:1 with the section stack.
+- **H-geom1-003** | 2026-11-05 17:54 | geom-1 | T-004 | Recipient: lead, mesh, cad, qa
+  **Progress:** T-002 and T-004 are `done`. `blade-model` v1 (schema + validation + resolve) and `blade-geom::build_sections` are implemented; the full pipeline `Design → resolve → build_sections → loft` runs on `fixtures/naca4412-linear.json`, and the loft passes through all 11 sections within 1e-6 mm. Verification: 59 tests green (24 geom unit, 2 build_sections, 2 loft-property, 4 airfoil-property, 14 design, 9 resolve, 3 + 1 doctests), `cargo fmt --check`, `clippy --workspace --all-targets -- -D warnings`, and `cargo build -p blade-model -p blade-geom --target wasm32-unknown-unknown`. T-001 stays `in-progress` only because CI cannot be activated (no remote, `.github/` qa-owned); truck versions are now recorded in F-geom1-005.
+  **Next:** T-005 (STL from `BladeSurface`) and T-006 (truck STEP) can start; both should consume `loft()` output only (D-lead1-002). Lead must supply a git remote to enable `git pull --rebase`/`push` and CI.
+  **Cautions:** `SECTION_SAMPLES_PER_SURFACE = 81` and the 161-point topology are now baked into `build_sections`; changing them changes mesh/STEP vertex counts. `resolve` dedupes stations at 1e-9 and override matching uses the same tolerance — do not tighten one without the other.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -404,4 +426,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [NOTE] 2026-11-05T17:40+07:00 agent=geom-1 note="initialised local git repo (no remote configured yet) so claims/commits/trailers can follow §0.1/§0.3"
 [END] 2026-11-05T17:45+07:00 agent=geom-1 mem=v4 note="T-004 loft core done (Section3D/Point3/BladeSurface/loft, pass-through <= 1e-6 mm, 30 tests, fmt/clippy/wasm32 clean); build_sections still needs blade-model ResolvedBlade (T-002)"
 [RE-ACK] 2026-11-05T17:48+07:00 agent=geom-1 mem=v5 last_entry=D-geom1-003 note="lead approved geom-1 takeover of T-001 (workspace) + T-002 (blade-model schema v1); implementing build_sections to finish T-004"
+[END] 2026-11-05T17:54+07:00 agent=geom-1 mem=v6 note="T-002 + T-004 done: workspace root, blade-model schema/validate/resolve, build_sections adapter; fixture pipeline Design->resolve->sections->loft passes <=1e-6 mm; 59 tests + fmt + clippy -D warnings + wasm32 builds clean; T-001 still in-progress (CI needs a git remote)"
 ```
