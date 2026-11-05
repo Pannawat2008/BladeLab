@@ -43,6 +43,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "blade-mesh"
+version = "0.1.0"
+dependencies = [
+ "blade-geom",
+ "blade-model",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "blade-model"
 version = "0.1.0"
 dependencies = [

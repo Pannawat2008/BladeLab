@@ -1,0 +1,16 @@
+[package]
+name = "blade-mesh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "BladeLab tessellation and binary STL export (wasm + server)."
+
+[dependencies]
+blade-geom = { path = "../blade-geom" }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+blade-model = { path = "../blade-model" }

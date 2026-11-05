@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/blade-model",
     "crates/blade-geom",
+    "crates/blade-mesh",
 ]
 
 [workspace.package]
