@@ -4,6 +4,7 @@ members = [
     "crates/blade-model",
     "crates/blade-geom",
     "crates/blade-mesh",
+    "crates/blade-cad",
 ]
 
 [workspace.package]

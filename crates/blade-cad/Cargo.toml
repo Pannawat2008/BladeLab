@@ -1,0 +1,19 @@
+[package]
+name = "blade-cad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "BladeLab B-rep blade/hub solids and STEP export via truck (native server)."
+
+[dependencies]
+blade-model = { path = "../blade-model" }
+blade-geom = { path = "../blade-geom" }
+thiserror.workspace = true
+truck-modeling = "0.6"
+truck-geometry = "0.5"
+truck-stepio = "0.3"
+
+[dev-dependencies]
+blade-mesh = { path = "../blade-mesh" }
