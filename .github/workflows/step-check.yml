@@ -19,6 +19,8 @@ jobs:
       - run: cargo build --workspace
       - name: Verify generated TypeScript types match Rust structs (T-106)
         run: cargo test -p blade-model --test ts_bindings
+      - name: Verify 5-fixture volume & bounding-box golden snapshots (T-107)
+        run: cargo test -p blade-mesh --test golden_snapshots
       - run: cargo test --workspace
       - run: |
           cargo fmt --all -- --check

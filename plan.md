@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 24**
+> **MEMORY_VERSION: 25**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -218,7 +218,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
-| T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | in-progress | 2026-11-06 00:35 | T-005 | CI fails if geometry changes unexpectedly |
+| T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
 ### Phase 2 — Advanced Tuning & Full STEP Support
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
@@ -366,6 +366,15 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-020** | 2026-11-06 00:20 | geom-1 | T-106
   `blade-model` derives `ts_rs::TS` (`ts-rs` 10.1.0, pure Rust and `wasm32`-clean) on all schema and validation structs (`Design`, `Rotor`, `Distributions`, `CurveSource`, `AirfoilStation`, `AirfoilSpec`, `StationOverride`, `Hub`, `Manufacturing`, `ValidationIssue`) and exposes `blade_model::typescript_bindings() -> String`. `crates/blade-model/tests/ts_bindings.rs` and `.github/workflows/step-check.yml` assert that `web/src/types/blade-model.ts` is byte-for-byte identical to `typescript_bindings()` (regenerated via `BLADELAB_UPDATE_TS=1 cargo test -p blade-model --test ts_bindings`). `web/src/main.ts` imports `Design` from `./types/blade-model` and `web/package.json` now provides `lint`, `typecheck` (`tsc --noEmit`), and `test` (`node --test scripts/types.test.mjs`).
   refs: crates/blade-model/src/{schema,error}.rs, crates/blade-model/tests/ts_bindings.rs, web/src/types/blade-model.ts, .github/workflows/step-check.yml | supersedes: –
+- **F-geom1-021** | 2026-11-06 00:40 | geom-1 | T-107
+  Golden 5-fixture geometry regression suite (`fixtures/golden_snapshots.json`, `crates/blade-mesh/tests/golden_snapshots.rs`, `crates/blade-cad/tests/step.rs`):
+  1. `naca4412-linear.json` (11 stations, 1771 verts, 3538 tris, `V = 126 493.727581 mm³`, `A = 58 437.229584 mm²`, `z = 60..600 mm`)
+  2. `naca4412-schmitz.json` (11 stations, 1771 verts, 3538 tris, `V = 469 829.008506 mm³`, `A = 110 287.334938 mm²`, `z = 60..600 mm`)
+  3. `naca0012-constant.json` (7 stations, 1127 verts, 2250 tris, `V = 73 970.276471 mm³`, `A = 37 161.903736 mm²`, `x = 0..50 mm`, `y = ±2.999993 mm`, `z = 40..400 mm`)
+  4. `naca2415-multistation-dflat.json` (10 stations incl. `0.5` override, 1610 verts, 3216 tris, `V = 44 291.421853 mm³`, `A = 21 200.271620 mm²`, `z = 45..300 mm`, 8-face D-flat hub)
+  5. `naca6409-high-tsr-5blade.json` (13 stations, 2093 verts, 4182 tris, `V = 18 600.657824 mm³`, `A = 21 979.778880 mm²`, `z = 50..500 mm`, 8-face D-flat hub).
+  All 5 pass both watertight mesh + golden bbox/volume checks and `TruckKernel` B-rep STEP round-trip checks.
+  refs: fixtures/*.json, crates/blade-mesh/tests/golden_snapshots.rs, crates/blade-cad/tests/step.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -568,6 +577,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-106 is `done`. `ts-rs` 10.1.0 is wired into `blade-model` (`blade_model::typescript_bindings()`), `web/src/types/blade-model.ts` is generated and consumed by `web/src/main.ts`, `crates/blade-model/tests/ts_bindings.rs` and `.github/workflows/step-check.yml` fail CI if Rust structs drift from `web/src/types/blade-model.ts`, and `web/package.json` now passes `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`. Workspace total is now **107 Rust tests + 1 Node test**, all green.
   **Next:** Remaining Phase 1 tasks are **T-107** (golden tests: 5 fixtures + volume/bounding box snapshots) and **T-105** (UI: Layer 1 controls + Layer 3 per-station table, which can directly import `Design`, `Rotor`, `StationOverride`, etc. from `web/src/types/blade-model.ts`).
   **Cautions:** Whenever any struct in `crates/blade-model/src/{schema,error}.rs` changes, re-run `BLADELAB_UPDATE_TS=1 cargo test -p blade-model --test ts_bindings` to update `web/src/types/blade-model.ts`.
+- **H-geom1-015** | 2026-11-06 00:40 | geom-1 | T-107 | Recipient: lead, qa, geom, mesh, cad
+  **Progress:** T-107 is `done`. Added 3 new canonical fixtures (`naca0012-constant.json`, `naca2415-multistation-dflat.json`, `naca6409-high-tsr-5blade.json`), bringing the `fixtures/` suite to 5 designs covering linear/constant/Schmitz curves, symmetric/cambered/multi-station airfoils, Layer-3 mid-span & tip overrides, and round/D-flat hubs. `crates/blade-mesh/tests/golden_snapshots.rs` + `fixtures/golden_snapshots.json` verify exact topology, volume (`±1e-3 mm³`), surface area (`±1e-3 mm²`), min triangle altitude, and 3D bounding box (`±1e-5 mm`), plus a mutation test proving that a 1 mm geometry change fails the check. `crates/blade-cad/tests/step.rs` also verifies B-rep STEP export for all 5 fixtures. Workspace is now at **110 Rust tests + 1 Node test**, all green.
+  **Next:** **T-105** (`UI: Layer 1 controls + Layer 3 per-station table`) is the final remaining task in **Phase 1 — MVP**.
+  **Cautions:** If an approved geometry algorithm change alters mesh output, regenerate snapshots with `BLADELAB_UPDATE_GOLDEN=1 cargo test -p blade-mesh --test golden_snapshots`.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -607,4 +620,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T00:13:00+07:00 agent=geom-1 mem=v21 last_entry=H-geom1-013 task=T-106 note="lead: 'do nex' -> claiming T-106 (ts-rs automated TS type generation from blade-model + CI drift check) under D-geom1-014"
 [END] 2026-11-06T00:20+07:00 agent=geom-1 mem=v23 note="T-106 done: ts-rs 10.1.0 bindings on blade-model + web/src/types/blade-model.ts + ts_bindings drift test + CI step + web lint/typecheck/test scripts; 107 Rust tests + 1 Node test + fmt/clippy/wasm32/vite build clean; F-geom1-020, L-geom1-015, H-geom1-014 recorded"
 [RE-ACK] 2026-11-06T00:35:00+07:00 agent=geom-1 mem=v23 last_entry=H-geom1-014 task=T-107 note="lead: 'do next' -> claiming T-107 (5 fixtures + volume/bounding-box golden snapshots) under D-geom1-015"
+[END] 2026-11-06T00:40+07:00 agent=geom-1 mem=v25 note="T-107 done: 5 fixtures in fixtures/ + fixtures/golden_snapshots.json + crates/blade-mesh/tests/golden_snapshots.rs + blade-cad 5-fixture STEP test + CI step; 110 Rust tests + 1 Node test + fmt/clippy/wasm32 clean; F-geom1-021, H-geom1-015 recorded"
 ```

@@ -212,3 +212,91 @@ fn exporting_no_bodies_is_an_error() {
     let kernel = TruckKernel::new();
     assert!(matches!(kernel.write_step(&[]), Err(CadError::Step(_))));
 }
+
+#[test]
+fn all_five_golden_fixtures_export_valid_step_solids_with_expected_span_bounds() {
+    let fixtures = [
+        (
+            "naca4412-linear.json",
+            include_str!("../../../fixtures/naca4412-linear.json"),
+            60.0,
+            600.0,
+            12,
+        ),
+        (
+            "naca4412-schmitz.json",
+            include_str!("../../../fixtures/naca4412-schmitz.json"),
+            60.0,
+            600.0,
+            12,
+        ),
+        (
+            "naca0012-constant.json",
+            include_str!("../../../fixtures/naca0012-constant.json"),
+            40.0,
+            400.0,
+            12,
+        ),
+        (
+            "naca2415-multistation-dflat.json",
+            include_str!("../../../fixtures/naca2415-multistation-dflat.json"),
+            45.0,
+            300.0,
+            8,
+        ),
+        (
+            "naca6409-high-tsr-5blade.json",
+            include_str!("../../../fixtures/naca6409-high-tsr-5blade.json"),
+            50.0,
+            500.0,
+            8,
+        ),
+    ];
+
+    let kernel = TruckKernel::new();
+    for (name, raw, expected_z_min, expected_z_max, expected_hub_faces) in fixtures {
+        let design = Design::from_json(raw).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let resolved = resolve(&design).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let sections = build_sections(&resolved).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let surface = loft(&sections).unwrap_or_else(|err| panic!("{name}: {err}"));
+
+        let blade = kernel
+            .blade_solid(&surface)
+            .unwrap_or_else(|err| panic!("{name} blade_solid: {err}"));
+        assert_eq!(blade.boundaries()[0].len(), 4, "{name}: blade faces");
+
+        let hub = kernel
+            .hub_solid(&design.hub)
+            .unwrap_or_else(|err| panic!("{name} hub_solid: {err}"));
+        assert_eq!(
+            hub.boundaries()[0].len(),
+            expected_hub_faces,
+            "{name}: hub faces"
+        );
+
+        let blade_step = kernel
+            .write_step(&[blade])
+            .unwrap_or_else(|err| panic!("{name} write_step: {err}"));
+        let table = Table::from_step(&blade_step).expect("truck STEP reader accepts blade");
+        let holder = table.shell.values().next().expect("one closed shell");
+        let shell = table.to_compressed_shell(holder).expect("shell converts");
+        let min_z = shell
+            .vertices
+            .iter()
+            .map(|p| p.z)
+            .fold(f64::INFINITY, f64::min);
+        let max_z = shell
+            .vertices
+            .iter()
+            .map(|p| p.z)
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            (min_z - expected_z_min).abs() < 1e-6,
+            "{name}: root z {min_z} != {expected_z_min}"
+        );
+        assert!(
+            (max_z - expected_z_max).abs() < 1e-6,
+            "{name}: tip z {max_z} != {expected_z_max}"
+        );
+    }
+}

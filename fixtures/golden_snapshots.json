@@ -1,0 +1,102 @@
+[
+  {
+    "fixture": "naca4412-linear.json",
+    "station_count": 11,
+    "vertex_count": 1771,
+    "triangle_count": 3538,
+    "watertight": true,
+    "valid_solid": true,
+    "volume_mm3": 126493.727581,
+    "surface_area_mm2": 58437.229584,
+    "min_triangle_altitude_mm": 0.000021,
+    "stl_byte_len": 176984,
+    "bbox_mm": {
+      "x_min": 0.004873,
+      "x_max": 66.864029,
+      "y_min": -6.802058,
+      "y_max": 18.038938,
+      "z_min": 60.0,
+      "z_max": 600.0
+    }
+  },
+  {
+    "fixture": "naca4412-schmitz.json",
+    "station_count": 11,
+    "vertex_count": 1771,
+    "triangle_count": 3538,
+    "watertight": true,
+    "valid_solid": true,
+    "volume_mm3": 469829.008506,
+    "surface_area_mm2": 110287.334938,
+    "min_triangle_altitude_mm": 0.000034,
+    "stl_byte_len": 176984,
+    "bbox_mm": {
+      "x_min": 0.011234,
+      "x_max": 141.419099,
+      "y_min": -22.328024,
+      "y_max": 64.633985,
+      "z_min": 60.0,
+      "z_max": 600.0
+    }
+  },
+  {
+    "fixture": "naca0012-constant.json",
+    "station_count": 7,
+    "vertex_count": 1127,
+    "triangle_count": 2250,
+    "watertight": true,
+    "valid_solid": true,
+    "volume_mm3": 73970.276471,
+    "surface_area_mm2": 37161.903736,
+    "min_triangle_altitude_mm": 2e-6,
+    "stl_byte_len": 112584,
+    "bbox_mm": {
+      "x_min": 0.0,
+      "x_max": 50.0,
+      "y_min": -2.999993,
+      "y_max": 2.999993,
+      "z_min": 40.0,
+      "z_max": 400.0
+    }
+  },
+  {
+    "fixture": "naca2415-multistation-dflat.json",
+    "station_count": 10,
+    "vertex_count": 1610,
+    "triangle_count": 3216,
+    "watertight": true,
+    "valid_solid": true,
+    "volume_mm3": 44291.421853,
+    "surface_area_mm2": 21200.27162,
+    "min_triangle_altitude_mm": 0.0,
+    "stl_byte_len": 160884,
+    "bbox_mm": {
+      "x_min": 0.014616,
+      "x_max": 51.47603,
+      "y_min": -6.939151,
+      "y_max": 16.87285,
+      "z_min": 45.0,
+      "z_max": 300.0
+    }
+  },
+  {
+    "fixture": "naca6409-high-tsr-5blade.json",
+    "station_count": 13,
+    "vertex_count": 2093,
+    "triangle_count": 4182,
+    "watertight": true,
+    "valid_solid": true,
+    "volume_mm3": 18600.657824,
+    "surface_area_mm2": 21979.77888,
+    "min_triangle_altitude_mm": 7e-6,
+    "stl_byte_len": 209184,
+    "bbox_mm": {
+      "x_min": 0.000935,
+      "x_max": 41.09289,
+      "y_min": -7.730661,
+      "y_max": 17.67783,
+      "z_min": 50.0,
+      "z_max": 500.0
+    }
+  }
+]

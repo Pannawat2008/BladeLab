@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "rotor": {
+    "radius_mm": 400.0,
+    "hub_radius_mm": 40.0,
+    "blade_count": 2,
+    "design_tsr": 3.5,
+    "wind_speed_mps": 7.0,
+    "pitch_axis_ratio": 0.25,
+    "station_count": 7
+  },
+  "distributions": {
+    "chord_mm": {
+      "type": "constant",
+      "value": 50.0
+    },
+    "twist_deg": {
+      "type": "constant",
+      "value": 0.0
+    }
+  },
+  "airfoils": [
+    {
+      "span_ratio": 0.0,
+      "airfoil": {
+        "type": "naca4",
+        "max_camber": 0.0,
+        "camber_position": 0.0,
+        "thickness_ratio": 0.12
+      }
+    },
+    {
+      "span_ratio": 1.0,
+      "airfoil": {
+        "type": "naca4",
+        "max_camber": 0.0,
+        "camber_position": 0.0,
+        "thickness_ratio": 0.12
+      }
+    }
+  ],
+  "overrides": [],
+  "hub": {
+    "diameter_mm": 80.0,
+    "bore_diameter_mm": 10.0,
+    "length_mm": 40.0
+  },
+  "manufacturing": {
+    "min_trailing_edge_mm": 0.05,
+    "wall_thickness_mm": 1.0
+  }
+}
