@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 6**
-> **LAST_UPDATED: 2026-11-05 17:54 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 7**
+> **LAST_UPDATED: 2026-11-05 18:03 (UTC+7) by geom-1**
 
 ---
 
@@ -202,7 +202,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-002 | blade-model: Design schema v1 + serde + validation | lead | geom-1 | done | 2026-11-05 17:54 | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
 | T-003 | blade-geom: 4-digit NACA (continuous), cosine resample, trailing edge thickness check | geom | geom-1 | done | 2026-11-05 17:40 | T-002 | proptest: non-overlapping points, trailing edge thickness ≥ threshold |
 | T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | done | 2026-11-05 17:54 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
-| T-005 | blade-mesh: Tessellation → binary STL export | mesh | | todo | | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
+| T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | in-progress | 2026-11-05 18:03 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | | todo | | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | | todo | | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | | todo | | T-005 | Web view renders blade, updates within 50 ms upon twist change |
@@ -362,6 +362,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-003** | 2026-11-05 17:48 | geom-1 | T-001 | **Accepted**
   The lead approved in-session on 2026-11-05 that geom-1 takes over **T-001** (root Cargo workspace) and **T-002** (`blade-model` Design schema v1 + validation + resolve) so `build_sections(&ResolvedBlade)` can land and T-004 can finish. No §8 signature is amended — only the documented interfaces are implemented. Takeover scope: root `Cargo.toml`, `crates/blade-model/`, and `fixtures/naca4412-linear.json`. CI workflow files stay with qa (`.github/`); CI cannot be activated because no git remote exists.
   refs: plan.md §7 T-001/T-002, §8 | supersedes: –
+- **D-geom1-004** | 2026-11-05 18:03 | geom-1 | T-005 | **Accepted**
+  The lead approved in-session on 2026-11-05 that geom-1 takes over **T-005** (`crates/blade-mesh/`: tessellation + binary STL) because the `mesh` role has no agent in this workspace and T-004 is done. Scope: new `crates/blade-mesh/`, its workspace membership, and implementation of the §8 `tessellate`/`write_stl`/`check_mesh` contracts **without changing their signatures**. STL/3MF are the only outputs; no booleans (D-lead1-005).
+  refs: plan.md §7 T-005, §8, F-geom1-008 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -427,4 +430,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T17:45+07:00 agent=geom-1 mem=v4 note="T-004 loft core done (Section3D/Point3/BladeSurface/loft, pass-through <= 1e-6 mm, 30 tests, fmt/clippy/wasm32 clean); build_sections still needs blade-model ResolvedBlade (T-002)"
 [RE-ACK] 2026-11-05T17:48+07:00 agent=geom-1 mem=v5 last_entry=D-geom1-003 note="lead approved geom-1 takeover of T-001 (workspace) + T-002 (blade-model schema v1); implementing build_sections to finish T-004"
 [END] 2026-11-05T17:54+07:00 agent=geom-1 mem=v6 note="T-002 + T-004 done: workspace root, blade-model schema/validate/resolve, build_sections adapter; fixture pipeline Design->resolve->sections->loft passes <=1e-6 mm; 59 tests + fmt + clippy -D warnings + wasm32 builds clean; T-001 still in-progress (CI needs a git remote)"
+[RE-ACK] 2026-11-05T18:03+07:00 agent=geom-1 mem=v7 last_entry=H-geom1-003 note="lead approved T-005 takeover (D-geom1-004); implementing tessellate/write_stl/check_mesh in crates/blade-mesh"
 ```
