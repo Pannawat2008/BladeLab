@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 15**
-> **LAST_UPDATED: 2026-11-05 20:40 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 16**
+> **LAST_UPDATED: 2026-11-05 23:20 (UTC+7) by geom-1**
 
 ---
 
@@ -212,7 +212,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 1 — MVP
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | | todo | | T-010 | Matches hand-calculated fixture values |
+| T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | in-progress | 2026-11-05 23:20 | T-010 | Matches hand-calculated fixture values |
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | | todo | | T-005, T-006 | Generates valid files for all formats |
@@ -407,6 +407,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-010** | 2026-11-05 20:20 | geom-1 | T-102 | **Accepted**
   The lead's "continues" instruction in-session on 2026-11-05 approves **T-102** (cad role) and accepts **P-geom1-001**: `blade_model::Hub` gains `shaft_flat_radial_mm: Option<f64>` (optional, default `None`), and `hub_solid` builds a D-flat bore hub by 2D extrusion (`builder::tsweep` of a holed annular face: outer circle wire + reversed inner D wire) — **no booleans** anywhere in the STEP path (F-lead1-002, D-lead1-005). Round-bore hubs (field absent) keep the existing revolve path unchanged, so no legacy design changes meaning. The `blade-model` schema change is a §5.4 core-interface amendment authorized here; the §8 `CadKernel` signatures themselves stay byte-for-byte identical.
   refs: plan.md §7 T-102, §9.6 P-geom1-001, §4 (blade-model), D-lead1-005 | supersedes: –
+- **D-geom1-011** | 2026-11-05 23:20 | geom-1 | T-101 | **Accepted**
+  The lead's in-session selection on 2026-11-05 approves **T-101** (`geom` role) and accepts **P-geom1-002**: (1) `crates/blade-geom` gains the `schmitz` module implementing Schmitz optimum-rotor inflow angle `φ(r) = (2/3)·atan(R/(λ·r))`, chord `c(r) = (16πr / (B·Cl))·sin²(φ(r)/2)`, and twist `β(r) = φ_deg(r) − α_design` across single stations and full rotor grids; (2) `blade_model::CurveSource` gains the additive `Schmitz { design_cl, design_alpha_deg }` variant so designs can specify `"type": "schmitz"` in `distributions.chord_mm` and `distributions.twist_deg` and resolve through `blade_model::resolve` without changing any §8 function signature.
+  refs: plan.md §7 T-101, §9.6 P-geom1-002, §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -471,6 +474,11 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Rationale:** T-102 (hub D-flat without booleans) needs the flat dimension as a parameter; a hard-coded magic flat would be a landmine. `None` preserves every existing design/JSON.
   **Impacted Crates:** `blade-model` (schema/hub docs — core interface, §5.4), `blade-cad` (hub_solid + tests/example).
   **Alternatives Considered:** (a) hard-code a default D-flat — rejected (not adjustable, hidden). (b) new `hub_solid_dflat` method — rejected (would amend §8 trait). (c) manifold boolean cut on the server — rejected for this task (booleans are a server T-203 concern; STEP must stay boolean-free).
+- **P-geom1-002** | 2026-11-05 23:20 | geom-1 | T-101 | **State: Accepted (D-geom1-011)**
+  **Proposed Change:** Add `CurveSource::Schmitz { design_cl: Option<f64>, design_alpha_deg: Option<f64> }` to `blade_model::CurveSource` alongside the `blade_geom::schmitz` formula module. When `distributions.chord_mm` uses `CurveSource::Schmitz`, `validate` requires `design_cl > 0` and `hub_radius_mm > 0` and `resolve` evaluates `c(r) = (16πr / (B·Cl))·sin²((1/3)·atan(R / (λ·r)))`; when `distributions.twist_deg` uses `CurveSource::Schmitz`, `validate` requires finite `design_alpha_deg ∈ [-90, 90]` and `resolve` evaluates `β(r) = (2/3)·atan(R / (λ·r))·(180/π) − α_design`.
+  **Rationale:** T-101 requires Layer-1 Schmitz chord/twist generation that matches hand-calculated fixture values and integrates seamlessly with Layer-3 overrides and the `Design → resolve → build_sections → loft` pipeline without altering §8 signatures.
+  **Impacted Crates:** `blade-model` (additive `CurveSource::Schmitz` variant, `validate`, `resolve`), `blade-geom` (`schmitz` module + re-exports), `fixtures/naca4412-schmitz.json`.
+  **Alternatives Considered:** (a) standalone helper in `blade-geom` only, with no `CurveSource` support — rejected because JSON fixtures could not declaratively express Schmitz Layer-1 distributions in `resolve()`. (b) separate `ChordSource` and `TwistSource` enums — rejected because it would break existing `CurveSource` callers.
 
 ### 9.7 Handoffs (H)
 
@@ -543,4 +551,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T20:12+07:00 agent=geom-1 mem=v14 note="T-010 done: kernel decision recorded as D-geom1-009 in §9.3 -> truck = B-rep/STEP (truck-modeling 0.6), Manifold manifold3d 0.4.1 = server booleans/3MF, OCCT = optional feature only; no §8 CadKernel change needed; closes Phase 0 (all T-001..T-010 final: T-001 in-progress only for CI/remote); Phase 1 T-101/T-102 unblocked"
 [RE-ACK] 2026-11-05T20:20+07:00 agent=geom-1 mem=v14 last_entry=H-geom1-009 note="lead: 'continues' -> T-102 cad takeover approved (D-geom1-010 + P-geom1-001 Accepted); adding optional Hub.shaft_flat_radial_mm and hub_solid D-flat via tsweep of a holed annular face (no booleans); round-bore revolve path unchanged"
 [END] 2026-11-05T20:40+07:00 agent=geom-1 mem=v15 note="T-102 done: Hub.shaft_flat_radial_mm (optional) + D-flat hub via 2D extrusion (tsweep of holed annular face, no booleans); R=60 r=6 d=4.8 L=50 -> FreeCAD valid solid, volume 560126.1 mm^3 exactly matches closed form; round-bore revolve path untouched; 86 workspace tests + fmt/clippy/wasm32 clean; P-geom1-001 Accepted, F-geom1-016/L-geom1-013/H-geom1-010 recorded"
+[ACK] 2026-11-05T23:20:00+07:00 agent=geom-1 mem=v15 last_entry=H-geom1-010 task=T-101
+[ACK-NOTE] geom-1: F-lead1-001 (mm/deg, f64, wasm32-clean, no panics/NaN), D-lead1-002 (B-spline loft single geometry source), F-geom1-007/008 (schema v1 + resolve over uniform stations + Layer-3 overrides) and D-geom1-009/010 confirmed. Claiming T-101 (Schmitz Layer-1 chord/twist generation) with P-geom1-002 / D-geom1-011 Accepted.
 ```
