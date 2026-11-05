@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 10**
-> **LAST_UPDATED: 2026-11-05 18:24 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 11**
+> **LAST_UPDATED: 2026-11-05 18:45 (UTC+7) by geom-1**
 
 ---
 
@@ -204,7 +204,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | done | 2026-11-05 17:54 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
 | T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | done | 2026-11-05 18:10 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | done | 2026-11-05 18:24 | T-004 | Opens in FreeCAD as a valid solid in mm units |
-| T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | in-progress | 2026-11-05 18:30 | T-006 | CI job fails if exported STEP file is not a valid solid |
+| T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | | todo | | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | | todo | | T-001 | `docker build` succeeds, successfully unions blade + hub |
 | T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
@@ -339,6 +339,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-011** | 2026-11-05 18:24 | geom-1 | T-006
   FreeCAD 1.1.1 (20260414, headless `FreeCADCmd`) imports both exported STEP files as valid solids in mm: `naca4412.blade.step` → `VALID=true`, 1 solid / 1 shell / 4 faces, bounding box z exactly 60.0 → 600.0 mm, volume 126 544.68 mm³; `naca4412.assembly.step` → 2 solids (blade + hub), both valid and closed, hub volume 559 831.81 mm³ = π·(60² − 6²)·50 exactly. The B-rep blade volume sits 0.04% above the STL tessellation (126 493.7 mm³), the correct direction for an inscribed faceting. No OCCT `Unresolved Reference` warnings on a clean import.
   refs: crates/blade-cad/src/kernel.rs, examples/export_step.rs, F-geom1-009 | supersedes: –
+- **F-geom1-012** | 2026-11-05 18:45 | geom-1 | T-007
+  `tests/step_check.py` + `.github/workflows/step-check.yml` form the T-007 headless STEP gate. Verified locally with FreeCAD's bundled `python.exe` (not FreeCADCmd): valid exports → `PASS` exit 0 (blade 1 solid z 60→600 mm + 126 544.7 mm³; assembly 2 solids 686 376.5 mm³); corrupt file, wrong `--solids`, violated `--z-min`, and missing path each → `FAIL` exit 1. FreeCAD's `Import.insert` returns `None` (shape recovered from `doc.Objects`), and the checker writes a PASS/FAIL record to `step_check_result.txt` because FreeCAD's console swallows script `print()`.
+  refs: tests/step_check.py, .github/workflows/step-check.yml | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -422,6 +425,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-009** | 2026-11-05 18:24 | geom-1 | T-006
   truck API notes: (1) `builder::rsweep(&Face, origin, axis, Rad(2π))` uses `whole_rsweep` with `DIVISION = 3`, so each revolved face is split into three 120° spans — a hollow cylinder comes back as a **12-face** shell, and `Solid::try_new` still accepts it as closed/connected/non-singular. (2) `BSplineSurface` in `truck-modeling` needs an explicit `<Point3>` generic and `rsweep` angles need `Rad(f64)`, not a bare float. (3) Edges are `Arc`-backed: cloning an edge shares identity and `.inverse()` flips orientation in place, so one vertex/edge set can be reused by adjacent faces and `Solid::try_new` is the single closure check — the 4-face blade (side, trailing-edge strip, root cap, tip cap) passes it. (4) `CompleteStepDisplay` emits `ISO-10303-042`, `SI_UNIT(.MILLI.,.METRE.)` and `MANIFOLD_SOLID_BREP`; build models with `StepModels::from_iter(compressed.iter())`.
   refs: crates/blade-cad/src/kernel.rs, tests/step.rs | supersedes: –
+- **L-geom1-010** | 2026-11-05 18:45 | geom-1 | T-007
+  FreeCAD's own scripting argv conventions are hostile: `FreeCADCmd` puts its executable at `sys.argv[0]` and the script at `argv[1]`, treats any other positional argument as a document to open, and its `--pass` option only forwards **one** following token (multiple unquoted flags after `--pass` made it print help and exit). Its console also swallows script `print()` output. The reliable runner is FreeCAD's bundled `bin\python.exe` (plain argv semantics, stdout works); `Import.insert(..., doc.Name)` returns `None` in 1.1, so read `doc.Objects[0].Shape`.
+  refs: C:\Program Files\FreeCAD 1.1\bin, tests/step_check.py | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -451,6 +457,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-006 is `done`. `crates/blade-cad/` implements the §8 `CadKernel` for truck: `blade_solid` (closed 4-face shell: side B-spline + ruled trailing-edge strip + root/tip planar caps, edges shared and validated by `Solid::try_new`), `hub_solid` (annular profile revolved 2π → 12-face hollow cylinder), and `write_step` (one or many compressed solids, mm units). `examples/export_step.rs` writes `target/naca4412.blade.step` and `target/naca4412.assembly.step`. FreeCAD 1.1.1 headless confirms both as valid solids in mm — see F-geom1-011. Verification: 6 integration tests in `tests/step.rs` (incl. truck STEP reader round-trip) + doctest = 7 new tests, plus fmt/clippy `-D warnings` and the whole workspace (79 tests) green; wasm32 constraint holds for model/geom/mesh and blade-cad is excluded per §2.
   **Next:** T-007 (CI headless STEP check) can reuse the `Import.insert` + `Shape.isValid()` pattern from L-geom1-008, and T-102 can build the hub detail (D-flat) from the existing profile wiring.
   **Cautions:** blade-cad is native-only — keep STEP out of the wasm bundle. The hub is a full 2π revolution (12 faces, `whole_rsweep` DIVISION=3); do not assume 4 faces for a cylinder downstream. STEP is the only metrology-grade export; STL stays f32. Untouched: no booleans anywhere in the STEP path (F-lead1-002).
+- **H-geom1-006** | 2026-11-05 18:45 | geom-1 | T-007 | Recipient: lead, qa, cad
+  **Progress:** T-007 deliverable is complete: `.github/workflows/step-check.yml` (`build` = fmt/clippy/workspace tests on ubuntu; `step-check` = windows-latest, choco installs FreeCAD weekly build, `cargo run --example export_step`, then `tests/step_check.py` validates blade [1 solid, z∈59..601 mm] and assembly [2 solids]) and `tests/step_check.py` (OCCT headless checker, exit 0 only on valid closed solid + optional `--solids`/`--z-min`/`--z-max`). The job's failure behaviour is proven locally: 2 positive (PASS/exit 0) and 4 negative (FAIL/exit 1: corrupt file, solids mismatch, z-bound violation, missing path) cases — see F-geom1-012.
+  **Next:** with a git remote added, the workflow activates on push; until then GitHub `actions/checkout@v4`, dtolnay/rust-toolchain, Swatinem/rust-cache and the choco `freecad` package pins have not been exercised by a real runner. qa may extend the same checker for T-107 golden STEP snapshots (`--z-min/-max`/`--solids` already expose the hooks).
+  **Cautions:** run the checker with FreeCAD's `bin\python.exe`, not `FreeCADCmd` (L-geom1-010). The choco FreeCAD package tracks weekly 1.x builds, so the CI FreeCAD may differ slightly from the local 1.1.1 — bounds in the workflow are deliberately loose (±1 mm) to absorb that. Prefer `Import.insert` for STEP over `Part.insert` (BREP-only deprecation).
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -471,4 +481,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T18:10+07:00 agent=geom-1 mem=v9 last_entry=H-geom1-004 note="lead said 'stl works next' -> T-006 takeover approved (D-geom1-005); implementing blade-cad CadKernel + truck STEP export"
 [END] 2026-11-05T18:24+07:00 agent=geom-1 mem=v10 note="T-006 done: crates/blade-cad CadKernel (blade 4-face solid, hub 12-face hollow cylinder, write_step); STEP exports target/naca4412.{blade,assembly}.step; FreeCAD 1.1.1 headless -> VALID, mm units, z 60..600 exact, volumes 126544.68 (blade) + 559831.81 (hub) mm^3, 0.04% above STL volume; 79 workspace tests + fmt/clippy/wasm32 clean; T-006 -> done"
 [RE-ACK] 2026-11-05T18:30+07:00 agent=geom-1 mem=v10 last_entry=H-geom1-005 note="lead approved T-007 qa-role takeover (D-geom1-006) in-session; authoring .github/workflows/step-check.yml + tests/step_check.py, verifying both valid and corrupt STEP locally before claiming done"
+[END] 2026-11-05T18:45+07:00 agent=geom-1 mem=v11 note="T-007 done: .github/workflows/step-check.yml (build + step-check jobs) and tests/step_check.py (FreeCAD OCCT headless validator); local proof runs: 2 positive PASS/exit0 (blade solids=1 z 60..600, assembly solids=2) and 4 negative FAIL/exit1 (corrupt, solids mismatch, z-bound, missing path); ran via FreeCAD bin/python.exe because FreeCADCmd argv conventions are hostile (L-geom1-010); CI activation still blocked by no git remote"
 ```

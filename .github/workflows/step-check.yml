@@ -1,0 +1,54 @@
+name: step-check
+
+# Headless verification (T-007) that exported STEP files are valid solids.
+# The job fails if a produced STEP is not a valid, closed solid in mm units.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace
+      - run: cargo test --workspace
+      - run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+
+  step-check:
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      # FreeCAD provides the OCCT kernel used to validate the STEP files.
+      # The community package tracks weekly builds of FreeCAD 1.x.
+      - name: Install FreeCAD (headless OCCT kernel)
+        shell: powershell
+        run: choco install freecad --prerelease -y --no-progress
+
+      - name: Build and export STEP
+        run: cargo run -p blade-cad --example export_step
+
+      - name: Validate blade STEP
+        shell: powershell
+        run: |
+          $py = Get-ChildItem "C:\Program Files\FreeCAD*\bin\python.exe","C:\ProgramData\chocolatey\lib\freecad\*\bin\python.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $py) { Write-Error "FreeCAD python not found"; exit 1 }
+          & $py.FullName tests\step_check.py target\naca4412.blade.step --solids 1 --z-min 59 --z-max 601
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Validate assembly STEP (blade + hub)
+        shell: powershell
+        run: |
+          $py = Get-ChildItem "C:\Program Files\FreeCAD*\bin\python.exe","C:\ProgramData\chocolatey\lib\freecad\*\bin\python.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $py) { Write-Error "FreeCAD python not found"; exit 1 }
+          & $py.FullName tests\step_check.py target\naca4412.assembly.step --solids 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }

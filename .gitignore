@@ -16,3 +16,8 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+# Python (qa step checkers)
+__pycache__/
+*.pyc
+step_check_result.txt
