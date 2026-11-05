@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 4**
-> **LAST_UPDATED: 2026-11-05 17:45 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 5**
+> **LAST_UPDATED: 2026-11-05 17:48 (UTC+7) by geom-1**
 
 ---
 
@@ -198,8 +198,8 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 0 — Spike: CAD Kernel Selection
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-001 | Init Cargo workspace, base CI, AGENTS.md | lead | | todo | | – | `cargo test` passes, CI active, verify/record latest truck-* versions as Fact |
-| T-002 | blade-model: Design schema v1 + serde + validation | lead | | todo | | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
+| T-001 | Init Cargo workspace, base CI, AGENTS.md | lead | geom-1 | in-progress | 2026-11-05 17:48 | – | `cargo test` passes, CI active, verify/record latest truck-* versions as Fact |
+| T-002 | blade-model: Design schema v1 + serde + validation | lead | geom-1 | in-progress | 2026-11-05 17:48 | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
 | T-003 | blade-geom: 4-digit NACA (continuous), cosine resample, trailing edge thickness check | geom | geom-1 | done | 2026-11-05 17:40 | T-002 | proptest: non-overlapping points, trailing edge thickness ≥ threshold |
 | T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | in-progress | 2026-11-05 17:40 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
 | T-005 | blade-mesh: Tessellation → binary STL export | mesh | | todo | | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
@@ -347,6 +347,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-002** | 2026-11-05 17:40 | geom-1 | T-003 | **Accepted**
   The lead approved in-session on 2026-11-05: (1) the D-geom1-001 contour convention is accepted as specified, and (2) Q-geom1-001 is answered — the dependency-free `crates/blade-geom/` core may proceed ahead of T-001/T-002, with `build_sections(&ResolvedBlade)` deferred until `blade-model` exists. geom-1 records the approval here because the workspace still has no git remote/PR channel.
   refs: plan.md §9.3 D-geom1-001, §9.4 Q-geom1-001 | supersedes: Q-geom1-001
+- **D-geom1-003** | 2026-11-05 17:48 | geom-1 | T-001 | **Accepted**
+  The lead approved in-session on 2026-11-05 that geom-1 takes over **T-001** (root Cargo workspace) and **T-002** (`blade-model` Design schema v1 + validation + resolve) so `build_sections(&ResolvedBlade)` can land and T-004 can finish. No §8 signature is amended — only the documented interfaces are implemented. Takeover scope: root `Cargo.toml`, `crates/blade-model/`, and `fixtures/naca4412-linear.json`. CI workflow files stay with qa (`.github/`); CI cannot be activated because no git remote exists.
+  refs: plan.md §7 T-001/T-002, §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -400,4 +403,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T17:40+07:00 agent=geom-1 mem=v3 last_entry=D-geom1-002 note="lead approved D-geom1-001 and Q-geom1-001 in-session; standalone blade-geom proceeds, T-004 loft core next"
 [NOTE] 2026-11-05T17:40+07:00 agent=geom-1 note="initialised local git repo (no remote configured yet) so claims/commits/trailers can follow §0.1/§0.3"
 [END] 2026-11-05T17:45+07:00 agent=geom-1 mem=v4 note="T-004 loft core done (Section3D/Point3/BladeSurface/loft, pass-through <= 1e-6 mm, 30 tests, fmt/clippy/wasm32 clean); build_sections still needs blade-model ResolvedBlade (T-002)"
+[RE-ACK] 2026-11-05T17:48+07:00 agent=geom-1 mem=v5 last_entry=D-geom1-003 note="lead approved geom-1 takeover of T-001 (workspace) + T-002 (blade-model schema v1); implementing build_sections to finish T-004"
 ```
