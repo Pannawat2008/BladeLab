@@ -119,24 +119,85 @@ pub enum CurveSource {
         /// Value at the blade tip.
         tip: f64,
     },
+    /// Layer-1 Schmitz optimum-rotor distribution over `r / R ∈ (0, 1]`.
+    ///
+    /// When used for `distributions.chord_mm`, `design_cl` is required (`> 0`)
+    /// and evaluates `c(r) = (16πr / (B · C_l)) · sin²((1/3) · atan(R / (λ · r)))`.
+    /// When used for `distributions.twist_deg`, `design_alpha_deg` is required
+    /// (`[-90, 90]`) and evaluates `β(r) = (2/3) · atan(R / (λ · r)) · (180/π) − α_design`.
+    Schmitz {
+        /// Design lift coefficient `C_l` (required when used for `chord_mm`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        design_cl: Option<f64>,
+        /// Design angle of attack `α_design` in degrees (required when used for `twist_deg`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        design_alpha_deg: Option<f64>,
+    },
 }
 
 impl CurveSource {
     /// Evaluates the curve at blade-span position `s ∈ [0, 1]`
     /// (`0` = hub, `1` = tip).
+    ///
+    /// For [`Self::Schmitz`], full evaluation requires rotor parameters and the
+    /// radial `span_ratio = r / R`; prefer [`Self::eval_chord`] and
+    /// [`Self::eval_twist`].
     #[must_use]
     pub fn eval(&self, s: f64) -> f64 {
         match self {
             Self::Constant { value } => *value,
             Self::Linear { root, tip } => root + (tip - root) * s,
+            Self::Schmitz {
+                design_cl,
+                design_alpha_deg,
+            } => design_cl.or(*design_alpha_deg).unwrap_or(0.0),
         }
     }
 
-    /// Root and tip values as a pair, for validation.
-    pub(crate) fn bounds(&self) -> (f64, f64) {
+    /// Evaluates a chord curve in mm at radial `span_ratio = r / R` and
+    /// blade-normalised coordinate `s ∈ [0, 1]`.
+    #[must_use]
+    pub fn eval_chord(&self, rotor: &Rotor, span_ratio: f64, s: f64) -> f64 {
         match self {
-            Self::Constant { value } => (*value, *value),
-            Self::Linear { root, tip } => (*root, *tip),
+            Self::Constant { value } => *value,
+            Self::Linear { root, tip } => root + (tip - root) * s,
+            Self::Schmitz { design_cl, .. } => {
+                let cl = design_cl.unwrap_or(1.0);
+                let r_mm = span_ratio * rotor.radius_mm;
+                let local_tsr = rotor.design_tsr * span_ratio;
+                let phi_rad = (2.0 / 3.0) * (1.0_f64).atan2(local_tsr);
+                let sin_half = (0.5 * phi_rad).sin();
+                (16.0 * std::f64::consts::PI * r_mm / (f64::from(rotor.blade_count) * cl))
+                    * sin_half
+                    * sin_half
+            }
+        }
+    }
+
+    /// Evaluates a twist curve in degrees at radial `span_ratio = r / R` and
+    /// blade-normalised coordinate `s ∈ [0, 1]`.
+    #[must_use]
+    pub fn eval_twist(&self, rotor: &Rotor, span_ratio: f64, s: f64) -> f64 {
+        match self {
+            Self::Constant { value } => *value,
+            Self::Linear { root, tip } => root + (tip - root) * s,
+            Self::Schmitz {
+                design_alpha_deg, ..
+            } => {
+                let alpha_deg = design_alpha_deg.unwrap_or(0.0);
+                let local_tsr = rotor.design_tsr * span_ratio;
+                let phi_deg = ((2.0 / 3.0) * (1.0_f64).atan2(local_tsr)).to_degrees();
+                phi_deg - alpha_deg
+            }
+        }
+    }
+
+    /// Root and tip values as a pair, for validation of constant/linear curves.
+    pub(crate) fn bounds(&self) -> Option<(f64, f64)> {
+        match self {
+            Self::Constant { value } => Some((*value, *value)),
+            Self::Linear { root, tip } => Some((*root, *tip)),
+            Self::Schmitz { .. } => None,
         }
     }
 }

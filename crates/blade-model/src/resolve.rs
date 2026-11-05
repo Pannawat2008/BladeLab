@@ -83,8 +83,14 @@ pub fn resolve(design: &Design) -> Result<ResolvedBlade, ModelError> {
     let mut stations = Vec::with_capacity(ratios.len());
     for ratio in ratios {
         let s = ((ratio - root_ratio) / span).clamp(0.0, 1.0);
-        let mut chord_mm = design.distributions.chord_mm.eval(s);
-        let mut twist_deg = design.distributions.twist_deg.eval(s);
+        let mut chord_mm = design
+            .distributions
+            .chord_mm
+            .eval_chord(&design.rotor, ratio, s);
+        let mut twist_deg = design
+            .distributions
+            .twist_deg
+            .eval_twist(&design.rotor, ratio, s);
         let mut spec = pick_airfoil(&design.airfoils, ratio)?;
 
         if let Some(over) = design

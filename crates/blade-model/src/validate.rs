@@ -100,20 +100,51 @@ fn check_rotor(design: &Design, issues: &mut Vec<ValidationIssue>) {
 }
 
 fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
-    check_curve(
-        &design.distributions.chord_mm,
-        "distributions.chord_mm",
-        issues,
-        positive,
-        "must be a finite, strictly positive length in mm",
-    );
-    check_curve(
-        &design.distributions.twist_deg,
-        "distributions.twist_deg",
-        issues,
-        |value| finite(value) && value.abs() <= MAX_TWIST_DEG,
-        "must be finite and within ±90 degrees",
-    );
+    match &design.distributions.chord_mm {
+        CurveSource::Schmitz { design_cl, .. } => {
+            if !design_cl.is_some_and(positive) {
+                issues.push(ValidationIssue::new(
+                    "distributions.chord_mm.design_cl",
+                    "must be a finite, strictly positive design lift coefficient",
+                ));
+            }
+            if !positive(design.rotor.hub_radius_mm) {
+                issues.push(ValidationIssue::new(
+                    "rotor.hub_radius_mm",
+                    "must be strictly positive when using a Schmitz chord distribution",
+                ));
+            }
+        }
+        curve => check_curve(
+            curve,
+            "distributions.chord_mm",
+            issues,
+            positive,
+            "must be a finite, strictly positive length in mm",
+        ),
+    }
+
+    match &design.distributions.twist_deg {
+        CurveSource::Schmitz {
+            design_alpha_deg, ..
+        } => {
+            let valid_alpha =
+                design_alpha_deg.is_some_and(|value| finite(value) && value.abs() <= MAX_TWIST_DEG);
+            if !valid_alpha {
+                issues.push(ValidationIssue::new(
+                    "distributions.twist_deg.design_alpha_deg",
+                    "must be finite and within ±90 degrees",
+                ));
+            }
+        }
+        curve => check_curve(
+            curve,
+            "distributions.twist_deg",
+            issues,
+            |value| finite(value) && value.abs() <= MAX_TWIST_DEG,
+            "must be finite and within ±90 degrees",
+        ),
+    }
 }
 
 fn check_curve(
@@ -123,12 +154,13 @@ fn check_curve(
     accepts: impl Fn(f64) -> bool,
     message: &str,
 ) {
-    let (root, tip) = curve.bounds();
-    if !accepts(root) {
-        issues.push(ValidationIssue::new(format!("{path}.root"), message));
-    }
-    if !accepts(tip) {
-        issues.push(ValidationIssue::new(format!("{path}.tip"), message));
+    if let Some((root, tip)) = curve.bounds() {
+        if !accepts(root) {
+            issues.push(ValidationIssue::new(format!("{path}.root"), message));
+        }
+        if !accepts(tip) {
+            issues.push(ValidationIssue::new(format!("{path}.tip"), message));
+        }
     }
 }
 

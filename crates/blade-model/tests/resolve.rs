@@ -169,3 +169,32 @@ fn hub_and_manufacturing_are_copied_through() {
     assert_eq!(blade.manufacturing, design.manufacturing);
     assert_eq!(blade.rotor, design.rotor);
 }
+
+#[test]
+fn resolves_schmitz_chord_and_twist_and_applies_layer_three_overrides() {
+    let raw = include_str!("../../../fixtures/naca4412-schmitz.json");
+    let mut design = Design::from_json(raw).expect("schmitz fixture parses");
+    let blade = resolve(&design).expect("schmitz fixture resolves");
+
+    assert_eq!(blade.stations.len(), 11);
+    // Root (r/R = 0.1, r = 60 mm, λ_r = 0.45):
+    assert!((blade.stations[0].chord_mm - 140.151_186_545_585_18).abs() < 1e-9);
+    assert!((blade.stations[0].twist_deg - 37.848_169_788_030_546).abs() < 1e-9);
+    // Peak chord station (r/R = 0.19, r = 114 mm, λ_r = 0.855):
+    assert!((blade.stations[1].chord_mm - 153.892_536_874_877_4).abs() < 1e-9);
+    // Tip (r/R = 1.0, r = 600 mm, λ_r = 4.5):
+    assert!((blade.stations[10].chord_mm - 53.316_582_840_324_145).abs() < 1e-9);
+    assert!((blade.stations[10].twist_deg - 2.352_538_472_767_673).abs() < 1e-9);
+
+    // Layer-3 override at the tip wins over Layer-1 Schmitz.
+    design.overrides.push(blade_model::StationOverride {
+        span_ratio: 1.0,
+        chord_mm: Some(40.0),
+        twist_deg: Some(1.5),
+        airfoil: None,
+    });
+    let overridden = resolve(&design).expect("resolves with override");
+    let tip = &overridden.stations[overridden.stations.len() - 1];
+    assert!((tip.chord_mm - 40.0).abs() < 1e-12);
+    assert!((tip.twist_deg - 1.5).abs() < 1e-12);
+}

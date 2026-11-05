@@ -14,11 +14,16 @@
 pub mod airfoil;
 pub mod distribution;
 pub mod error;
+pub mod schmitz;
 pub mod sections;
 pub mod surface;
 
 pub use airfoil::{Airfoil, Naca4, Point2};
 pub use distribution::{cosine_spacing, MIN_SAMPLES};
 pub use error::GeomError;
+pub use schmitz::{
+    schmitz_chord_mm, schmitz_distribution, schmitz_inflow_angle_deg, schmitz_station,
+    schmitz_twist_deg, SchmitzParams, SchmitzStation, MAX_ALPHA_DEG, MAX_DESIGN_CL,
+};
 pub use sections::{build_sections, SECTION_SAMPLES_PER_SURFACE};
 pub use surface::{loft, BladeSurface, Point3, Section3D, PASS_THROUGH_TOLERANCE_MM};

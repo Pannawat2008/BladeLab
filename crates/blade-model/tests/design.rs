@@ -195,3 +195,30 @@ fn hub_d_flat_is_optional_and_validated() {
     let issues = validate(&bad_zero).expect_err("zero flat is invalid");
     assert!(paths(&issues).contains(&"hub.shaft_flat_radial_mm".to_string()));
 }
+
+#[test]
+fn schmitz_fixture_parses_round_trips_and_validates() {
+    let raw = include_str!("../../../fixtures/naca4412-schmitz.json");
+    let design = Design::from_json(raw).expect("schmitz fixture parses");
+    assert!(validate(&design).is_ok());
+
+    let serialized = design.to_json().expect("serialises");
+    let reparsed = Design::from_json(&serialized).expect("re-parses");
+    assert_eq!(reparsed, design);
+
+    let mut bad = design.clone();
+    bad.distributions.chord_mm = blade_model::CurveSource::Schmitz {
+        design_cl: Some(0.0),
+        design_alpha_deg: None,
+    };
+    bad.distributions.twist_deg = blade_model::CurveSource::Schmitz {
+        design_cl: None,
+        design_alpha_deg: None,
+    };
+    bad.rotor.hub_radius_mm = 0.0;
+    let issues = validate(&bad).expect_err("invalid schmitz parameters");
+    let issue_paths = paths(&issues);
+    assert!(issue_paths.contains(&"distributions.chord_mm.design_cl".to_string()));
+    assert!(issue_paths.contains(&"distributions.twist_deg.design_alpha_deg".to_string()));
+    assert!(issue_paths.contains(&"rotor.hub_radius_mm".to_string()));
+}

@@ -1,9 +1,12 @@
 //! End-to-end geometry test: design JSON → resolved blade → sections → loft.
 
-use blade_geom::{build_sections, loft, PASS_THROUGH_TOLERANCE_MM};
+use blade_geom::{
+    build_sections, loft, schmitz_distribution, SchmitzParams, PASS_THROUGH_TOLERANCE_MM,
+};
 use blade_model::{resolve, Design};
 
 const FIXTURE: &str = include_str!("../../../fixtures/naca4412-linear.json");
+const SCHMITZ_FIXTURE: &str = include_str!("../../../fixtures/naca4412-schmitz.json");
 
 #[test]
 fn fixture_design_lofts_through_every_section() {
@@ -70,4 +73,29 @@ fn lofted_sections_follow_the_twist_distribution() {
     let tip_twist = 2.0_f64.to_radians();
     assert!((tip_le.x - tip_pivot * (1.0 - tip_twist.cos())).abs() < 1e-6);
     assert!((tip_le.y + tip_pivot * tip_twist.sin()).abs() < 1e-6);
+}
+
+#[test]
+fn schmitz_fixture_resolves_matches_formula_and_lofts() {
+    let design = Design::from_json(SCHMITZ_FIXTURE).expect("schmitz fixture parses");
+    let blade = resolve(&design).expect("schmitz fixture resolves");
+    let params = SchmitzParams::new(1.0, 6.0).expect("valid schmitz params");
+    let expected = schmitz_distribution(&design.rotor, &params).expect("schmitz table");
+
+    assert_eq!(blade.stations.len(), expected.len());
+    for (resolved, reference) in blade.stations.iter().zip(&expected) {
+        assert!((resolved.span_ratio - reference.span_ratio).abs() < 1e-12);
+        assert!((resolved.span_mm - reference.span_mm).abs() < 1e-9);
+        assert!((resolved.chord_mm - reference.chord_mm).abs() < 1e-12);
+        assert!((resolved.twist_deg - reference.twist_deg).abs() < 1e-12);
+    }
+
+    let sections = build_sections(&blade).expect("schmitz sections build");
+    let surface = loft(&sections).expect("schmitz sections loft");
+    for (index, section) in sections.iter().enumerate() {
+        let evaluated = surface.section_at(index).expect("valid section index");
+        for (got, target) in evaluated.iter().zip(section.points()) {
+            assert!(got.distance_to(target) <= PASS_THROUGH_TOLERANCE_MM);
+        }
+    }
 }

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 16**
-> **LAST_UPDATED: 2026-11-05 23:20 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 17**
+> **LAST_UPDATED: 2026-11-05 23:29 (UTC+7) by geom-1**
 
 ---
 
@@ -212,7 +212,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 1 — MVP
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | in-progress | 2026-11-05 23:20 | T-010 | Matches hand-calculated fixture values |
+| T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | done | 2026-11-05 23:29 | T-010 | Matches hand-calculated fixture values |
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | | todo | | T-005, T-006 | Generates valid files for all formats |
@@ -354,6 +354,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-016** | 2026-11-05 20:40 | geom-1 | T-102
   D-flat hub facts. `blade_model::Hub` now carries `shaft_flat_radial_mm: Option<f64>` (serde-default `None`, P-geom1-001); when set, `hub_solid` builds a **2D-extruded** hub — `builder::try_attach_plane(&[circle_wire(R), inner_d.inverse()])` for the holed annular face, then `builder::tsweep(&face, (0,0,L))` → 8-face closed solid (bottom/top caps + 3 outer arcs + 3 inner arcs). The bore keeps its circular arc where `x < d` and a straight chord at `x = d`; `0 < d < bore/2`. Closed-form volume `L·(πR² − [r²(π−acos(d/r)) + d·√(r²−d²)])`; verified: R=60, r=6, d=4.8, L=50 → FreeCAD reports exactly 560 126.1 mm³ as a valid STEP solid (`tests/step_check.py ... --solids 1` PASS). Round-bore hubs (field absent) keep the 12-face revolve path untouched, so the fixture and all prior tests are unchanged. The hub y-bbox of 121.244 mm (2×60.622) is the same FreeCAD STEP-import expansion shown for the round hub back in T-006 — pre-existing, not introduced here.
   refs: crates/blade-model/src/schema.rs, crates/blade-cad/src/kernel.rs, crates/blade-cad/tests/step.rs | supersedes: –
+- **F-geom1-017** | 2026-11-05 23:29 | geom-1 | T-101
+  Layer-1 Schmitz optimum-rotor formulas (`crates/blade-geom/src/schmitz.rs` and `CurveSource::Schmitz` in `blade-model`): at radial station `r = span_ratio · R` with local speed ratio `λ_r = λ · span_ratio`, optimal inflow angle `φ(r) = (2/3)·atan2(1, λ_r)`, optimal chord `c(r) = (16πr / (B·C_l))·sin²(φ(r)/2)`, and optimal twist `β(r) = φ_deg(r) − α_design`. Canonical fixture `fixtures/naca4412-schmitz.json` (`R = 600 mm`, `r_hub = 60 mm`, `B = 3`, `λ = 4.5`, `C_l = 1.0`, `α_design = 6°`, 11 stations) resolves to root `c = 140.151186546 mm` / `β = 37.848169788°`, peak chord at station 1 (`r/R = 0.19`, `λ_r = 0.855`) `c = 153.892536875 mm` / `β = 26.979704985°`, and tip `c = 53.316582840 mm` / `β = 2.352538473°`, matching independent IEEE-754 reference calculations to `< 1e-12` and lofting within `1e-6 mm`.
+  refs: crates/blade-geom/src/schmitz.rs, crates/blade-model/src/{schema,validate,resolve}.rs, fixtures/naca4412-schmitz.json | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -464,6 +467,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-012** | 2026-11-05 19:55 | geom-1 | T-009
   Docker gotchas hit while building the Manifold image: (1) `manifold-csg-sys` **clones the C++ source with git at build time** — the image needs `git` and `ca-certificates`, not just a C++ toolchain. (2) The binary's glibc/libstdc++ must match the runtime base: `rust:1-slim` is now built on trixie (GLIBC_2.38 / CXXABI_1.3.15), so the runtime stage must be `debian:trixie-slim` — `bookworm-slim` produces a "version `CXXABI_1.3.15` not found"-style loader error at run time, not build time. (3) PowerShell volume-path interpolation needs `${root}\target:/work` (brace the variable so `:` isn't consumed). (4) Trust findings, not `$LASTEXITCODE`, through `Select-String`-pipe pipelines (it reports -1 even on success); check `$?` or the last command's own exit.
   refs: deploy/manifold/Dockerfile, target/union.blade+hub.stl | supersedes: –
+- **L-geom1-014** | 2026-11-05 23:29 | geom-1 | T-101
+  Schmitz chord `c(λ_r) ∝ λ_r · sin²((1/3)·atan(1/λ_r))` is **not** monotonically decreasing near the axis: it vanishes as `r → 0` and reaches its stationary maximum where `tan(θ) = (1/3)·sin(6θ)` with `θ = (1/3)·atan(1/λ_r)`, i.e. at `λ_r* ≈ 0.7577` (`φ ≈ 35.24°`). Only for `λ_r > 0.7577` does chord strictly taper toward the tip; inflow angle `φ(r)` and twist `β(r)` decrease strictly across the entire span `(0, R]`.
+  refs: crates/blade-geom/tests/properties.rs | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -522,6 +528,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-102 is `done`. `Hub` gained optional `shaft_flat_radial_mm` (P-geom1-001 / D-geom1-010) and `hub_solid` now emits a D-flat-bore hub by 2D extrusion — `tsweep` of a holed annular face — with **no booleans** (F-lead1-002). Verified: 2 new cad tests (8-face shell, STEP round-trip with two flat-chord `Line` edges at z=0/50; invalid flat distances rejected) + 1 blade-model schema/validation test; `export_step` writes `target/naca4412.hub-dflat.step`, which FreeCAD 1.1 reports as a valid solid with volume exactly matching the closed form (560 126.1 mm³). Workspace 86 tests, fmt/clippy/wasm32 clean.
   **Next:** T-101 (Schmitz layer-1) is the last unclaimed Phase 1 task; T-203 can feed the D-flat hub into the Manifold server assembly; the `occt` optional feature remains open for fillets/chamfers.
   **Cautions:** the D-flat is purely additive — designs without the field keep the round revolve path byte-for-byte. The flat reference stays perpendicular to +x; a future shaft-alignment rotation would be a separate option. No §8 signature changed.
+- **H-geom1-011** | 2026-11-05 23:29 | geom-1 | T-101 | Recipient: lead, geom, web, aero
+  **Progress:** T-101 is `done`. `blade_geom::schmitz` implements `SchmitzParams`, `SchmitzStation`, `schmitz_inflow_angle_deg`, `schmitz_chord_mm`, `schmitz_twist_deg`, `schmitz_station`, and `schmitz_distribution`; `blade_model::CurveSource` gained `Schmitz { design_cl, design_alpha_deg }` (P-geom1-002 / D-geom1-011) with full validation and Layer-3 override compatibility; `fixtures/naca4412-schmitz.json` provides the 11-station canonical Schmitz fixture. Workspace is now at **97 tests** (up from 86), all green alongside `cargo fmt --check`, `clippy --workspace --all-targets -- -D warnings`, and `wasm32-unknown-unknown` builds.
+  **Next:** T-201 (Layer 2 Bézier curves and `evalexpr` formulas) is now unblocked (`Depends: T-101`); T-103/T-104 (server/CLI export), T-105/T-106 (web UI & `ts-rs`), and T-107 (qa golden tests) are all ready to claim.
+  **Cautions:** Schmitz chord requires `hub_radius_mm > 0` because `c(0) = 0 mm` violates positive section chord; `validate()` enforces this when `chord_mm` uses `CurveSource::Schmitz`.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -553,4 +563,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T20:40+07:00 agent=geom-1 mem=v15 note="T-102 done: Hub.shaft_flat_radial_mm (optional) + D-flat hub via 2D extrusion (tsweep of holed annular face, no booleans); R=60 r=6 d=4.8 L=50 -> FreeCAD valid solid, volume 560126.1 mm^3 exactly matches closed form; round-bore revolve path untouched; 86 workspace tests + fmt/clippy/wasm32 clean; P-geom1-001 Accepted, F-geom1-016/L-geom1-013/H-geom1-010 recorded"
 [ACK] 2026-11-05T23:20:00+07:00 agent=geom-1 mem=v15 last_entry=H-geom1-010 task=T-101
 [ACK-NOTE] geom-1: F-lead1-001 (mm/deg, f64, wasm32-clean, no panics/NaN), D-lead1-002 (B-spline loft single geometry source), F-geom1-007/008 (schema v1 + resolve over uniform stations + Layer-3 overrides) and D-geom1-009/010 confirmed. Claiming T-101 (Schmitz Layer-1 chord/twist generation) with P-geom1-002 / D-geom1-011 Accepted.
+[END] 2026-11-05T23:29+07:00 agent=geom-1 mem=v17 note="T-101 done: blade_geom::schmitz module + blade_model::CurveSource::Schmitz + fixtures/naca4412-schmitz.json; matches 11-station hand-calculated reference values to <1e-12 and lofts within 1e-6 mm; 97 workspace tests + fmt/clippy/wasm32 clean; F-geom1-017, L-geom1-014, H-geom1-011 recorded"
 ```
