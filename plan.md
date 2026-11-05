@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 12**
-> **LAST_UPDATED: 2026-11-05 19:15 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 13**
+> **LAST_UPDATED: 2026-11-05 19:55 (UTC+7) by geom-1**
 
 ---
 
@@ -206,7 +206,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | done | 2026-11-05 18:24 | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | done | 2026-11-05 19:15 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
-| T-009 | Build manifold-csg inside Docker container | server | geom-1 | in-progress | 2026-11-05 19:20 | T-001 | `docker build` succeeds, successfully unions blade + hub |
+| T-009 | Build manifold-csg inside Docker container | server | geom-1 | done | 2026-11-05 19:55 | T-001 | `docker build` succeeds, successfully unions blade + hub |
 | T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
 
 ### Phase 1 — MVP
@@ -345,6 +345,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-013** | 2026-11-05 19:15 | geom-1 | T-008
   `crates/blade-wasm` exposes one call, `build_mesh(design_json, overrides_json)` → indexed triangles, running the whole `Design → resolve → build_sections → loft → tessellate` pipeline in Rust (STEP stays server-side per §2). Overrides (`tip_chord_mm`/`tip_twist_deg`/`station_count`) rewrite the linear `CurveSource` tip values; layer-3 overrides in the JSON still win at their stations (L-geom1-004). Verified numbers: wasm 292.1 kB (release); browser first build 4.3 ms and a twist edit 0.5 ms; Node bench over 40 edits avg 0.43 ms / max 0.80 ms (budget 50 ms); baseline matches the STL exactly (1771 verts / 3538 tris / 126 493.7 mm³ / span 60→600). `web/` is Vite 8 + three 0.187; the wasm is bundled as an asset via `?url` + `await init(wasmUrl)`; `npm run bench` re-runs the budget check (needs `npm run wasm` first).
   refs: crates/blade-wasm, web/, L-geom1-010 | supersedes: –
+- **F-geom1-014** | 2026-11-05 19:55 | geom-1 | T-009
+  Manifold-in-Docker spike works. `manifold3d` 0.4.1 (zmerlynn's safe facade over `manifold-csg`): `Manifold::from_mesh_f64(verts, 3, tris)` / `union` / `difference` / `volume` / `genus` / `raw_status()`, and `manifold-csg-sys` **git-clones the C++ Manifold source at build time** (builder needs git + cmake + build-essential + ca-certificates). Verified: `docker build --no-cache` clean; run prints boolean self-check PASS (contained 8000, subtract 7000, overlapped 10 000 mm³ exactly), blade volume 126 493.727 mm³ (matches tessellation), hub = 64-gon hollow cylinder 558 932.941 mm³ (analytic π(3600−36)·50 = 559 831.8; faceted), `union = blade + hub = 685 426.668 mm³` exactly (parts are disjoint — 10 mm axial gap), genus 0, `NoError`. Independent Node STL validator on `target/union.blade+hub.stl`: 4050 tris, 685 426.670 mm³, 0 boundary / 0 non-manifold / 0 zero normals, z 0→600 mm. Image `bladelab/manifold:spike` 117 MB.
+  refs: deploy/manifold, F-geom1-009 | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -440,6 +443,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-011** | 2026-11-05 19:15 | geom-1 | T-008
   wasm tooling notes: (1) `wasm-bindgen-cli` must exactly match the `wasm-bindgen` crate version resolved in `Cargo.lock` (0.2.130 here) or the glue is silently wrong. (2) The `nodejs` glue is **synchronous** (reads the wasm via fs at require time) and sets `exports.build_mesh` directly; the `web` glue is an ES module exporting a default `init(module_or_path)` plus named exports — feed it `import wasmUrl from '../pkg/….wasm?url'; await init(wasmUrl)`. (3) On this machine `npm` is blocked as `npm.ps1` by the execution policy — always call `npm.cmd`. (4) `--no-typescript` skips `.d.ts`, so the TS toolchain does not type-check the generated glue (Vite/esbuild transpiles regardless). (5) A slider labelled "tip" only edits the *distribution* tip; the fixture's layer-3 override at `span_ratio = 1.0` keeps winning there (revisit L-geom1-004).
   refs: crates/blade-wasm, web/, Cargo.lock | supersedes: –
+- **L-geom1-012** | 2026-11-05 19:55 | geom-1 | T-009
+  Docker gotchas hit while building the Manifold image: (1) `manifold-csg-sys` **clones the C++ source with git at build time** — the image needs `git` and `ca-certificates`, not just a C++ toolchain. (2) The binary's glibc/libstdc++ must match the runtime base: `rust:1-slim` is now built on trixie (GLIBC_2.38 / CXXABI_1.3.15), so the runtime stage must be `debian:trixie-slim` — `bookworm-slim` produces a "version `CXXABI_1.3.15` not found"-style loader error at run time, not build time. (3) PowerShell volume-path interpolation needs `${root}\target:/work` (brace the variable so `:` isn't consumed). (4) Trust findings, not `$LASTEXITCODE`, through `Select-String`-pipe pipelines (it reports -1 even on success); check `$?` or the last command's own exit.
+  refs: deploy/manifold/Dockerfile, target/union.blade+hub.stl | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -477,6 +483,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-008 is `done`. `crates/blade-wasm/` (wasm-bindgen rlib+cdylib, 4 unit tests) wraps the existing Rust pipeline in `build_mesh(design_json, overrides_json)`; `web/` is a Vite 8 + Three.js 0.187 viewer with tip-twist/tip-chord sliders that re-run the pipeline live. Acceptance verified in the app: renders with zero console errors (screenshot), and a twist edit updates in **0.5 ms** (Node bench avg 0.43 ms / max 0.80 ms over 40 edits, budget 50 ms); `npm run bench` re-verifies it against the known STL numbers. Workspace total is now **83 tests**, fmt/clippy/wasm32 clean; `vite build` produces `web/dist` with the wasm as an asset.
   **Next:** T-105 (React UI with per-station table) can reuse `web/` + the wasm `MeshData` directly; T-008-style regenerable glue lives under `npm run wasm` (build wasm → `wasm-bindgen --target web`). The viewer currently re-sends the full design JSON per edit — if the 50 ms budget ever tightens, cache the parsed `Design` behind a separate wasm entry point.
   **Cautions:** `web/pkg`, `target/glue-node` and `web/dist` are gitignored (regenerate with `npm run wasm` / `npm run build`). The `wasm-bindgen` CLI must match the crate version (L-geom1-011). blade-cad stays native-only; nothing in this task touches §8 or the cad/wasm boundary.
+- **H-geom1-008** | 2026-11-05 19:55 | geom-1 | T-009 | Recipient: lead, server, cad, qa
+  **Progress:** T-009 is `done`. `deploy/manifold/` delivers a self-contained image (`bladelab/manifold:spike`, 117 MB, debian trixie runtime): a `manifold3d`-based `manifold-union` runner that loads a binary STL (weld on exact f32 bits), builds the hub as a hollow 64-gon cylinder (`cylinder(50,60,60) − cylinder(50,6,6)`), boolean-unions, and writes a binary STL. It runs a deterministic 3-assertion boolean self-check first. Verified locally: `docker build --no-cache` clean; union run → self-check PASS, blade 126 493.727 + hub 558 932.941 = union 685 426.668 mm³, genus 0, `NoError`; the output STL is independently watertight (0 boundary / 0 non-manifold edges, volume matches to 0.002 mm³, z 0→600 mm). `deploy/manifold/run-demo.ps1` regenerates the blade STL if needed and runs the whole thing.
+  **Next:** T-203 (unified blade+hub assembly + 3MF in `blade-server`) can adopt `manifold3d` directly; T-010's kernel decision now has concrete data (truck cannot export booleans — F-lead1-002 — while Manifold booleans are proven here; likely division of labour: truck for STEP B-rep, Manifold for server meshes/3MF). A deeper assembly with an overlapping hub could show union < sum on the real parts.
+  **Cautions:** input is f32 STL (volume exact to ~0.002 mm³); the 64-gon hub is faceted (volume slightly below the analytic 559 831.8). The union STL lives in gitignored `target/`. Booleans must stay off the wasm/STEP paths (D-lead1-005). The container build needs network (git clone of the C++ source).
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -501,4 +511,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T19:00+07:00 agent=geom-1 mem=v11 last_entry=H-geom1-006 note="lead delegated next-task choice ('up to you') -> T-008 web takeover approved (D-geom1-007); building crates/blade-wasm (wasm-bindgen wrap of model->geom->mesh) + web/ Three.js viewer with live twist/chord sliders and a 50 ms update budget"
 [END] 2026-11-05T19:15+07:00 agent=geom-1 mem=v12 note="T-008 done: crates/blade-wasm build_mesh(design_json, overrides_json) wraps resolve->sections->loft->tessellate; web/ Vite+Three.js viewer renders blade (0 console errors), live twist/chord edits rebuild in 0.5 ms browser / 0.43 avg 0.80 max ms in Node bench (budget 50 ms); baseline matches STL (1771/3538/126493.7 mm^3/span 60..600); 83 workspace tests + fmt/clippy clean; wasm 292 kB, vite build bundles it; npm run wasm regenerates glue (wasm-bindgen 0.2.130)"
 [RE-ACK] 2026-11-05T19:20+07:00 agent=geom-1 mem=v12 last_entry=H-geom1-007 note="lead: 'next' -> T-009 server-role takeover approved (D-geom1-008); building deploy/ Docker image with a Manifold boolean engine and unioning fixture blade+hub STLs; Docker Desktop engine not running yet, starting it for local verification"
+[END] 2026-11-05T19:55+07:00 agent=geom-1 mem=v13 note="T-009 done: deploy/manifold Docker image (trixie, 117MB) with manifold3d 0.4.1 union runner; docker build --no-cache clean; union of fixture blade+hub STL = single watertight solid (genus 0, NoError), self-check PASS (8000/7000/10000 mm^3 exact), blade 126493.727 + hub 558932.941 = union 685426.668 mm^3; independent Node validator: 4050 tris, 0 boundary/non-manifold edges; Docker Desktop started to run it; gotchas: maniclot-csg-sys git-clones C++ at build time, runtime base must match rust:1-slim glibc (trixie)"
 ```
