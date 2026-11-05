@@ -9,9 +9,9 @@
 //! This module is the implementation of the `build_sections` contract in §8 of
 //! `plan.md`; the signature is fixed by that contract.
 
-use blade_model::ResolvedBlade;
+use blade_model::{ResolvedAirfoil, ResolvedBlade};
 
-use crate::airfoil::Naca4;
+use crate::airfoil::{blend_airfoils, library_airfoil, Airfoil, Naca4};
 use crate::error::GeomError;
 use crate::surface::Section3D;
 
@@ -34,6 +34,8 @@ pub const SECTION_SAMPLES_PER_SURFACE: usize = 81;
 ///   supplied (a surface needs at least two sections).
 /// - [`GeomError::InvalidChord`] / [`GeomError::OutOfRange`] when a station's
 ///   parameters are outside the NACA or section-placement domain.
+/// - [`GeomError::InvalidAirfoilData`] when a named airfoil is not in the
+///   built-in library.
 /// - [`GeomError::TrailingEdgeTooThin`] when a section violates the
 ///   manufacturing limit.
 pub fn build_sections(blade: &ResolvedBlade) -> Result<Vec<Section3D>, GeomError> {
@@ -45,18 +47,16 @@ pub fn build_sections(blade: &ResolvedBlade) -> Result<Vec<Section3D>, GeomError
     }
 
     let pitch_axis_ratio = blade.rotor.pitch_axis_ratio;
+    let min_te_mm = blade.manufacturing.min_trailing_edge_mm;
     let mut sections = Vec::with_capacity(blade.stations.len());
 
     for station in &blade.stations {
-        let profile = Naca4::new(
-            station.airfoil.max_camber,
-            station.airfoil.camber_position,
-            station.airfoil.thickness_ratio,
+        let airfoil = eval_resolved_airfoil(
+            &station.airfoil,
+            station.chord_mm,
+            min_te_mm,
+            SECTION_SAMPLES_PER_SURFACE,
         )?;
-
-        profile.check_trailing_edge(station.chord_mm, blade.manufacturing.min_trailing_edge_mm)?;
-
-        let airfoil = profile.surface(station.chord_mm, SECTION_SAMPLES_PER_SURFACE)?;
         sections.push(Section3D::from_airfoil(
             &airfoil,
             station.chord_mm,
@@ -67,6 +67,91 @@ pub fn build_sections(blade: &ResolvedBlade) -> Result<Vec<Section3D>, GeomError
     }
 
     Ok(sections)
+}
+
+/// Builds 3-D cross-sections by linearly blending between `root_airfoil` at the
+/// blade root and `tip_airfoil` at the blade tip (`T-202`).
+///
+/// Each station's contour is interpolated at its normalised blade-span position
+/// `s = (r - r_hub) / (R - r_hub)` via [`blend_airfoils`], checked against
+/// `manufacturing.min_trailing_edge_mm`, and placed in 3-D.
+///
+/// # Errors
+///
+/// Returns [`GeomError`] if station count is `< 2`, either airfoil fails to
+/// evaluate, or any blended section violates the trailing-edge thickness limit.
+pub fn build_blended_sections(
+    blade: &ResolvedBlade,
+    root_airfoil: &ResolvedAirfoil,
+    tip_airfoil: &ResolvedAirfoil,
+) -> Result<Vec<Section3D>, GeomError> {
+    if blade.stations.len() < 2 {
+        return Err(GeomError::TooFewSections {
+            min: 2,
+            got: blade.stations.len(),
+        });
+    }
+
+    let pitch_axis_ratio = blade.rotor.pitch_axis_ratio;
+    let min_te_mm = blade.manufacturing.min_trailing_edge_mm;
+    let root_span_mm = blade.stations[0].span_mm;
+    let tip_span_mm = blade.stations[blade.stations.len() - 1].span_mm;
+    let span_range = (tip_span_mm - root_span_mm).max(1e-9);
+
+    let mut sections = Vec::with_capacity(blade.stations.len());
+    for station in &blade.stations {
+        let weight = ((station.span_mm - root_span_mm) / span_range).clamp(0.0, 1.0);
+        let root_contour = eval_resolved_airfoil(
+            root_airfoil,
+            station.chord_mm,
+            0.0,
+            SECTION_SAMPLES_PER_SURFACE,
+        )?;
+        let tip_contour = eval_resolved_airfoil(
+            tip_airfoil,
+            station.chord_mm,
+            0.0,
+            SECTION_SAMPLES_PER_SURFACE,
+        )?;
+        let blended = blend_airfoils(&root_contour, &tip_contour, weight)?;
+        let actual_mm = blended.trailing_edge_thickness_mm();
+        if actual_mm < min_te_mm {
+            return Err(GeomError::TrailingEdgeTooThin {
+                actual_mm,
+                min_mm: min_te_mm,
+            });
+        }
+        sections.push(Section3D::from_airfoil(
+            &blended,
+            station.chord_mm,
+            station.twist_deg,
+            pitch_axis_ratio,
+            station.span_mm,
+        )?);
+    }
+
+    Ok(sections)
+}
+
+fn eval_resolved_airfoil(
+    resolved: &ResolvedAirfoil,
+    chord_mm: f64,
+    min_te_mm: f64,
+    samples_per_surface: usize,
+) -> Result<Airfoil, GeomError> {
+    if let Some(name) = &resolved.name {
+        let dat = library_airfoil(name)?;
+        dat.check_trailing_edge(chord_mm, min_te_mm)?;
+        dat.surface(chord_mm, samples_per_surface)
+    } else {
+        let profile = Naca4::new(
+            resolved.max_camber,
+            resolved.camber_position,
+            resolved.thickness_ratio,
+        )?;
+        profile.check_trailing_edge(chord_mm, min_te_mm)?;
+        profile.surface(chord_mm, samples_per_surface)
+    }
 }
 
 #[cfg(test)]

@@ -99,3 +99,42 @@ fn schmitz_fixture_resolves_matches_formula_and_lofts() {
         }
     }
 }
+
+#[test]
+fn library_airfoils_sg6043_sd7062_e387_and_blending_build_and_loft() {
+    use blade_geom::build_blended_sections;
+    use blade_model::AirfoilSpec;
+
+    for name in ["SG6043", "SD7062", "E387"] {
+        let mut design = Design::from_json(FIXTURE).expect("fixture parses");
+        design.manufacturing.min_trailing_edge_mm = 0.05;
+        for station in &mut design.airfoils {
+            station.airfoil = AirfoilSpec::Named {
+                name: name.to_string(),
+            };
+        }
+        let blade = resolve(&design).unwrap_or_else(|err| panic!("{name} resolve: {err}"));
+        let sections =
+            build_sections(&blade).unwrap_or_else(|err| panic!("{name} build_sections: {err}"));
+        let surface = loft(&sections).unwrap_or_else(|err| panic!("{name} loft: {err}"));
+        assert_eq!(surface.section_count(), blade.stations.len());
+    }
+
+    // Blended blade from SD7062 at root to SG6043 at tip.
+    let mut design = Design::from_json(FIXTURE).expect("fixture parses");
+    design.manufacturing.min_trailing_edge_mm = 0.05;
+    design.airfoils[0].airfoil = AirfoilSpec::Named {
+        name: "SD7062".to_string(),
+    };
+    let last_idx = design.airfoils.len() - 1;
+    design.airfoils[last_idx].airfoil = AirfoilSpec::Named {
+        name: "SG6043".to_string(),
+    };
+    let blade = resolve(&design).expect("blended design resolves");
+    let root_airfoil = &blade.stations[0].airfoil;
+    let tip_airfoil = &blade.stations[blade.stations.len() - 1].airfoil;
+    let blended_sections =
+        build_blended_sections(&blade, root_airfoil, tip_airfoil).expect("blended sections build");
+    let surface = loft(&blended_sections).expect("blended sections loft");
+    assert_eq!(surface.section_count(), blade.stations.len());
+}

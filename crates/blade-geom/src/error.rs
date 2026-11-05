@@ -109,4 +109,8 @@ pub enum GeomError {
         /// Number of points per section.
         count: usize,
     },
+
+    /// Malformed `.dat` airfoil coordinate data or unknown library airfoil (`T-202`).
+    #[error("invalid airfoil data: {0}")]
+    InvalidAirfoilData(String),
 }

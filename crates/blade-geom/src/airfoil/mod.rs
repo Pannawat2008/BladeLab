@@ -1,7 +1,11 @@
 //! Airfoil profiles and their 2-D representation.
 
+mod dat;
 mod naca4;
 
+pub use dat::{
+    blend_airfoils, library_airfoil, library_airfoil_names, DatAirfoil, LIBRARY_AIRFOIL_NAMES,
+};
 pub use naca4::Naca4;
 
 use crate::error::GeomError;

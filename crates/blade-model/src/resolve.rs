@@ -40,7 +40,7 @@ pub struct ResolvedStation {
 }
 
 /// Airfoil parameters handed to the geometry kernel.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedAirfoil {
     /// Maximum camber ratio `m`.
     pub max_camber: f64,
@@ -48,6 +48,9 @@ pub struct ResolvedAirfoil {
     pub camber_position: f64,
     /// Thickness ratio `t`.
     pub thickness_ratio: f64,
+    /// Canonical built-in library airfoil name (`"SG6043"`, `"SD7062"`, `"E387"`),
+    /// or `None` when the station uses a 4-digit NACA profile (`T-202`).
+    pub name: Option<String>,
 }
 
 /// Merges the three parameterisation layers into concrete sections.
@@ -156,7 +159,34 @@ fn resolve_airfoil(spec: &AirfoilSpec) -> Result<ResolvedAirfoil, ModelError> {
             max_camber: *max_camber,
             camber_position: *camber_position,
             thickness_ratio: *thickness_ratio,
+            name: None,
         }),
-        AirfoilSpec::Named { name } => Err(ModelError::UnsupportedAirfoil(name.clone())),
+        AirfoilSpec::Named { name } => {
+            let trimmed = name.trim();
+            if trimmed.eq_ignore_ascii_case("SG6043") {
+                Ok(ResolvedAirfoil {
+                    max_camber: 0.055,
+                    camber_position: 0.48,
+                    thickness_ratio: 0.1002,
+                    name: Some("SG6043".to_string()),
+                })
+            } else if trimmed.eq_ignore_ascii_case("SD7062") {
+                Ok(ResolvedAirfoil {
+                    max_camber: 0.0397,
+                    camber_position: 0.385,
+                    thickness_ratio: 0.1398,
+                    name: Some("SD7062".to_string()),
+                })
+            } else if trimmed.eq_ignore_ascii_case("E387") {
+                Ok(ResolvedAirfoil {
+                    max_camber: 0.038,
+                    camber_position: 0.405,
+                    thickness_ratio: 0.0907,
+                    name: Some("E387".to_string()),
+                })
+            } else {
+                Err(ModelError::UnsupportedAirfoil(name.clone()))
+            }
+        }
     }
 }

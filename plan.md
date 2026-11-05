@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 30**
+> **MEMORY_VERSION: 31**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -224,7 +224,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
-| T-202 | Airfoil library + .dat import + blending | geom | geom-1 | in-progress | 2026-11-06 01:05 | T-003 | SG6043, SD7062, E387 pass all tests |
+| T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | | todo | | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
 | T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
@@ -381,6 +381,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-023** | 2026-11-06 01:04 | geom-1 | T-201
   `blade_model::CurveSource` now supports `Bezier { points: Vec<BezierControlPoint> }` (`eval_bezier` solving `x(t) = s` via 48-iteration bisection over De Casteljau) and `Formula { expr: String }` (`eval_formula` via `evalexpr` 11.3.1 with bound variables `x = r/R`, `s`, `r`, `R`, `r_hub`, `B`, `tsr`, `pi` and math functions `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `abs`, `exp`, `ln`, `pow`, `deg`, `rad`). Malformed formulas, unknown variables, division by zero, `NaN`/`±∞`, and out-of-domain values are caught in `validate()` and reported as `ValidationIssue` entries without panicking.
   refs: crates/blade-model/src/{curve,schema,validate}.rs, web/src/types/blade-model.ts | supersedes: –
+- **F-geom1-024** | 2026-11-06 01:13 | geom-1 | T-202
+  `data/airfoils/{SG6043,SD7062,E387}.dat` provide the Selig-format low-Reynolds wind-turbine library airfoils embedded via `include_str!` into `crates/blade-geom/src/airfoil/dat.rs`. `DatAirfoil::from_dat` parses both Selig and Lednicer `.dat` files, enforces finite open trailing-edge thickness (`D-lead1-003`), and resamples onto cosine-spaced chordwise stations (`2·n − 1` points per `D-geom1-001`). `blend_airfoils(&Airfoil, &Airfoil, weight)` and `build_blended_sections` interpolate smoothly between root and tip contours, and `blade_model::resolve` + `blade_geom::build_sections` now support `AirfoilSpec::Named` (`SG6043`, `SD7062`, `E387`).
+  refs: data/airfoils/*.dat, crates/blade-geom/src/airfoil/dat.rs, crates/blade-geom/src/sections.rs, crates/blade-model/src/resolve.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -614,6 +617,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-201 is `done`. `blade-model` implements `CurveSource::Bezier` and `CurveSource::Formula` (`evalexpr` 11.3.1, `wasm32`-clean), `web/src/types/blade-model.ts` (`ts-rs`) and `web/src/state.ts` are updated to match, and 2 new test suites in `blade-model` verify Bézier/formula resolution and non-panicking rejection of malformed formulas. Workspace total is **112 Rust tests + 4 Node tests**, all green.
   **Next:** **T-202** (Airfoil library + `.dat` import + blending) and **T-205** (UI curve editor, value scrubbing, locking & binding, now unblocked by `T-201`).
   **Cautions:** In `evalexpr`, integer division `1 / 3` evaluates to `0`; write float literals `1.0 / 3.0` (or `2.0 / 3.0`) in formulas when floating-point division of constants is intended.
+- **H-geom1-018** | 2026-11-06 01:14 | geom-1 | T-202 | Recipient: lead, geom, aero, web, qa
+  **Progress:** T-202 is `done`. `data/airfoils/{SG6043,SD7062,E387}.dat` and `blade_geom::{DatAirfoil, library_airfoil, library_airfoil_names, blend_airfoils, build_blended_sections}` are implemented and wired into `blade_model::resolve` and `blade_geom::build_sections`. All 3 library airfoils (`SG6043`, `SD7062`, `E387`), Lednicer `.dat` import, and root-to-tip airfoil blending pass all unit and end-to-end loft tests. Workspace total is **117 Rust tests + 4 Node tests**, all green.
+  **Next:** **T-203** (Unified blade+hub assembly via Manifold booleans + 3MF), **T-204** (PostgreSQL persistence: designs, versioning), and **T-205** (UI: Curve editor, value scrubbing, locking & binding).
+  **Cautions:** `resolve()` preserves step-function `AirfoilStation` selection on `station.airfoil` so existing multi-station fixtures (`naca2415-multistation-dflat.json`) keep byte-identical golden geometry; use `blend_airfoils` or `build_blended_sections` for smooth contour transitions.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -659,4 +666,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T00:58:00+07:00 agent=geom-1 mem=v27 last_entry=H-geom1-016 task=T-201 note="lead: 'do all phase2' -> claiming T-201 (Layer 2 Bezier curves and evalexpr formulas with x = r/R) under D-geom1-017 / P-geom1-003"
 [END] 2026-11-06T01:04+07:00 agent=geom-1 mem=v29 note="T-201 done: CurveSource::Bezier + CurveSource::Formula (evalexpr 11.3.1, x = r/R) + ts-rs bindings + validation/resolve tests; 112 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-023, H-geom1-017 recorded"
 [RE-ACK] 2026-11-06T01:05:00+07:00 agent=geom-1 mem=v29 last_entry=H-geom1-017 task=T-202 note="lead: 'do all phase2' -> claiming T-202 (Airfoil library SG6043/SD7062/E387 + .dat import + blending) under D-geom1-018 / P-geom1-004"
+[END] 2026-11-06T01:14+07:00 agent=geom-1 mem=v31 note="T-202 done: data/airfoils/{SG6043,SD7062,E387}.dat + DatAirfoil + library_airfoil + blend_airfoils + build_blended_sections + AirfoilSpec::Named support in resolve/build_sections; 117 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-024, H-geom1-018 recorded"
 ```

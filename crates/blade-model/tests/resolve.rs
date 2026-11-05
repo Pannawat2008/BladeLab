@@ -139,12 +139,29 @@ fn constant_curves_resolve_to_one_value() {
 fn named_airfoils_are_rejected_with_a_clear_error() {
     let mut design = typical();
     design.airfoils[0].airfoil = AirfoilSpec::Named {
-        name: "SG6043".to_string(),
+        name: "UNKNOWN_FOIL_999".to_string(),
     };
 
     match resolve(&design) {
-        Err(ModelError::UnsupportedAirfoil(name)) => assert_eq!(name, "SG6043"),
+        Err(ModelError::UnsupportedAirfoil(name)) => assert_eq!(name, "UNKNOWN_FOIL_999"),
         other => panic!("expected UnsupportedAirfoil, got {other:?}"),
+    }
+}
+
+#[test]
+fn resolves_library_airfoils_sg6043_sd7062_and_e387() {
+    for (name, expected_thickness) in [("SG6043", 0.1002), ("SD7062", 0.1398), ("E387", 0.0907)] {
+        let mut design = typical();
+        for station in &mut design.airfoils {
+            station.airfoil = AirfoilSpec::Named {
+                name: name.to_string(),
+            };
+        }
+        let blade = resolve(&design).unwrap_or_else(|err| panic!("{name}: {err}"));
+        for station in &blade.stations {
+            assert_eq!(station.airfoil.name.as_deref(), Some(name));
+            assert!((station.airfoil.thickness_ratio - expected_thickness).abs() < 1e-6);
+        }
     }
 }
 
