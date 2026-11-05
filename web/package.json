@@ -1,0 +1,24 @@
+{
+  "name": "bladelab-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Real-time Three.js blade preview driven by the Rust core via wasm.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "wasm:build": "cargo build -p blade-wasm --release --target wasm32-unknown-unknown",
+    "wasm:gen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/blade_wasm.wasm --out-dir pkg --target web --no-typescript",
+    "wasm": "npm run wasm:build && npm run wasm:gen",
+    "bench": "node scripts/bench.cjs"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.6"
+  }
+}

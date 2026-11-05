@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 11**
-> **LAST_UPDATED: 2026-11-05 18:45 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 12**
+> **LAST_UPDATED: 2026-11-05 19:15 (UTC+7) by geom-1**
 
 ---
 
@@ -205,7 +205,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | done | 2026-11-05 18:10 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | done | 2026-11-05 18:24 | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
-| T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | in-progress | 2026-11-05 19:00 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
+| T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | done | 2026-11-05 19:15 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | | todo | | T-001 | `docker build` succeeds, successfully unions blade + hub |
 | T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
 
@@ -342,6 +342,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-012** | 2026-11-05 18:45 | geom-1 | T-007
   `tests/step_check.py` + `.github/workflows/step-check.yml` form the T-007 headless STEP gate. Verified locally with FreeCAD's bundled `python.exe` (not FreeCADCmd): valid exports → `PASS` exit 0 (blade 1 solid z 60→600 mm + 126 544.7 mm³; assembly 2 solids 686 376.5 mm³); corrupt file, wrong `--solids`, violated `--z-min`, and missing path each → `FAIL` exit 1. FreeCAD's `Import.insert` returns `None` (shape recovered from `doc.Objects`), and the checker writes a PASS/FAIL record to `step_check_result.txt` because FreeCAD's console swallows script `print()`.
   refs: tests/step_check.py, .github/workflows/step-check.yml | supersedes: –
+- **F-geom1-013** | 2026-11-05 19:15 | geom-1 | T-008
+  `crates/blade-wasm` exposes one call, `build_mesh(design_json, overrides_json)` → indexed triangles, running the whole `Design → resolve → build_sections → loft → tessellate` pipeline in Rust (STEP stays server-side per §2). Overrides (`tip_chord_mm`/`tip_twist_deg`/`station_count`) rewrite the linear `CurveSource` tip values; layer-3 overrides in the JSON still win at their stations (L-geom1-004). Verified numbers: wasm 292.1 kB (release); browser first build 4.3 ms and a twist edit 0.5 ms; Node bench over 40 edits avg 0.43 ms / max 0.80 ms (budget 50 ms); baseline matches the STL exactly (1771 verts / 3538 tris / 126 493.7 mm³ / span 60→600). `web/` is Vite 8 + three 0.187; the wasm is bundled as an asset via `?url` + `await init(wasmUrl)`; `npm run bench` re-runs the budget check (needs `npm run wasm` first).
+  refs: crates/blade-wasm, web/, L-geom1-010 | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -431,6 +434,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-010** | 2026-11-05 18:45 | geom-1 | T-007
   FreeCAD's own scripting argv conventions are hostile: `FreeCADCmd` puts its executable at `sys.argv[0]` and the script at `argv[1]`, treats any other positional argument as a document to open, and its `--pass` option only forwards **one** following token (multiple unquoted flags after `--pass` made it print help and exit). Its console also swallows script `print()` output. The reliable runner is FreeCAD's bundled `bin\python.exe` (plain argv semantics, stdout works); `Import.insert(..., doc.Name)` returns `None` in 1.1, so read `doc.Objects[0].Shape`.
   refs: C:\Program Files\FreeCAD 1.1\bin, tests/step_check.py | supersedes: –
+- **L-geom1-011** | 2026-11-05 19:15 | geom-1 | T-008
+  wasm tooling notes: (1) `wasm-bindgen-cli` must exactly match the `wasm-bindgen` crate version resolved in `Cargo.lock` (0.2.130 here) or the glue is silently wrong. (2) The `nodejs` glue is **synchronous** (reads the wasm via fs at require time) and sets `exports.build_mesh` directly; the `web` glue is an ES module exporting a default `init(module_or_path)` plus named exports — feed it `import wasmUrl from '../pkg/….wasm?url'; await init(wasmUrl)`. (3) On this machine `npm` is blocked as `npm.ps1` by the execution policy — always call `npm.cmd`. (4) `--no-typescript` skips `.d.ts`, so the TS toolchain does not type-check the generated glue (Vite/esbuild transpiles regardless). (5) A slider labelled "tip" only edits the *distribution* tip; the fixture's layer-3 override at `span_ratio = 1.0` keeps winning there (revisit L-geom1-004).
+  refs: crates/blade-wasm, web/, Cargo.lock | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -464,6 +470,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-007 deliverable is complete: `.github/workflows/step-check.yml` (`build` = fmt/clippy/workspace tests on ubuntu; `step-check` = windows-latest, choco installs FreeCAD weekly build, `cargo run --example export_step`, then `tests/step_check.py` validates blade [1 solid, z∈59..601 mm] and assembly [2 solids]) and `tests/step_check.py` (OCCT headless checker, exit 0 only on valid closed solid + optional `--solids`/`--z-min`/`--z-max`). The job's failure behaviour is proven locally: 2 positive (PASS/exit 0) and 4 negative (FAIL/exit 1: corrupt file, solids mismatch, z-bound violation, missing path) cases — see F-geom1-012.
   **Next:** with a git remote added, the workflow activates on push; until then GitHub `actions/checkout@v4`, dtolnay/rust-toolchain, Swatinem/rust-cache and the choco `freecad` package pins have not been exercised by a real runner. qa may extend the same checker for T-107 golden STEP snapshots (`--z-min/-max`/`--solids` already expose the hooks).
   **Cautions:** run the checker with FreeCAD's `bin\python.exe`, not `FreeCADCmd` (L-geom1-010). The choco FreeCAD package tracks weekly 1.x builds, so the CI FreeCAD may differ slightly from the local 1.1.1 — bounds in the workflow are deliberately loose (±1 mm) to absorb that. Prefer `Import.insert` for STEP over `Part.insert` (BREP-only deprecation).
+- **H-geom1-007** | 2026-11-05 19:15 | geom-1 | T-008 | Recipient: lead, web, cad
+  **Progress:** T-008 is `done`. `crates/blade-wasm/` (wasm-bindgen rlib+cdylib, 4 unit tests) wraps the existing Rust pipeline in `build_mesh(design_json, overrides_json)`; `web/` is a Vite 8 + Three.js 0.187 viewer with tip-twist/tip-chord sliders that re-run the pipeline live. Acceptance verified in the app: renders with zero console errors (screenshot), and a twist edit updates in **0.5 ms** (Node bench avg 0.43 ms / max 0.80 ms over 40 edits, budget 50 ms); `npm run bench` re-verifies it against the known STL numbers. Workspace total is now **83 tests**, fmt/clippy/wasm32 clean; `vite build` produces `web/dist` with the wasm as an asset.
+  **Next:** T-105 (React UI with per-station table) can reuse `web/` + the wasm `MeshData` directly; T-008-style regenerable glue lives under `npm run wasm` (build wasm → `wasm-bindgen --target web`). The viewer currently re-sends the full design JSON per edit — if the 50 ms budget ever tightens, cache the parsed `Design` behind a separate wasm entry point.
+  **Cautions:** `web/pkg`, `target/glue-node` and `web/dist` are gitignored (regenerate with `npm run wasm` / `npm run build`). The `wasm-bindgen` CLI must match the crate version (L-geom1-011). blade-cad stays native-only; nothing in this task touches §8 or the cad/wasm boundary.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -486,4 +496,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T18:30+07:00 agent=geom-1 mem=v10 last_entry=H-geom1-005 note="lead approved T-007 qa-role takeover (D-geom1-006) in-session; authoring .github/workflows/step-check.yml + tests/step_check.py, verifying both valid and corrupt STEP locally before claiming done"
 [END] 2026-11-05T18:45+07:00 agent=geom-1 mem=v11 note="T-007 done: .github/workflows/step-check.yml (build + step-check jobs) and tests/step_check.py (FreeCAD OCCT headless validator); local proof runs: 2 positive PASS/exit0 (blade solids=1 z 60..600, assembly solids=2) and 4 negative FAIL/exit1 (corrupt, solids mismatch, z-bound, missing path); ran via FreeCAD bin/python.exe because FreeCADCmd argv conventions are hostile (L-geom1-010); CI activation still blocked by no git remote"
 [RE-ACK] 2026-11-05T19:00+07:00 agent=geom-1 mem=v11 last_entry=H-geom1-006 note="lead delegated next-task choice ('up to you') -> T-008 web takeover approved (D-geom1-007); building crates/blade-wasm (wasm-bindgen wrap of model->geom->mesh) + web/ Three.js viewer with live twist/chord sliders and a 50 ms update budget"
+[END] 2026-11-05T19:15+07:00 agent=geom-1 mem=v12 note="T-008 done: crates/blade-wasm build_mesh(design_json, overrides_json) wraps resolve->sections->loft->tessellate; web/ Vite+Three.js viewer renders blade (0 console errors), live twist/chord edits rebuild in 0.5 ms browser / 0.43 avg 0.80 max ms in Node bench (budget 50 ms); baseline matches STL (1771/3538/126493.7 mm^3/span 60..600); 83 workspace tests + fmt/clippy clean; wasm 292 kB, vite build bundles it; npm run wasm regenerates glue (wasm-bindgen 0.2.130)"
 ```

@@ -119,6 +119,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "blade-wasm"
+version = "0.1.0"
+dependencies = [
+ "blade-geom",
+ "blade-mesh",
+ "blade-model",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

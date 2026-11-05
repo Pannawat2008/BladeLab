@@ -2,6 +2,11 @@
 /target
 **/target/
 
+# Generated wasm glue / web build
+web/pkg/
+target/glue-node/
+web/dist/
+
 # Node / web
 node_modules/
 dist/
