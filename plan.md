@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 3**
-> **LAST_UPDATED: 2026-11-05 17:40 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 4**
+> **LAST_UPDATED: 2026-11-05 17:45 (UTC+7) by geom-1**
 
 ---
 
@@ -312,6 +312,12 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-002** | 2026-11-05 17:37 | geom-1 | T-003
   Local toolchain is rustc/cargo 1.95.0; the `wasm32-unknown-unknown` target was missing and had to be added with `rustup target add wasm32-unknown-unknown`. `cargo build --target wasm32-unknown-unknown` for blade-geom passes, so the crate keeps the F-lead1-001 wasm constraint.
   refs: crates/blade-geom | supersedes: –
+- **F-geom1-003** | 2026-11-05 17:45 | geom-1 | T-004
+  `loft()` returns a clamped B-spline surface of degree `min(3, sections−1)` built by global interpolation at span-normalised parameters (`0` root, `1` tip) and an LU solve with partial pivoting. Pass-through error stays within `PASS_THROUGH_TOLERANCE_MM = 1e-6` mm (proptest over 2–10 sections × 3–16 points). Blade coordinates are `x` = chord, `y` = thickness, `z` = span (mm); `Section3D::from_airfoil` scales to chord, rotates by twist (degrees) about `x = pitch_axis_ratio · chord`, then places the section at its span station.
+  refs: crates/blade-geom/src/surface.rs, tests/loft_properties.rs | supersedes: –
+- **F-geom1-004** | 2026-11-05 17:45 | geom-1 | –
+  L-geom1-001 is resolved for the local workspace: a git repository now exists on branch `main` (initialised 2026-11-05 17:40), so claims and commits can follow §5.1/§0.3. There is still **no remote**, so `git pull --rebase` and `git push` remain impossible until a remote is configured; commits are local-only.
+  refs: .gitignore, `.git` | supersedes: L-geom1-001
 
 ### 9.3 Decisions (D)
 
@@ -362,6 +368,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-002** | 2026-11-05 17:37 | geom-1 | T-003
   `proptest`'s `prop_assert!` stringifies its expression into a format string, so `prop_assert!(matches!(v, Err(E { .. })))` fails to compile with "expected `}` in format string". Bind the result to a `bool` first (`let rejected = matches!(...); prop_assert!(rejected);`).
   refs: crates/blade-geom/tests/properties.rs | supersedes: –
+- **L-geom1-003** | 2026-11-05 17:45 | geom-1 | T-004
+  `clippy -- -D warnings` rejects negated float comparisons (`!(a > b)`) via `neg_cmp_op_on_partial_ord`; use `a.partial_cmp(&b) != Some(Ordering::Greater)` for strict ordering checks (span monotonicity, station monotonicity).
+  refs: crates/blade-geom/src/surface.rs, src/distribution.rs | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -375,6 +384,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** `crates/blade-geom/` is a standalone crate (no workspace root yet) implementing T-003: `Naca4::{new, camber_line, half_thickness, trailing_edge_thickness_mm, check_trailing_edge, surface}` → `Airfoil`, plus `cosine_spacing(n)`. Verified `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, 13 unit + 4 proptest + 2 doctests, and `cargo build --target wasm32-unknown-unknown`.
   **Next:** T-001 must create the root workspace (this crate uses plain dependency versions, no workspace inheritance) and remove the stray `crates/blade-geom/Cargo.lock`; T-004 then adds `build_sections`/`loft` once `blade-model` exposes `ResolvedBlade`.
   **Cautions:** Do not change the contour ordering without amending D-geom1-001 (mesh/cad depend on it). The TE minimum is a caller-supplied `min_mm`; no hidden global threshold. Nothing is committed or pushed (no git repo — see L-geom1-001), so these files exist only locally.
+- **H-geom1-002** | 2026-11-05 17:45 | geom-1 | T-004 | Recipient: mesh, cad, lead
+  **Progress:** T-004 geometry core is implemented and green: `Section3D::{new, from_airfoil}`, `Point3`, `BladeSurface::{point_at, point_at_span_mm, section_at, control_points, knots, degree, section_params}` and `loft(&[Section3D])` with pass-through error ≤ 1e-6 mm. 21 unit + 6 proptest + 3 doctests pass; fmt/clippy/wasm32 clean.
+  **Next:** `build_sections(&ResolvedBlade)` (layer 1 + layer 3 merge → sections) still waits for `blade-model` `ResolvedBlade` (T-002). mesh/cad can already consume `BladeSurface` with explicitly built sections.
+  **Cautions:** sections must share identical topology and strictly increasing span stations; this is an interpolating surface, so control-point count grows 1:1 with the section stack.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -386,4 +399,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T17:38+07:00 agent=geom-1 mem=v2 note="T-003 core done in crates/blade-geom (NACA4 + cosine resample + TE check); 19 tests, fmt/clippy/wasm32 clean; T-003 -> review; blocked on T-001 workspace + T-002 ResolvedBlade; no git repo so nothing pushed"
 [RE-ACK] 2026-11-05T17:40+07:00 agent=geom-1 mem=v3 last_entry=D-geom1-002 note="lead approved D-geom1-001 and Q-geom1-001 in-session; standalone blade-geom proceeds, T-004 loft core next"
 [NOTE] 2026-11-05T17:40+07:00 agent=geom-1 note="initialised local git repo (no remote configured yet) so claims/commits/trailers can follow §0.1/§0.3"
+[END] 2026-11-05T17:45+07:00 agent=geom-1 mem=v4 note="T-004 loft core done (Section3D/Point3/BladeSurface/loft, pass-through <= 1e-6 mm, 30 tests, fmt/clippy/wasm32 clean); build_sections still needs blade-model ResolvedBlade (T-002)"
 ```

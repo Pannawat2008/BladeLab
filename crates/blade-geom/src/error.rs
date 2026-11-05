@@ -58,4 +58,55 @@ pub enum GeomError {
         /// Required minimum thickness in mm.
         min_mm: f64,
     },
+
+    /// Not enough cross-sections were supplied for a loft.
+    #[error("at least {min} sections are required for a loft, got {got}")]
+    TooFewSections {
+        /// Smallest accepted section count.
+        min: usize,
+        /// Supplied section count.
+        got: usize,
+    },
+
+    /// Sections do not share the same point count.
+    #[error("section {section} has {got} points but {expected} were expected")]
+    TopologyMismatch {
+        /// Index of the offending section.
+        section: usize,
+        /// Point count of the first section.
+        expected: usize,
+        /// Point count of the offending section.
+        got: usize,
+    },
+
+    /// Section spans are not strictly increasing.
+    #[error(
+        "section spans must be strictly increasing; section {index} is not above its predecessor"
+    )]
+    SpansNotIncreasing {
+        /// Index of the first section that breaks monotonicity.
+        index: usize,
+    },
+
+    /// The spanwise B-spline interpolation matrix could not be factorised.
+    #[error("the spanwise B-spline interpolation system is singular")]
+    SingularSystem,
+
+    /// A section index was outside the loft.
+    #[error("section index {index} is out of range for {count} sections")]
+    SectionIndexOutOfRange {
+        /// Requested index.
+        index: usize,
+        /// Number of sections in the loft.
+        count: usize,
+    },
+
+    /// A chordwise point index was outside the section topology.
+    #[error("point index {index} is out of range for {count} points")]
+    PointIndexOutOfRange {
+        /// Requested index.
+        index: usize,
+        /// Number of points per section.
+        count: usize,
+    },
 }
