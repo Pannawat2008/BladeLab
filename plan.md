@@ -205,7 +205,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | done | 2026-11-05 18:10 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | done | 2026-11-05 18:24 | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
-| T-008 | blade-wasm + Three.js live blade rendering | web | | todo | | T-005 | Web view renders blade, updates within 50 ms upon twist change |
+| T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | in-progress | 2026-11-05 19:00 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | | todo | | T-001 | `docker build` succeeds, successfully unions blade + hub |
 | T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
 
@@ -383,6 +383,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-006** | 2026-11-05 18:30 | geom-1 | T-007 | **Accepted**
   The lead approved in-session on 2026-11-05 (question prompt) that geom-1 takes over **T-007** (qa role: headless STEP verification CI). Since no `qa` agent exists in this workspace, geom-1 owns the deliverable under qa's §4 paths: `.github/workflows/step-check.yml` (the CI job) and `tests/step_check.py` (the FreeCAD-driven checker). The job must fail when an exported STEP is not a valid solid; the checker is exercised locally through both a valid and a deliberately corrupt STEP because no git remote exists to actually run GitHub Actions (L-geom1-001). `blade-cad` continues to be the only body feeding the check. No §8 signatures are touched.
   refs: plan.md §7 T-007, §4 (qa row), L-geom1-008 | supersedes: –
+- **D-geom1-007** | 2026-11-05 19:00 | geom-1 | T-008 | **Accepted**
+  The lead delegated the next-task choice in-session on 2026-11-05 ("up to you"), which approves the **T-008** takeover (web role: `crates/blade-wasm/` + `web/`). Scope: (1) a `wasm-bindgen` crate that wraps the existing `blade-model → blade-geom → blade-mesh` pipeline (`Design::from_json → resolve → build_sections → loft → tessellate`) behind one `build_mesh(design_json, overrides_json)` call returning indexed triangle data; (2) a Three.js view that renders the blade and re-runs the pipeline from slider overrides (tip twist / tip chord), meeting the 50 ms update budget, verified by a Node benchmark of the compiled wasm. STEP stays out of the wasm bundle (§2). The live-twist knob is implemented as an override that mutates the parsed design's `CurveSource::Linear` distributions, so no §8/core interface changes are needed. qa-role `.github/` is untouched by this task.
+  refs: plan.md §7 T-008, §3 (web/ + crates/blade-wasm/), §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -482,4 +485,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T18:24+07:00 agent=geom-1 mem=v10 note="T-006 done: crates/blade-cad CadKernel (blade 4-face solid, hub 12-face hollow cylinder, write_step); STEP exports target/naca4412.{blade,assembly}.step; FreeCAD 1.1.1 headless -> VALID, mm units, z 60..600 exact, volumes 126544.68 (blade) + 559831.81 (hub) mm^3, 0.04% above STL volume; 79 workspace tests + fmt/clippy/wasm32 clean; T-006 -> done"
 [RE-ACK] 2026-11-05T18:30+07:00 agent=geom-1 mem=v10 last_entry=H-geom1-005 note="lead approved T-007 qa-role takeover (D-geom1-006) in-session; authoring .github/workflows/step-check.yml + tests/step_check.py, verifying both valid and corrupt STEP locally before claiming done"
 [END] 2026-11-05T18:45+07:00 agent=geom-1 mem=v11 note="T-007 done: .github/workflows/step-check.yml (build + step-check jobs) and tests/step_check.py (FreeCAD OCCT headless validator); local proof runs: 2 positive PASS/exit0 (blade solids=1 z 60..600, assembly solids=2) and 4 negative FAIL/exit1 (corrupt, solids mismatch, z-bound, missing path); ran via FreeCAD bin/python.exe because FreeCADCmd argv conventions are hostile (L-geom1-010); CI activation still blocked by no git remote"
+[RE-ACK] 2026-11-05T19:00+07:00 agent=geom-1 mem=v11 last_entry=H-geom1-006 note="lead delegated next-task choice ('up to you') -> T-008 web takeover approved (D-geom1-007); building crates/blade-wasm (wasm-bindgen wrap of model->geom->mesh) + web/ Three.js viewer with live twist/chord sliders and a 50 ms update budget"
 ```
