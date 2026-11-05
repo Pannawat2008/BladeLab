@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 35**
+> **MEMORY_VERSION: 36**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -227,7 +227,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | done | 2026-11-06 01:23 | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | geom-1 | done | 2026-11-06 01:27 | T-103 | Full CRUD + version tracking functional |
-| T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
+| T-205 | UI: Curve editor, value scrubbing, locking & binding | web | geom-1 | in-progress | 2026-11-06 01:28 | T-201 | Conforms to UI interaction specifications |
 
 ### Phase 3 — Simulation & Testing
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
@@ -473,6 +473,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-020** | 2026-11-06 01:24 | geom-1 | T-204 | **Accepted**
   The lead's "do all phase2" instruction in-session on 2026-11-06 approves the **T-204** takeover (`server` role: `crates/blade-server/`). Scope: (1) PostgreSQL schema migration (`crates/blade-server/migrations/0001_designs.sql` defining `designs` and `design_versions` tables with `JSONB` payload + `blake3` content digest); (2) `DesignStore` persistence layer supporting both PostgreSQL (`DATABASE_URL`) and an in-process transactional store for zero-daemon CI/integration testing; (3) REST endpoints `POST /api/v1/designs`, `GET /api/v1/designs`, `GET /api/v1/designs/{id}`, `PUT /api/v1/designs/{id}`, `DELETE /api/v1/designs/{id}`, `GET /api/v1/designs/{id}/versions`, and `GET /api/v1/designs/{id}/versions/{version}` with full semantic validation and immutable version history tracking. No §8 signatures are modified.
   refs: plan.md §7 T-204, §2, §3 | supersedes: –
+- **D-geom1-021** | 2026-11-06 01:28 | geom-1 | T-205 | **Accepted**
+  The lead's "do all phase2" instruction in-session on 2026-11-06 approves the **T-205** takeover (`web` role: `web/`). Scope: (1) interactive Layer-2 Curve Editor (`Bezier` control-point SVG curve editor + `Formula` expression editor with `x = r/R`) for `chord_mm` and `twist_deg`; (2) numeric value scrubbing (`applyScrubDelta` with `Shift` 10× coarse and `Alt` 0.1× fine modifiers + pointer-drag scrubbing on parameter labels); (3) per-station locking (`lockedStations` preserving locked station chord/twist as Layer-3 overrides when Layer-1/2 curves change) and root-to-tip taper ratio binding (`taperRatio = tip / root`). No §8 signatures are modified.
+  refs: plan.md §7 T-205, §3, §6.2 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -691,4 +694,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T01:23+07:00 agent=geom-1 mem=v33 note="T-203 done: blade_cad::{hub_mesh, assembly_mesh} + deploy/manifold 3MF/overlap union + blade-cli/blade-server assembly 3MF/STL export; single connected watertight manifold solid across all 5 fixtures; 118 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-025, H-geom1-019 recorded"
 [RE-ACK] 2026-11-06T01:24:00+07:00 agent=geom-1 mem=v33 last_entry=H-geom1-019 task=T-204 note="lead: 'do all phase2' -> claiming T-204 (PostgreSQL persistence: designs, versioning) under D-geom1-020"
 [END] 2026-11-06T01:27+07:00 agent=geom-1 mem=v35 note="T-204 done: crates/blade-server/migrations/0001_designs.sql + DesignStore + /api/v1/designs CRUD and version history endpoints; 120 Rust tests + 4 Node tests + fmt/clippy clean; F-geom1-026, H-geom1-020 recorded"
+[RE-ACK] 2026-11-06T01:28:00+07:00 agent=geom-1 mem=v35 last_entry=H-geom1-020 task=T-205 note="lead: 'do all phase2' -> claiming T-205 (UI: Curve editor, value scrubbing, locking & binding) under D-geom1-021"
 ```
