@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 8**
-> **LAST_UPDATED: 2026-11-05 18:07 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 9**
+> **LAST_UPDATED: 2026-11-05 18:10 (UTC+7) by geom-1**
 
 ---
 
@@ -202,8 +202,8 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-002 | blade-model: Design schema v1 + serde + validation | lead | geom-1 | done | 2026-11-05 17:54 | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
 | T-003 | blade-geom: 4-digit NACA (continuous), cosine resample, trailing edge thickness check | geom | geom-1 | done | 2026-11-05 17:40 | T-002 | proptest: non-overlapping points, trailing edge thickness ≥ threshold |
 | T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | done | 2026-11-05 17:54 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
-| T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | review | 2026-11-05 18:07 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
-| T-006 | blade-cad: Blade solid using truck → STEP export | cad | | todo | | T-004 | Opens in FreeCAD as a valid solid in mm units |
+| T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | done | 2026-11-05 18:10 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
+| T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | in-progress | 2026-11-05 18:10 | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | | todo | | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | | todo | | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | | todo | | T-001 | `docker build` succeeds, successfully unions blade + hub |
@@ -371,6 +371,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-004** | 2026-11-05 18:03 | geom-1 | T-005 | **Accepted**
   The lead approved in-session on 2026-11-05 that geom-1 takes over **T-005** (`crates/blade-mesh/`: tessellation + binary STL) because the `mesh` role has no agent in this workspace and T-004 is done. Scope: new `crates/blade-mesh/`, its workspace membership, and implementation of the §8 `tessellate`/`write_stl`/`check_mesh` contracts **without changing their signatures**. STL/3MF are the only outputs; no booleans (D-lead1-005).
   refs: plan.md §7 T-005, §8, F-geom1-008 | supersedes: –
+- **D-geom1-005** | 2026-11-05 18:10 | geom-1 | T-006 | **Accepted**
+  The lead confirmed in-session on 2026-11-05 that the exported STL opens correctly ("stl works") and instructed geom-1 to continue, which approves the **T-006** takeover (`crates/blade-cad/`). Scope: implement the §8 `CadKernel` trait (`blade_solid`, `hub_solid`, `write_step`) and the truck-backed STEP export, plus workspace membership. `blade-cad` is native/server-side per §2, so it is exempt from the wasm32 constraint that applies to model/geom/mesh/aero; no booleans in the STEP path (F-lead1-002), and OCCT remains an optional feature only per D-lead1-004.
+  refs: plan.md §7 T-006, §8, §2, F-geom1-005 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -448,4 +451,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T17:54+07:00 agent=geom-1 mem=v6 note="T-002 + T-004 done: workspace root, blade-model schema/validate/resolve, build_sections adapter; fixture pipeline Design->resolve->sections->loft passes <=1e-6 mm; 59 tests + fmt + clippy -D warnings + wasm32 builds clean; T-001 still in-progress (CI needs a git remote)"
 [RE-ACK] 2026-11-05T18:03+07:00 agent=geom-1 mem=v7 last_entry=H-geom1-003 note="lead approved T-005 takeover (D-geom1-004); implementing tessellate/write_stl/check_mesh in crates/blade-mesh"
 [END] 2026-11-05T18:07+07:00 agent=geom-1 mem=v8 note="T-005 in review: crates/blade-mesh tessellate/check_mesh/write_stl; fixture mesh watertight, 3538 tris, 126493.7 mm^3, 176984-byte STL; 72 workspace tests + fmt/clippy/wasm32 clean; independent Node STL parser agrees; slicer open is the remaining human check"
+[NOTE] 2026-11-05T18:10+07:00 agent=geom-1 note="lead confirmed the fixture STL opens in a slicer; T-005 -> done"
+[RE-ACK] 2026-11-05T18:10+07:00 agent=geom-1 mem=v9 last_entry=H-geom1-004 note="lead said 'stl works next' -> T-006 takeover approved (D-geom1-005); implementing blade-cad CadKernel + truck STEP export"
 ```
