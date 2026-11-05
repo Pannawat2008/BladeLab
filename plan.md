@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 31**
+> **MEMORY_VERSION: 32**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -225,7 +225,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 |---|---|---|---|---|---|---|---|
 | T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
 | T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
-| T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | | todo | | T-102 | Yields a single watertight manifold part |
+| T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | in-progress | 2026-11-06 01:16 | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
 | T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
 
@@ -461,6 +461,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-018** | 2026-11-06 01:05 | geom-1 | T-202 | **Accepted**
   The lead's "do all phase2" instruction in-session on 2026-11-06 approves **T-202** (`geom` role) and accepts **P-geom1-004**: (1) bundle Selig-format `.dat` files for `SG6043`, `SD7062`, and `E387` under `data/airfoils/` (and embed them via `include_str!` so `blade-model` and `blade-geom` stay I/O-free and `wasm32`-clean); (2) add `.dat` parsing (`DatAirfoil::from_dat`), cosine-spaced resampling with finite open trailing-edge enforcement (`D-lead1-003`), and contour blending (`blend_airfoils(&Airfoil, &Airfoil, weight)`) in `blade-geom`; (3) support `AirfoilSpec::Named` (`SG6043`, `SD7062`, `E387`) and spanwise blending between consecutive `AirfoilStation` entries in `blade-model::resolve` and `blade-geom::build_sections` without changing any §8 function signature.
   refs: plan.md §7 T-202, §9.6 P-geom1-004, §8 | supersedes: –
+- **D-geom1-019** | 2026-11-06 01:16 | geom-1 | T-203 | **Accepted**
+  The lead's "do all phase2" instruction in-session on 2026-11-06 approves the **T-203** takeover (`cad` / `server` role): (1) extend `deploy/manifold/` (`manifold3d` boolean union runner) to overlap the hub with the blade root, boolean-union them into a single watertight genus-1 solid, and export both `.stl` and `.3mf`; (2) add native watertight hub and unified blade+hub assembly mesh construction (`hub_mesh`, `assembly_mesh`) and wire `--part hub` and `--part assembly` for `stl` and `3mf` into `blade-cli` and `blade-server` (`POST /api/v1/export`) so every export path yields a single connected watertight manifold part verified by `check_mesh`. No §8 signatures are modified.
+  refs: plan.md §7 T-203, D-lead1-005, D-geom1-009 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -667,4 +670,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T01:04+07:00 agent=geom-1 mem=v29 note="T-201 done: CurveSource::Bezier + CurveSource::Formula (evalexpr 11.3.1, x = r/R) + ts-rs bindings + validation/resolve tests; 112 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-023, H-geom1-017 recorded"
 [RE-ACK] 2026-11-06T01:05:00+07:00 agent=geom-1 mem=v29 last_entry=H-geom1-017 task=T-202 note="lead: 'do all phase2' -> claiming T-202 (Airfoil library SG6043/SD7062/E387 + .dat import + blending) under D-geom1-018 / P-geom1-004"
 [END] 2026-11-06T01:14+07:00 agent=geom-1 mem=v31 note="T-202 done: data/airfoils/{SG6043,SD7062,E387}.dat + DatAirfoil + library_airfoil + blend_airfoils + build_blended_sections + AirfoilSpec::Named support in resolve/build_sections; 117 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-024, H-geom1-018 recorded"
+[RE-ACK] 2026-11-06T01:16:00+07:00 agent=geom-1 mem=v31 last_entry=H-geom1-018 task=T-203 note="lead: 'do all phase2' -> claiming T-203 (Unified blade+hub assembly via Manifold booleans + 3MF) under D-geom1-019"
 ```
