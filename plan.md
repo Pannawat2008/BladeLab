@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 29**
+> **MEMORY_VERSION: 30**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -224,7 +224,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
-| T-202 | Airfoil library + .dat import + blending | geom | | todo | | T-003 | SG6043, SD7062, E387 pass all tests |
+| T-202 | Airfoil library + .dat import + blending | geom | geom-1 | in-progress | 2026-11-06 01:05 | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | | todo | | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
 | T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
@@ -455,6 +455,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-017** | 2026-11-06 00:58 | geom-1 | T-201 | **Accepted**
   The lead's "do all phase2" instruction in-session on 2026-11-06 approves **T-201** (`geom` role) and accepts **P-geom1-003**: `blade_model::CurveSource` gains `Bezier { points: Vec<BezierControlPoint> }` (with `BezierControlPoint { x, y }` over blade span `x ∈ [0, 1]` or radial `r/R`, evaluated via De Casteljau / monotonic-x cubic or general Bernstein evaluation) and `Formula { expr: String }` (evaluated via `evalexpr` with variable `x = r / R`, plus `s`, `r`, `R`, `r_hub`, `B`, `tsr`, `pi`). Malformed formulas, unknown variables, division by zero, and non-finite outputs are caught in `validate()` and `eval_*()` and returned as clear `ValidationIssue` messages without panicking. `evalexpr` is pure Rust and `wasm32`-clean; no §8 function signatures are modified.
   refs: plan.md §7 T-201, §9.6 P-geom1-003, §8 | supersedes: –
+- **D-geom1-018** | 2026-11-06 01:05 | geom-1 | T-202 | **Accepted**
+  The lead's "do all phase2" instruction in-session on 2026-11-06 approves **T-202** (`geom` role) and accepts **P-geom1-004**: (1) bundle Selig-format `.dat` files for `SG6043`, `SD7062`, and `E387` under `data/airfoils/` (and embed them via `include_str!` so `blade-model` and `blade-geom` stay I/O-free and `wasm32`-clean); (2) add `.dat` parsing (`DatAirfoil::from_dat`), cosine-spaced resampling with finite open trailing-edge enforcement (`D-lead1-003`), and contour blending (`blend_airfoils(&Airfoil, &Airfoil, weight)`) in `blade-geom`; (3) support `AirfoilSpec::Named` (`SG6043`, `SD7062`, `E387`) and spanwise blending between consecutive `AirfoilStation` entries in `blade-model::resolve` and `blade-geom::build_sections` without changing any §8 function signature.
+  refs: plan.md §7 T-202, §9.6 P-geom1-004, §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -535,6 +538,11 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Rationale:** T-201 requires Layer-2 Bézier curves and `evalexpr` formulas (`x = r/R`) that integrate directly into `Design` JSON, `validate()`, `resolve()`, and `ts-rs` TypeScript bindings (`T-106`/`T-205`).
   **Impacted Crates:** `blade-model` (`schema`, `validate`, `resolve`, `Cargo.toml`), `blade-geom` (`curve` module re-exports), `web/src/types/blade-model.ts`.
   **Alternatives Considered:** Putting `evalexpr` only in `blade-geom` — rejected because `blade_model::validate` and `blade_model::resolve` evaluate `CurveSource` directly during schema validation and station resolution.
+- **P-geom1-004** | 2026-11-06 01:05 | geom-1 | T-202 | **State: Accepted (D-geom1-018)**
+  **Proposed Change:** Extend `blade_model::ResolvedAirfoil` with optional contour / blending metadata (while keeping `max_camber`, `camber_position`, `thickness_ratio` fields intact for backward compatibility) so `resolve` can represent NACA4, named library airfoils (`SG6043`, `SD7062`, `E387`), and spanwise blended transitions between stations, and `blade_geom::build_sections` evaluates them via `DatAirfoil` / `Naca4` / `blend_airfoils`.
+  **Rationale:** T-202 requires `.dat` import, the `SG6043`, `SD7062`, and `E387` library airfoils, and spanwise airfoil blending while keeping `blade-model` and `blade-geom` I/O-free (`wasm32-unknown-unknown`) and preserving §8 signatures.
+  **Impacted Crates:** `data/airfoils/*.dat`, `blade-model` (`resolve`), `blade-geom` (`airfoil::dat`, `airfoil::blend`, `sections`).
+  **Alternatives Considered:** Filesystem reads at runtime — rejected because core crates must be I/O-free and compile to `wasm32-unknown-unknown` (`plan.md` §0.2).
 
 ### 9.7 Handoffs (H)
 
@@ -650,4 +658,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T00:56+07:00 agent=geom-1 mem=v27 note="T-105 done (closes Phase 1 MVP): web/src/state.ts + web/index.html + web/src/main.ts (Layer 1 rotor/distribution controls, Layer 3 per-station override table, DesignHistory undo/redo, live <1 ms wasm 3D updates); 110 Rust tests + 4 Node tests + tsc + vite build + bench clean; F-geom1-022, H-geom1-016 recorded"
 [RE-ACK] 2026-11-06T00:58:00+07:00 agent=geom-1 mem=v27 last_entry=H-geom1-016 task=T-201 note="lead: 'do all phase2' -> claiming T-201 (Layer 2 Bezier curves and evalexpr formulas with x = r/R) under D-geom1-017 / P-geom1-003"
 [END] 2026-11-06T01:04+07:00 agent=geom-1 mem=v29 note="T-201 done: CurveSource::Bezier + CurveSource::Formula (evalexpr 11.3.1, x = r/R) + ts-rs bindings + validation/resolve tests; 112 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-023, H-geom1-017 recorded"
+[RE-ACK] 2026-11-06T01:05:00+07:00 agent=geom-1 mem=v29 last_entry=H-geom1-017 task=T-202 note="lead: 'do all phase2' -> claiming T-202 (Airfoil library SG6043/SD7062/E387 + .dat import + blending) under D-geom1-018 / P-geom1-004"
 ```
