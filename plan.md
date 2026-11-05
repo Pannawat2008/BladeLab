@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 13**
-> **LAST_UPDATED: 2026-11-05 19:55 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 14**
+> **LAST_UPDATED: 2026-11-05 20:12 (UTC+7) by geom-1**
 
 ---
 
@@ -207,7 +207,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | done | 2026-11-05 19:15 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
 | T-009 | Build manifold-csg inside Docker container | server | geom-1 | done | 2026-11-05 19:55 | T-001 | `docker build` succeeds, successfully unions blade + hub |
-| T-010 | Finalize kernel decision (truck vs occt) | lead | geom-1 | in-progress | 2026-11-05 20:10 | T-005..T-009 | Recorded as a Decision in §9.3 |
+| T-010 | Finalize kernel decision (truck vs occt) | lead | geom-1 | done | 2026-11-05 20:12 | T-005..T-009 | Recorded as a Decision in §9.3 |
 
 ### Phase 1 — MVP
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
@@ -348,6 +348,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-014** | 2026-11-05 19:55 | geom-1 | T-009
   Manifold-in-Docker spike works. `manifold3d` 0.4.1 (zmerlynn's safe facade over `manifold-csg`): `Manifold::from_mesh_f64(verts, 3, tris)` / `union` / `difference` / `volume` / `genus` / `raw_status()`, and `manifold-csg-sys` **git-clones the C++ Manifold source at build time** (builder needs git + cmake + build-essential + ca-certificates). Verified: `docker build --no-cache` clean; run prints boolean self-check PASS (contained 8000, subtract 7000, overlapped 10 000 mm³ exactly), blade volume 126 493.727 mm³ (matches tessellation), hub = 64-gon hollow cylinder 558 932.941 mm³ (analytic π(3600−36)·50 = 559 831.8; faceted), `union = blade + hub = 685 426.668 mm³` exactly (parts are disjoint — 10 mm axial gap), genus 0, `NoError`. Independent Node STL validator on `target/union.blade+hub.stl`: 4050 tris, 685 426.670 mm³, 0 boundary / 0 non-manifold / 0 zero normals, z 0→600 mm. Image `bladelab/manifold:spike` 117 MB.
   refs: deploy/manifold, F-geom1-009 | supersedes: –
+- **F-geom1-015** | 2026-11-05 20:12 | geom-1 | T-010
+  Kernel decision record. Current pinned versions (verified this Phase 0): truck `truck-modeling` 0.6 / `truck-geometry` 0.5 / `truck-stepio` 0.3 (STEP writer emits `ISO-10303-042`, `SI_UNIT(.MILLI.,.METRE.)`); `manifold3d` 0.4.1 (facade over `manifold-csg`, which builds the C++ kernel at compile time and needs `git` in a container). Division of labour adopted in D-geom1-009: truck for B-rep STEP, Manifold for server booleans, OCCT optional-only. No §8 signature changes are required — `blade_cad::CadKernel` stays exactly as published, and `blade-wasm`/`web` never inline STEP or booleans.
+  refs: plan.md §7 T-010, §8, crates/blade-cad, deploy/manifold | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -395,6 +398,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-008** | 2026-11-05 19:20 | geom-1 | T-009 | **Accepted**
   The lead's "next" instruction in-session on 2026-11-05 approves the **T-009** takeover (server role: manifold boolean-CSG inside Docker). Since no `server` agent exists in this workspace, geom-1 owns the §4 server path `deploy/`. Scope: a `Dockerfile` that builds a working Manifold boolean engine in a container and a small runner that unions the blade and hub (the two fixture STLs) into one watertight mesh, satisfying "docker build succeeds, successfully unions blade + hub". It is a *verification spike* — the production API integration is T-203 — and D-lead1-005 (booleans only via manifold, server-side) is honoured. Local verification needs the Docker Desktop engine, which is installed but was not running at claim time.
   refs: plan.md §7 T-009, §4 (server row → deploy/), D-lead1-005, T-203 | supersedes: –
+- **D-geom1-009** | 2026-11-05 20:12 | geom-1 | T-010 | **Accepted**
+  **Kernel decision finalised** (closes T-010; drafted by geom-1 and adopted under the lead's in-session "next" instruction). BladeLab standardises on a split backend: **truck** is the B-rep/STEP engine; **Manifold** (`manifold3d`) is the server-side boolean/mesh engine; **OCCT** remains an optional `occt` cargo **feature only** (D-lead1-004), never a runtime dependency and never for boolean export. Basis, all demonstrated in this Phase 0: T-006 (truck) exports mm-accurate STEP solids that FreeCAD 1.1 accepts (4-face blade + 12-face hub, volume-consistent with the STL); truck-stepio cannot serialise boolean results (F-lead1-002); T-009 (Manifold in Docker) unions blade+hub into one watertight solid (genus 0, NoError) and is the D-lead1-005 engine for server assemblies. Consequences without any §8 change: `CadKernel::{blade_solid, hub_solid, write_step}` remains truck-only for STEP; the wasm bundle carries meshes only (no STEP, no booleans); merged/3MF output is produced server-side by Manifold (T-203). The `occt` fallback stays available should fillets/chamfers or a TE-seam repair ever demand it.
+  refs: plan.md §7 T-010, §8 CadKernel, D-lead1-004, D-lead1-005, F-lead1-002, F-geom1-011, F-geom1-014 | supersedes: – (confirms D-lead1-004/D-lead1-005 for the final kernel split)
 
 ### 9.4 Open Questions (Q)
 
@@ -487,6 +493,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-009 is `done`. `deploy/manifold/` delivers a self-contained image (`bladelab/manifold:spike`, 117 MB, debian trixie runtime): a `manifold3d`-based `manifold-union` runner that loads a binary STL (weld on exact f32 bits), builds the hub as a hollow 64-gon cylinder (`cylinder(50,60,60) − cylinder(50,6,6)`), boolean-unions, and writes a binary STL. It runs a deterministic 3-assertion boolean self-check first. Verified locally: `docker build --no-cache` clean; union run → self-check PASS, blade 126 493.727 + hub 558 932.941 = union 685 426.668 mm³, genus 0, `NoError`; the output STL is independently watertight (0 boundary / 0 non-manifold edges, volume matches to 0.002 mm³, z 0→600 mm). `deploy/manifold/run-demo.ps1` regenerates the blade STL if needed and runs the whole thing.
   **Next:** T-203 (unified blade+hub assembly + 3MF in `blade-server`) can adopt `manifold3d` directly; T-010's kernel decision now has concrete data (truck cannot export booleans — F-lead1-002 — while Manifold booleans are proven here; likely division of labour: truck for STEP B-rep, Manifold for server meshes/3MF). A deeper assembly with an overlapping hub could show union < sum on the real parts.
   **Cautions:** input is f32 STL (volume exact to ~0.002 mm³); the 64-gon hub is faceted (volume slightly below the analytic 559 831.8). The union STL lives in gitignored `target/`. Booleans must stay off the wasm/STEP paths (D-lead1-005). The container build needs network (git clone of the C++ source).
+- **H-geom1-009** | 2026-11-05 20:12 | geom-1 | T-010 | Recipient: lead, cad, server
+  **Progress:** T-010 is `done` — the truck-vs-occt kernel decision is recorded as **D-geom1-009** in §9.3: truck = STEP B-rep, Manifold = server booleans, OCCT = optional feature only. No §8 interface change was needed; the existing `CadKernel` and the wasm/STEP split are confirmed as final for the current roadmap.
+  **Next:** Phase 1 can start: T-101 (Schmitz layer-1) and T-102 (hub D-flat via 2D extrusion) no longer wait on T-010; T-203 can build the unified Manifold assembly/3MF on the server; the `occt` feature can be filled in whenever fillets/chamfers are wanted.
+  **Cautions:** the decision is a confirmation of D-lead1-004/D-lead1-005 plus in-session evidence — if a future requirement (e.g., STEP booleans or STEP fillets) reopens it, reverse course needs a fresh Proposal in §9.6. Until then, do not introduce booleans into `blade-cad`'s STEP path or into wasm.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -513,4 +523,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T19:20+07:00 agent=geom-1 mem=v12 last_entry=H-geom1-007 note="lead: 'next' -> T-009 server-role takeover approved (D-geom1-008); building deploy/ Docker image with a Manifold boolean engine and unioning fixture blade+hub STLs; Docker Desktop engine not running yet, starting it for local verification"
 [END] 2026-11-05T19:55+07:00 agent=geom-1 mem=v13 note="T-009 done: deploy/manifold Docker image (trixie, 117MB) with manifold3d 0.4.1 union runner; docker build --no-cache clean; union of fixture blade+hub STL = single watertight solid (genus 0, NoError), self-check PASS (8000/7000/10000 mm^3 exact), blade 126493.727 + hub 558932.941 = union 685426.668 mm^3; independent Node validator: 4050 tris, 0 boundary/non-manifold edges; Docker Desktop started to run it; gotchas: maniclot-csg-sys git-clones C++ at build time, runtime base must match rust:1-slim glibc (trixie)"
 [RE-ACK] 2026-11-05T20:10+07:00 agent=geom-1 mem=v13 last_entry=H-geom1-008 note="lead: 'next' -> T-010 kernel-decision takeover approved (all deps T-005..T-009 done); recording the final truck-vs-occt Decision in §9.3 from in-session evidence (truck=STEP, Manifold=server booleans, occt=optional feature)"
+[END] 2026-11-05T20:12+07:00 agent=geom-1 mem=v14 note="T-010 done: kernel decision recorded as D-geom1-009 in §9.3 -> truck = B-rep/STEP (truck-modeling 0.6), Manifold manifold3d 0.4.1 = server booleans/3MF, OCCT = optional feature only; no §8 CadKernel change needed; closes Phase 0 (all T-001..T-010 final: T-001 in-progress only for CI/remote); Phase 1 T-101/T-102 unblocked"
 ```
