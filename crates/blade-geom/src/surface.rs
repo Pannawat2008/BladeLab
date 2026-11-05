@@ -109,10 +109,11 @@ impl Section3D {
     /// `twist_deg` about the pitch axis, and moved to spanwise station
     /// `span_mm`.
     ///
-    /// Positive twist rotates the leading edge towards `+y` when viewed from
-    /// the tip (counter-clockwise in the chord/thickness plane). Rotation is
-    /// performed about `x = pitch_axis_ratio · chord_mm`, which is the usual
-    /// definition of blade twist (0.25–0.30 for small turbines).
+    /// Positive twist applies the standard counter-clockwise rotation in the
+    /// chord/thickness plane, so the leading edge (`x = 0`) moves towards `−y`
+    /// as twist grows. Rotation is performed about
+    /// `x = pitch_axis_ratio · chord_mm`, which is the usual definition of
+    /// blade twist (0.25–0.30 for small turbines).
     ///
     /// # Errors
     ///
@@ -176,6 +177,15 @@ impl Section3D {
     #[must_use]
     pub fn points(&self) -> &[Point3] {
         &self.points
+    }
+
+    /// Distance between the two trailing-edge points in mm.
+    ///
+    /// Rotation and translation preserve this distance, so the value always
+    /// equals the airfoil trailing-edge thickness at the section chord.
+    #[must_use]
+    pub fn trailing_edge_thickness_mm(&self) -> f64 {
+        self.points[0].distance_to(&self.points[self.points.len() - 1])
     }
 }
 

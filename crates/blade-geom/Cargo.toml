@@ -1,14 +1,15 @@
 [package]
 name = "blade-geom"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
 description = "BladeLab geometry kernel: airfoils, chordwise distributions, sections and lofting (wasm + server)."
-license = "MIT OR Apache-2.0"
-publish = false
 
 [dependencies]
-thiserror = "2"
+blade-model = { path = "../blade-model" }
+thiserror.workspace = true
 
 [dev-dependencies]
-proptest = "1"
+proptest.workspace = true
