@@ -195,6 +195,21 @@ pub struct Hub {
     pub bore_diameter_mm: f64,
     /// Hub length along the shaft in mm.
     pub length_mm: f64,
+    /// Radial distance from the shaft axis to the D-flat face, in mm.
+    ///
+    /// Absent (`null` / omitted) for a plain round bore. When present it must
+    /// be strictly between `0` and `bore_diameter_mm / 2`; the bore keeps its
+    /// circular arc on the `x < d` side and a chord at `x = d` closes the D.
+    #[serde(default)]
+    pub shaft_flat_radial_mm: Option<f64>,
+}
+
+impl Hub {
+    /// Radial distance to the D-flat face, if a D-flat is requested.
+    #[must_use]
+    pub const fn shaft_flat(&self) -> Option<f64> {
+        self.shaft_flat_radial_mm
+    }
 }
 
 /// Manufacturing limits.

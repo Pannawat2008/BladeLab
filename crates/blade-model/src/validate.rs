@@ -300,6 +300,15 @@ fn check_hub(design: &Design, issues: &mut Vec<ValidationIssue>) {
             "must be a finite, strictly positive length in mm",
         ));
     }
+    if let Some(flat) = hub.shaft_flat() {
+        let ok = finite(flat) && flat > 0.0 && flat < hub.bore_diameter_mm / 2.0;
+        if !ok {
+            issues.push(ValidationIssue::new(
+                "hub.shaft_flat_radial_mm",
+                "must be finite and strictly between 0 and bore_diameter_mm / 2",
+            ));
+        }
+    }
 }
 
 fn check_manufacturing(design: &Design, issues: &mut Vec<ValidationIssue>) {

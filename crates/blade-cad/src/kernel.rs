@@ -207,6 +207,17 @@ impl CadKernel for TruckKernel {
         let outer = hub.diameter_mm / 2.0;
         let length = hub.length_mm;
 
+        if let Some(flat_mm) = hub.shaft_flat() {
+            if !flat_mm.is_finite() || flat_mm <= 0.0 || flat_mm >= inner {
+                return Err(CadError::InvalidHub(
+                    "shaft flat must be finite and strictly between 0 and the bore radius"
+                        .to_string(),
+                ));
+            }
+            let solid = d_flat_hub(inner, outer, length, flat_mm)?;
+            return Solid::try_new(solid.into_boundaries()).map_err(topology);
+        }
+
         // Annular profile in the x/z half-plane; revolving it once produces
         // the four faces of a hollow cylinder.
         let v0 = builder::vertex(Point3::new(inner, 0.0, 0.0));
@@ -295,6 +306,64 @@ fn to_point(point: blade_geom::Point3) -> Result<Point3, CadError> {
         }
     }
     Ok(Point3::new(point.x, point.y, point.z))
+}
+
+/// Point with polar angle (radians) on the unit flat z = 0.
+fn polar(radius: f64, angle: f64) -> Point3 {
+    Point3::new(radius * angle.cos(), radius * angle.sin(), 0.0)
+}
+
+/// Closed CCW wire tracing a full circle of `radius` as three 120° arcs.
+fn circle_wire(radius: f64) -> Wire {
+    let third = 2.0 * PI / 3.0;
+    let points = [0.0_f64, third, 2.0 * third].map(|angle| {
+        let point = polar(radius, angle);
+        let vertex = builder::vertex(point);
+        (point, vertex)
+    });
+    let transit = [third / 2.0, PI, 2.0 * third + third / 2.0].map(|angle| polar(radius, angle));
+    vec![
+        builder::circle_arc(&points[0].1, &points[1].1, transit[0]),
+        builder::circle_arc(&points[1].1, &points[2].1, transit[1]),
+        builder::circle_arc(&points[2].1, &points[0].1, transit[2]),
+    ]
+    .into()
+}
+
+/// Builds a hollow hub with a **D-shaped bore** by extruding a holed annular
+/// face — no boolean operations (F-lead1-002 / D-lead1-005).
+///
+/// `bore_radius` is the full circular bore radius `r`, `outer_radius` the hub
+/// outer radius `R`, and `flat` the radial distance from the axis to the flat
+/// face (`0 < flat < bore_radius`). The bore cross-section keeps its circular
+/// arc wherever `x < flat` and is closed by a chord at `x = flat`; extruding
+/// that face by `length` along +z yields the complete solid (outer wall, bore
+/// wall, top/bottom caps).
+fn d_flat_hub(
+    bore_radius: f64,
+    outer_radius: f64,
+    length: f64,
+    flat: f64,
+) -> Result<Solid, CadError> {
+    let half = (bore_radius * bore_radius - flat * flat).sqrt();
+
+    let v_hi = builder::vertex(Point3::new(flat, half, 0.0));
+    let v_left = builder::vertex(Point3::new(-bore_radius, 0.0, 0.0));
+    let v_lo = builder::vertex(Point3::new(flat, -half, 0.0));
+
+    // CCW D outline: arc (d,+h) -> (-r,0), arc (-r,0) -> (d,-h), chord back.
+    let theta = (flat / bore_radius).acos();
+    let arc_hi = builder::circle_arc(&v_hi, &v_left, polar(bore_radius, (theta + PI) / 2.0));
+    let arc_left =
+        builder::circle_arc(&v_left, &v_lo, polar(bore_radius, (3.0 * PI - theta) / 2.0));
+    let chord = line_edge(&v_lo, &v_hi)?;
+    let inner_d: Wire = vec![arc_hi, arc_left, chord].into();
+
+    // Annular face: outer boundary CCW, inner D reversed (hole), in z = 0.
+    let face = builder::try_attach_plane(&[circle_wire(outer_radius), inner_d.inverse()])
+        .map_err(topology)?;
+    let solid = builder::tsweep(&face, Vector3::new(0.0, 0.0, length));
+    Solid::try_new(solid.into_boundaries()).map_err(topology)
 }
 
 fn line_edge(from: &Vertex, to: &Vertex) -> Result<Edge, CadError> {

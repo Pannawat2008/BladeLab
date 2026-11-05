@@ -170,3 +170,28 @@ fn schema_version_field_is_validated_too() {
     let issues = validate(&design).expect_err("version mismatch");
     assert!(paths(&issues).contains(&"schema_version".to_string()));
 }
+
+/// A D-flat is optional: a round-bore JSON (like the fixture) and an explicit
+/// flat both parse, and out-of-range flat distances are rejected.
+#[test]
+fn hub_d_flat_is_optional_and_validated() {
+    let round = typical();
+    assert_eq!(round.hub.shaft_flat(), None, "fixture bore stays round");
+
+    let mut flat = round.clone();
+    flat.hub.shaft_flat_radial_mm = Some(4.8);
+    let json = flat.to_json().expect("serialises");
+    let reparsed = Design::from_json(&json).expect("re-parses");
+    assert_eq!(reparsed.hub.shaft_flat(), Some(4.8));
+    assert!(validate(&reparsed).is_ok(), "4.8 mm within (0, 6)");
+
+    let mut bad = flat.clone();
+    bad.hub.shaft_flat_radial_mm = Some(6.0); // exactly the bore radius
+    let issues = validate(&bad).expect_err("flat at the bore radius is invalid");
+    assert!(paths(&issues).contains(&"hub.shaft_flat_radial_mm".to_string()));
+
+    let mut bad_zero = flat;
+    bad_zero.hub.shaft_flat_radial_mm = Some(0.0);
+    let issues = validate(&bad_zero).expect_err("zero flat is invalid");
+    assert!(paths(&issues).contains(&"hub.shaft_flat_radial_mm".to_string()));
+}

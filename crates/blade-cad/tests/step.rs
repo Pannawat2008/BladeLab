@@ -3,6 +3,7 @@
 use blade_cad::{CadError, CadKernel, TruckKernel};
 use blade_geom::{build_sections, loft, BladeSurface};
 use blade_model::{resolve, Design, Hub};
+use truck_stepio::r#in::alias::Curve3D;
 use truck_stepio::r#in::Table;
 
 const FIXTURE: &str = include_str!("../../../fixtures/naca4412-linear.json");
@@ -64,6 +65,7 @@ fn hub_step_parses_as_a_hollow_cylinder() {
         diameter_mm: 120.0,
         bore_diameter_mm: 12.0,
         length_mm: 50.0,
+        shaft_flat_radial_mm: None,
     };
     let kernel = TruckKernel::new();
     let solid = kernel.hub_solid(&hub).expect("hub solid");
@@ -88,6 +90,71 @@ fn hub_step_parses_as_a_hollow_cylinder() {
 }
 
 #[test]
+fn d_flat_hub_is_extruded_and_round_trips() {
+    let hub = Hub {
+        diameter_mm: 120.0,
+        bore_diameter_mm: 12.0,
+        length_mm: 50.0,
+        shaft_flat_radial_mm: Some(4.8),
+    };
+    let kernel = TruckKernel::new();
+    let solid = kernel.hub_solid(&hub).expect("D-flat hub");
+    assert_eq!(solid.boundaries().len(), 1);
+    // 2D extrusion of the annular face: bottom/top caps + 3 outer + 3 inner.
+    assert_eq!(
+        solid.boundaries()[0].len(),
+        8,
+        "caps + outer (3) + inner D (3)"
+    );
+
+    let step = kernel.write_step(&[solid]).expect("STEP export");
+    let table = Table::from_step(&step).expect("truck reader accepts the file");
+    let holder = table.shell.values().next().expect("one closed shell");
+    let shell = table.to_compressed_shell(holder).expect("shell converts");
+    assert_eq!(shell.faces.len(), 8);
+
+    // The bore keeps its circular arc for x < d and is closed by a straight
+    // chord at x = d, so two line edges between (4.8, ±3.6) exist: one at
+    // z = 0 and one at z = 50 ("2D extrusion", no booleans).
+    let half = (6.0_f64 * 6.0 - 4.8 * 4.8).sqrt();
+    let chord_count = shell
+        .edges
+        .iter()
+        .filter(|edge| match &edge.curve {
+            Curve3D::Line(_) => {
+                let a = shell.vertices[edge.vertices.0];
+                let b = shell.vertices[edge.vertices.1];
+                (a.x - 4.8).abs() < 1e-6
+                    && (b.x - 4.8).abs() < 1e-6
+                    && (a.y.abs() - half).abs() < 1e-6
+                    && (b.y.abs() - half).abs() < 1e-6
+                    && (a.z - b.z).abs() < 1e-6
+                    && (a.z == 0.0 || a.z == 50.0)
+            }
+            _ => false,
+        })
+        .count();
+    assert_eq!(chord_count, 2, "one flat chord at z=0 and one at z=50");
+}
+
+#[test]
+fn d_flat_with_invalid_distances_is_rejected() {
+    let kernel = TruckKernel::new();
+    for flat in [0.0, 6.0, -1.0, f64::NAN, 12.0] {
+        let hub = Hub {
+            diameter_mm: 120.0,
+            bore_diameter_mm: 12.0,
+            length_mm: 50.0,
+            shaft_flat_radial_mm: Some(flat),
+        };
+        assert!(
+            matches!(kernel.hub_solid(&hub), Err(CadError::InvalidHub(_))),
+            "flat {flat:?} must be rejected"
+        );
+    }
+}
+
+#[test]
 fn multiple_bodies_share_one_step_document() {
     let kernel = TruckKernel::new();
     let blade = kernel.blade_solid(&fixture_surface()).expect("blade");
@@ -96,6 +163,7 @@ fn multiple_bodies_share_one_step_document() {
             diameter_mm: 120.0,
             bore_diameter_mm: 12.0,
             length_mm: 50.0,
+            shaft_flat_radial_mm: None,
         })
         .expect("hub");
 
@@ -111,21 +179,25 @@ fn invalid_hubs_are_rejected_with_clear_errors() {
             diameter_mm: 0.0,
             bore_diameter_mm: 12.0,
             length_mm: 50.0,
+            shaft_flat_radial_mm: None,
         },
         Hub {
             diameter_mm: 120.0,
             bore_diameter_mm: 0.0,
             length_mm: 50.0,
+            shaft_flat_radial_mm: None,
         },
         Hub {
             diameter_mm: 120.0,
             bore_diameter_mm: 120.0,
             length_mm: 50.0,
+            shaft_flat_radial_mm: None,
         },
         Hub {
             diameter_mm: 120.0,
             bore_diameter_mm: 12.0,
             length_mm: f64::NAN,
+            shaft_flat_radial_mm: None,
         },
     ] {
         assert!(matches!(

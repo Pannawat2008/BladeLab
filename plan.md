@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 14**
-> **LAST_UPDATED: 2026-11-05 20:12 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 15**
+> **LAST_UPDATED: 2026-11-05 20:40 (UTC+7) by geom-1**
 
 ---
 
@@ -213,7 +213,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | | todo | | T-010 | Matches hand-calculated fixture values |
-| T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | in-progress | 2026-11-05 20:20 | T-010 | Generates STEP without requiring boolean operations |
+| T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | | todo | | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
@@ -351,6 +351,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-015** | 2026-11-05 20:12 | geom-1 | T-010
   Kernel decision record. Current pinned versions (verified this Phase 0): truck `truck-modeling` 0.6 / `truck-geometry` 0.5 / `truck-stepio` 0.3 (STEP writer emits `ISO-10303-042`, `SI_UNIT(.MILLI.,.METRE.)`); `manifold3d` 0.4.1 (facade over `manifold-csg`, which builds the C++ kernel at compile time and needs `git` in a container). Division of labour adopted in D-geom1-009: truck for B-rep STEP, Manifold for server booleans, OCCT optional-only. No §8 signature changes are required — `blade_cad::CadKernel` stays exactly as published, and `blade-wasm`/`web` never inline STEP or booleans.
   refs: plan.md §7 T-010, §8, crates/blade-cad, deploy/manifold | supersedes: –
+- **F-geom1-016** | 2026-11-05 20:40 | geom-1 | T-102
+  D-flat hub facts. `blade_model::Hub` now carries `shaft_flat_radial_mm: Option<f64>` (serde-default `None`, P-geom1-001); when set, `hub_solid` builds a **2D-extruded** hub — `builder::try_attach_plane(&[circle_wire(R), inner_d.inverse()])` for the holed annular face, then `builder::tsweep(&face, (0,0,L))` → 8-face closed solid (bottom/top caps + 3 outer arcs + 3 inner arcs). The bore keeps its circular arc where `x < d` and a straight chord at `x = d`; `0 < d < bore/2`. Closed-form volume `L·(πR² − [r²(π−acos(d/r)) + d·√(r²−d²)])`; verified: R=60, r=6, d=4.8, L=50 → FreeCAD reports exactly 560 126.1 mm³ as a valid STEP solid (`tests/step_check.py ... --solids 1` PASS). Round-bore hubs (field absent) keep the 12-face revolve path untouched, so the fixture and all prior tests are unchanged. The hub y-bbox of 121.244 mm (2×60.622) is the same FreeCAD STEP-import expansion shown for the round hub back in T-006 — pre-existing, not introduced here.
+  refs: crates/blade-model/src/schema.rs, crates/blade-cad/src/kernel.rs, crates/blade-cad/tests/step.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -452,6 +455,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-011** | 2026-11-05 19:15 | geom-1 | T-008
   wasm tooling notes: (1) `wasm-bindgen-cli` must exactly match the `wasm-bindgen` crate version resolved in `Cargo.lock` (0.2.130 here) or the glue is silently wrong. (2) The `nodejs` glue is **synchronous** (reads the wasm via fs at require time) and sets `exports.build_mesh` directly; the `web` glue is an ES module exporting a default `init(module_or_path)` plus named exports — feed it `import wasmUrl from '../pkg/….wasm?url'; await init(wasmUrl)`. (3) On this machine `npm` is blocked as `npm.ps1` by the execution policy — always call `npm.cmd`. (4) `--no-typescript` skips `.d.ts`, so the TS toolchain does not type-check the generated glue (Vite/esbuild transpiles regardless). (5) A slider labelled "tip" only edits the *distribution* tip; the fixture's layer-3 override at `span_ratio = 1.0` keeps winning there (revisit L-geom1-004).
   refs: crates/blade-wasm, web/, Cargo.lock | supersedes: –
+- **L-geom1-013** | 2026-11-05 20:40 | geom-1 | T-102
+  truck face-with-hole construction: pass `[outer_boundary, inner_hole.inverse()]` to `builder::try_attach_plane` and `Solid::try_new` validates the annulus; `Sweep for Face → Solid` includes the inversed original face (bottom), the side faces and the "seiling" (top), so `builder::tsweep(&Face, vec)` yields a complete closed solid with no manual caps. A full circle fixture is three `builder::circle_arc` edges at 120° — true circular arcs, not control-polygon approximations. Trap: the two flat-chord endpooints (d, ±h) are cartesian points, so `polar(flat, theta)` (which would sit on a radius-`d` circle) is wrong — use `Point3::new(flat, ±h, 0)` directly.
+  refs: crates/blade-cad/src/kernel.rs (d_flat_hub) | supersedes: –
 - **L-geom1-012** | 2026-11-05 19:55 | geom-1 | T-009
   Docker gotchas hit while building the Manifold image: (1) `manifold-csg-sys` **clones the C++ source with git at build time** — the image needs `git` and `ca-certificates`, not just a C++ toolchain. (2) The binary's glibc/libstdc++ must match the runtime base: `rust:1-slim` is now built on trixie (GLIBC_2.38 / CXXABI_1.3.15), so the runtime stage must be `debian:trixie-slim` — `bookworm-slim` produces a "version `CXXABI_1.3.15` not found"-style loader error at run time, not build time. (3) PowerShell volume-path interpolation needs `${root}\target:/work` (brace the variable so `:` isn't consumed). (4) Trust findings, not `$LASTEXITCODE`, through `Select-String`-pipe pipelines (it reports -1 even on success); check `$?` or the last command's own exit.
   refs: deploy/manifold/Dockerfile, target/union.blade+hub.stl | supersedes: –
@@ -504,6 +510,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-010 is `done` — the truck-vs-occt kernel decision is recorded as **D-geom1-009** in §9.3: truck = STEP B-rep, Manifold = server booleans, OCCT = optional feature only. No §8 interface change was needed; the existing `CadKernel` and the wasm/STEP split are confirmed as final for the current roadmap.
   **Next:** Phase 1 can start: T-101 (Schmitz layer-1) and T-102 (hub D-flat via 2D extrusion) no longer wait on T-010; T-203 can build the unified Manifold assembly/3MF on the server; the `occt` feature can be filled in whenever fillets/chamfers are wanted.
   **Cautions:** the decision is a confirmation of D-lead1-004/D-lead1-005 plus in-session evidence — if a future requirement (e.g., STEP booleans or STEP fillets) reopens it, reverse course needs a fresh Proposal in §9.6. Until then, do not introduce booleans into `blade-cad`'s STEP path or into wasm.
+- **H-geom1-010** | 2026-11-05 20:40 | geom-1 | T-102 | Recipient: lead, cad, server
+  **Progress:** T-102 is `done`. `Hub` gained optional `shaft_flat_radial_mm` (P-geom1-001 / D-geom1-010) and `hub_solid` now emits a D-flat-bore hub by 2D extrusion — `tsweep` of a holed annular face — with **no booleans** (F-lead1-002). Verified: 2 new cad tests (8-face shell, STEP round-trip with two flat-chord `Line` edges at z=0/50; invalid flat distances rejected) + 1 blade-model schema/validation test; `export_step` writes `target/naca4412.hub-dflat.step`, which FreeCAD 1.1 reports as a valid solid with volume exactly matching the closed form (560 126.1 mm³). Workspace 86 tests, fmt/clippy/wasm32 clean.
+  **Next:** T-101 (Schmitz layer-1) is the last unclaimed Phase 1 task; T-203 can feed the D-flat hub into the Manifold server assembly; the `occt` optional feature remains open for fillets/chamfers.
+  **Cautions:** the D-flat is purely additive — designs without the field keep the round revolve path byte-for-byte. The flat reference stays perpendicular to +x; a future shaft-alignment rotation would be a separate option. No §8 signature changed.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -532,4 +542,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T20:10+07:00 agent=geom-1 mem=v13 last_entry=H-geom1-008 note="lead: 'next' -> T-010 kernel-decision takeover approved (all deps T-005..T-009 done); recording the final truck-vs-occt Decision in §9.3 from in-session evidence (truck=STEP, Manifold=server booleans, occt=optional feature)"
 [END] 2026-11-05T20:12+07:00 agent=geom-1 mem=v14 note="T-010 done: kernel decision recorded as D-geom1-009 in §9.3 -> truck = B-rep/STEP (truck-modeling 0.6), Manifold manifold3d 0.4.1 = server booleans/3MF, OCCT = optional feature only; no §8 CadKernel change needed; closes Phase 0 (all T-001..T-010 final: T-001 in-progress only for CI/remote); Phase 1 T-101/T-102 unblocked"
 [RE-ACK] 2026-11-05T20:20+07:00 agent=geom-1 mem=v14 last_entry=H-geom1-009 note="lead: 'continues' -> T-102 cad takeover approved (D-geom1-010 + P-geom1-001 Accepted); adding optional Hub.shaft_flat_radial_mm and hub_solid D-flat via tsweep of a holed annular face (no booleans); round-bore revolve path unchanged"
+[END] 2026-11-05T20:40+07:00 agent=geom-1 mem=v15 note="T-102 done: Hub.shaft_flat_radial_mm (optional) + D-flat hub via 2D extrusion (tsweep of holed annular face, no booleans); R=60 r=6 d=4.8 L=50 -> FreeCAD valid solid, volume 560126.1 mm^3 exactly matches closed form; round-bore revolve path untouched; 86 workspace tests + fmt/clippy/wasm32 clean; P-geom1-001 Accepted, F-geom1-016/L-geom1-013/H-geom1-010 recorded"
 ```
