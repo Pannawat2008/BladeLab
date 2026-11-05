@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 7**
-> **LAST_UPDATED: 2026-11-05 18:03 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 8**
+> **LAST_UPDATED: 2026-11-05 18:07 (UTC+7) by geom-1**
 
 ---
 
@@ -202,7 +202,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-002 | blade-model: Design schema v1 + serde + validation | lead | geom-1 | done | 2026-11-05 17:54 | T-001 | Parses `fixtures/naca4412-linear.json` successfully; invalid payloads yield clear errors |
 | T-003 | blade-geom: 4-digit NACA (continuous), cosine resample, trailing edge thickness check | geom | geom-1 | done | 2026-11-05 17:40 | T-002 | proptest: non-overlapping points, trailing edge thickness ≥ threshold |
 | T-004 | blade-geom: Resolve layer 1 & 3 → 3D sections → B-spline skinning loft | geom | geom-1 | done | 2026-11-05 17:54 | T-003 | Loft passes through all sections (tolerance < 1e-6 mm) |
-| T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | in-progress | 2026-11-05 18:03 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
+| T-005 | blade-mesh: Tessellation → binary STL export | mesh | geom-1 | review | 2026-11-05 18:07 | T-004 | Mesh is watertight, positive volume, opens successfully in slicer |
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | | todo | | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | | todo | | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | | todo | | T-005 | Web view renders blade, updates within 50 ms upon twist change |
@@ -330,6 +330,12 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-008** | 2026-11-05 17:54 | geom-1 | T-002
   `fixtures/naca4412-linear.json` is the canonical end-to-end fixture: R = 600 mm, hub r = 60 mm, 3 blades, TSR 4.5, 8 m/s, pitch axis 0.25, 11 stations; chord 70 → 35 mm and twist 20° → 3° (linear over the blade span); NACA 4412 assigned at 0.0 and 1.0; layer-3 tip override chord 32 mm / twist 2°; hub 120/12/50 mm; min TE 0.05 mm, wall 1.2 mm. `build_sections` uses `SECTION_SAMPLES_PER_SURFACE = 81`, giving 161 points per contour.
   refs: fixtures/naca4412-linear.json, crates/blade-geom/src/sections.rs | supersedes: –
+- **F-geom1-009** | 2026-11-05 18:07 | geom-1 | T-005
+  Tessellating the fixture blade yields 1771 vertices (11 sections × 161 contour points), 3538 triangles = 3220 side quads/2 + 318 cap triangles (2 × 159 from ear clipping), volume 126 493.7 mm³ and area 58 437.2 mm². Binary STL is 176 984 bytes (`84 + 50 × 3538`). An independent Node parser of `target/naca4412.blade.stl` reports 0 boundary edges, 0 non-manifold edges, 0 zero normals, 0 non-finite floats, span exactly 540 mm (z 60 → 600), and the same volume to 0.03 mm³.
+  refs: crates/blade-mesh/src/{tessellate,stl,mesh}.rs, examples/export_stl.rs | supersedes: –
+- **F-geom1-010** | 2026-11-05 18:07 | geom-1 | T-005
+  `check_mesh` defines watertight as: non-empty, no boundary edges, no edge used >2 times, no twice-used edge with equal winding, no out-of-range triangle. Volume is the signed divergence sum (positive for outward winding); `is_valid_solid` additionally requires positive volume, zero degenerate triangles and zero non-finite vertices. `min_triangle_altitude_mm` is a local-feature proxy — true wall thickness needs the solid model (T-006). `tessellate` closes the tube through the trailing-edge strip (contour wraps last → first), ear-clips root/tip caps in the x/y plane (normalising to CCW, root reversed), and with `cap_ends = false` exposes exactly `2 × point_count` boundary edges.
+  refs: crates/blade-mesh/src/mesh.rs, src/tessellate.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -395,6 +401,12 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-005** | 2026-11-05 17:54 | geom-1 | T-002
   In PowerShell, piping cargo through `2>&1 | Select-String` reports `NativeCommandError`/exit 1 because cargo writes progress to stderr, even when the build succeeds. Trust cargo's own `Finished` / `test result: ok` lines instead of `$LASTEXITCODE`.
   refs: – | supersedes: –
+- **L-geom1-006** | 2026-11-05 18:07 | geom-1 | T-005
+  `impl std::ops::Sub for Point3` is impossible in `blade-mesh`: both the trait and the type are foreign, so the orphan rule rejects it. Use a local `sub(a, b)` helper (and a local `Magnitude` trait) instead of reaching for operator overloading.
+  refs: crates/blade-mesh/src/{mesh,stl}.rs | supersedes: –
+- **L-geom1-007** | 2026-11-05 18:07 | geom-1 | T-005
+  Binary STL stores no indices: vertex welding must key on the serialised `f32` coordinates (the writer emits identical bits for shared vertices). `write_stl` is infallible by contract, so recompute normals, map non-finite coordinates to `0.0`, clamp to the finite `f32` range, and let `check_mesh` be the gate before export. Cap triangulation assumes a simple contour, which holds for D-geom1-001 airfoils.
+  refs: crates/blade-mesh/src/stl.rs, tests/stl.rs | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -416,6 +428,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-002 and T-004 are `done`. `blade-model` v1 (schema + validation + resolve) and `blade-geom::build_sections` are implemented; the full pipeline `Design → resolve → build_sections → loft` runs on `fixtures/naca4412-linear.json`, and the loft passes through all 11 sections within 1e-6 mm. Verification: 59 tests green (24 geom unit, 2 build_sections, 2 loft-property, 4 airfoil-property, 14 design, 9 resolve, 3 + 1 doctests), `cargo fmt --check`, `clippy --workspace --all-targets -- -D warnings`, and `cargo build -p blade-model -p blade-geom --target wasm32-unknown-unknown`. T-001 stays `in-progress` only because CI cannot be activated (no remote, `.github/` qa-owned); truck versions are now recorded in F-geom1-005.
   **Next:** T-005 (STL from `BladeSurface`) and T-006 (truck STEP) can start; both should consume `loft()` output only (D-lead1-002). Lead must supply a git remote to enable `git pull --rebase`/`push` and CI.
   **Cautions:** `SECTION_SAMPLES_PER_SURFACE = 81` and the 161-point topology are now baked into `build_sections`; changing them changes mesh/STEP vertex counts. `resolve` dedupes stations at 1e-9 and override matching uses the same tolerance — do not tighten one without the other.
+- **H-geom1-004** | 2026-11-05 18:07 | geom-1 | T-005 | Recipient: lead, qa, cad, web
+  **Progress:** T-005 implementation is complete and in `review`. `crates/blade-mesh/` now implements the §8 contracts `tessellate(&BladeSurface, &MeshOptions)`, `write_stl(&Mesh)` and `check_mesh(&Mesh)` with no signature changes. Fixture result: 1771 vertices, 3538 triangles, watertight, volume 126 493.7 mm³, STL 176 984 bytes. Verified by 12 new tests (6 pipeline, 5 STL byte-level, 1 proptest over 48 random blades), fmt/clippy/wasm32, plus an independent Node STL parser (0 open/non-manifold edges, all normals unit, volume matches). Workspace total is now 72 tests.
+  **Next:** a human should open `target/naca4412.blade.stl` in a slicer to sign off the last acceptance line; then set T-005 to `done`. T-006 (truck STEP) can start from `loft()` output, and T-008 can render the `Mesh` directly.
+  **Cautions:** STL is `f32`, so coordinates are only exact to ~1e-5 mm at 600 mm span — do not use STL as a metrology source. `write_stl` never fails and will happily serialise an open mesh; always gate on `check_mesh(...).is_valid_solid()`. `MeshOptions` currently only toggles caps; surface density is fixed by the loft sample count.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -431,4 +447,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T17:48+07:00 agent=geom-1 mem=v5 last_entry=D-geom1-003 note="lead approved geom-1 takeover of T-001 (workspace) + T-002 (blade-model schema v1); implementing build_sections to finish T-004"
 [END] 2026-11-05T17:54+07:00 agent=geom-1 mem=v6 note="T-002 + T-004 done: workspace root, blade-model schema/validate/resolve, build_sections adapter; fixture pipeline Design->resolve->sections->loft passes <=1e-6 mm; 59 tests + fmt + clippy -D warnings + wasm32 builds clean; T-001 still in-progress (CI needs a git remote)"
 [RE-ACK] 2026-11-05T18:03+07:00 agent=geom-1 mem=v7 last_entry=H-geom1-003 note="lead approved T-005 takeover (D-geom1-004); implementing tessellate/write_stl/check_mesh in crates/blade-mesh"
+[END] 2026-11-05T18:07+07:00 agent=geom-1 mem=v8 note="T-005 in review: crates/blade-mesh tessellate/check_mesh/write_stl; fixture mesh watertight, 3538 tris, 126493.7 mm^3, 176984-byte STL; 72 workspace tests + fmt/clippy/wasm32 clean; independent Node STL parser agrees; slicer open is the remaining human check"
 ```
