@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 33**
+> **MEMORY_VERSION: 34**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -226,7 +226,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
 | T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | done | 2026-11-06 01:23 | T-102 | Yields a single watertight manifold part |
-| T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
+| T-204 | PostgreSQL persistence: designs, versioning | server | geom-1 | in-progress | 2026-11-06 01:24 | T-103 | Full CRUD + version tracking functional |
 | T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
 
 ### Phase 3 — Simulation & Testing
@@ -467,6 +467,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-019** | 2026-11-06 01:16 | geom-1 | T-203 | **Accepted**
   The lead's "do all phase2" instruction in-session on 2026-11-06 approves the **T-203** takeover (`cad` / `server` role): (1) extend `deploy/manifold/` (`manifold3d` boolean union runner) to overlap the hub with the blade root, boolean-union them into a single watertight genus-1 solid, and export both `.stl` and `.3mf`; (2) add native watertight hub and unified blade+hub assembly mesh construction (`hub_mesh`, `assembly_mesh`) and wire `--part hub` and `--part assembly` for `stl` and `3mf` into `blade-cli` and `blade-server` (`POST /api/v1/export`) so every export path yields a single connected watertight manifold part verified by `check_mesh`. No §8 signatures are modified.
   refs: plan.md §7 T-203, D-lead1-005, D-geom1-009 | supersedes: –
+- **D-geom1-020** | 2026-11-06 01:24 | geom-1 | T-204 | **Accepted**
+  The lead's "do all phase2" instruction in-session on 2026-11-06 approves the **T-204** takeover (`server` role: `crates/blade-server/`). Scope: (1) PostgreSQL schema migration (`crates/blade-server/migrations/0001_designs.sql` defining `designs` and `design_versions` tables with `JSONB` payload + `blake3` content digest); (2) `DesignStore` persistence layer supporting both PostgreSQL (`DATABASE_URL`) and an in-process transactional store for zero-daemon CI/integration testing; (3) REST endpoints `POST /api/v1/designs`, `GET /api/v1/designs`, `GET /api/v1/designs/{id}`, `PUT /api/v1/designs/{id}`, `DELETE /api/v1/designs/{id}`, `GET /api/v1/designs/{id}/versions`, and `GET /api/v1/designs/{id}/versions/{version}` with full semantic validation and immutable version history tracking. No §8 signatures are modified.
+  refs: plan.md §7 T-204, §2, §3 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -679,4 +682,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T01:14+07:00 agent=geom-1 mem=v31 note="T-202 done: data/airfoils/{SG6043,SD7062,E387}.dat + DatAirfoil + library_airfoil + blend_airfoils + build_blended_sections + AirfoilSpec::Named support in resolve/build_sections; 117 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-024, H-geom1-018 recorded"
 [RE-ACK] 2026-11-06T01:16:00+07:00 agent=geom-1 mem=v31 last_entry=H-geom1-018 task=T-203 note="lead: 'do all phase2' -> claiming T-203 (Unified blade+hub assembly via Manifold booleans + 3MF) under D-geom1-019"
 [END] 2026-11-06T01:23+07:00 agent=geom-1 mem=v33 note="T-203 done: blade_cad::{hub_mesh, assembly_mesh} + deploy/manifold 3MF/overlap union + blade-cli/blade-server assembly 3MF/STL export; single connected watertight manifold solid across all 5 fixtures; 118 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-025, H-geom1-019 recorded"
+[RE-ACK] 2026-11-06T01:24:00+07:00 agent=geom-1 mem=v33 last_entry=H-geom1-019 task=T-204 note="lead: 'do all phase2' -> claiming T-204 (PostgreSQL persistence: designs, versioning) under D-geom1-020"
 ```
