@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 19**
-> **LAST_UPDATED: 2026-11-05 23:36 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 20**
+> **LAST_UPDATED: 2026-11-05 23:39 (UTC+7) by geom-1**
 
 ---
 
@@ -214,7 +214,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 |---|---|---|---|---|---|---|---|
 | T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | done | 2026-11-05 23:29 | T-010 | Matches hand-calculated fixture values |
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
-| T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
+| T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | in-progress | 2026-11-05 23:39 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | | todo | | T-002 | CI checks that generated types match latest Rust structs |
@@ -419,6 +419,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-012** | 2026-11-05 23:31 | geom-1 | T-104 | **Accepted**
   The lead's "do next task" instruction in-session on 2026-11-05 approves the **T-104** takeover (`server` role: `crates/blade-cli/`, plus `write_3mf` in `crates/blade-mesh/` per §3 "Tessellation, STL/3MF, mesh checks" and root `Cargo.toml` workspace membership). Scope: `bladelab export <design.json> --format <stl|3mf|step> [-o <output>] [--part <blade|hub|assembly>]` CLI binary + library, generating validated STL, 3MF (OPC ZIP + 3MF Core XML in mm units, pure Rust with zero C/C++ deps so `blade-mesh` stays `wasm32`-clean), and STEP (`TruckKernel`, boolean-free per F-lead1-002). No §8 signatures are modified.
   refs: plan.md §7 T-104, §3, §8 | supersedes: –
+- **D-geom1-013** | 2026-11-05 23:39 | geom-1 | T-103 | **Accepted**
+  The lead's "Next" instruction in-session on 2026-11-05 approves the **T-103** takeover (`server` role: `crates/blade-server/` + root `Cargo.toml` workspace membership). Scope: Axum HTTP server exposing `POST /api/v1/export` for `stl`, `3mf`, and `step` (`blade`, `hub`, `assembly`), backed by a `blake3`-keyed in-memory artifact cache (`ETag` + `X-BladeLab-Cache: HIT|MISS`) and panic containment (`catch_unwind` + `spawn_blocking` recovery so panics return 500 JSON without crashing the server). No §8 signatures are modified.
+  refs: plan.md §7 T-103, §2, §3 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -576,4 +579,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T23:29+07:00 agent=geom-1 mem=v17 note="T-101 done: blade_geom::schmitz module + blade_model::CurveSource::Schmitz + fixtures/naca4412-schmitz.json; matches 11-station hand-calculated reference values to <1e-12 and lofts within 1e-6 mm; 97 workspace tests + fmt/clippy/wasm32 clean; F-geom1-017, L-geom1-014, H-geom1-011 recorded"
 [RE-ACK] 2026-11-05T23:31:00+07:00 agent=geom-1 mem=v17 last_entry=H-geom1-011 task=T-104 note="lead: 'do next task' -> claiming T-104 (blade-cli export for stl, 3mf, step) under D-geom1-012"
 [END] 2026-11-05T23:36+07:00 agent=geom-1 mem=v19 note="T-104 done: blade_mesh::write_3mf (pure-Rust OPC ZIP + 3MF Core XML in mm, wasm32-clean) + crates/blade-cli (`bladelab export design.json --format stl|3mf|step`); FreeCAD STEP check PASS + Python zipfile/XML 3MF check PASS; 103 workspace tests + fmt/clippy/wasm32 clean; F-geom1-018, H-geom1-012 recorded"
+[RE-ACK] 2026-11-05T23:39:00+07:00 agent=geom-1 mem=v19 last_entry=H-geom1-012 task=T-103 note="lead: 'Next' -> claiming T-103 (crates/blade-server Axum POST /api/v1/export with blake3 caching and panic containment) under D-geom1-013"
 ```
