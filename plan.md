@@ -213,7 +213,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | | todo | | T-010 | Matches hand-calculated fixture values |
-| T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | | todo | | T-010 | Generates STEP without requiring boolean operations |
+| T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | in-progress | 2026-11-05 20:20 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | | todo | | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
@@ -401,6 +401,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-009** | 2026-11-05 20:12 | geom-1 | T-010 | **Accepted**
   **Kernel decision finalised** (closes T-010; drafted by geom-1 and adopted under the lead's in-session "next" instruction). BladeLab standardises on a split backend: **truck** is the B-rep/STEP engine; **Manifold** (`manifold3d`) is the server-side boolean/mesh engine; **OCCT** remains an optional `occt` cargo **feature only** (D-lead1-004), never a runtime dependency and never for boolean export. Basis, all demonstrated in this Phase 0: T-006 (truck) exports mm-accurate STEP solids that FreeCAD 1.1 accepts (4-face blade + 12-face hub, volume-consistent with the STL); truck-stepio cannot serialise boolean results (F-lead1-002); T-009 (Manifold in Docker) unions blade+hub into one watertight solid (genus 0, NoError) and is the D-lead1-005 engine for server assemblies. Consequences without any §8 change: `CadKernel::{blade_solid, hub_solid, write_step}` remains truck-only for STEP; the wasm bundle carries meshes only (no STEP, no booleans); merged/3MF output is produced server-side by Manifold (T-203). The `occt` fallback stays available should fillets/chamfers or a TE-seam repair ever demand it.
   refs: plan.md §7 T-010, §8 CadKernel, D-lead1-004, D-lead1-005, F-lead1-002, F-geom1-011, F-geom1-014 | supersedes: – (confirms D-lead1-004/D-lead1-005 for the final kernel split)
+- **D-geom1-010** | 2026-11-05 20:20 | geom-1 | T-102 | **Accepted**
+  The lead's "continues" instruction in-session on 2026-11-05 approves **T-102** (cad role) and accepts **P-geom1-001**: `blade_model::Hub` gains `shaft_flat_radial_mm: Option<f64>` (optional, default `None`), and `hub_solid` builds a D-flat bore hub by 2D extrusion (`builder::tsweep` of a holed annular face: outer circle wire + reversed inner D wire) — **no booleans** anywhere in the STEP path (F-lead1-002, D-lead1-005). Round-bore hubs (field absent) keep the existing revolve path unchanged, so no legacy design changes meaning. The `blade-model` schema change is a §5.4 core-interface amendment authorized here; the §8 `CadKernel` signatures themselves stay byte-for-byte identical.
+  refs: plan.md §7 T-102, §9.6 P-geom1-001, §4 (blade-model), D-lead1-005 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -457,7 +460,11 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 
 ### 9.6 Proposals (P)
 
-*(None yet; format: Proposed Change / Rationale / Impacted Crates / Alternatives Considered)*
+- **P-geom1-001** | 2026-11-05 20:20 | geom-1 | T-102 | **State: Accepted (D-geom1-010)**
+  **Proposed Change:** Add an *optional* field to `blade_model::Hub`: `shaft_flat_radial_mm: Option<f64>` (serde-defaulted to `None`) = distance from the bore axis to the D-flat face, in `(0, bore/2)`. When `Some`, `CadKernel::hub_solid` switches from the revolved round bore to a **2D-extruded** hub whose bore cross-section is a D shape (arc of radius `r` where `x < d`, closed by a chord at `x = d`), built with `builder::tsweep(&holed_annular_face, (0,0,L))` — no booleans (F-lead1-002 / D-lead1-005).
+  **Rationale:** T-102 (hub D-flat without booleans) needs the flat dimension as a parameter; a hard-coded magic flat would be a landmine. `None` preserves every existing design/JSON.
+  **Impacted Crates:** `blade-model` (schema/hub docs — core interface, §5.4), `blade-cad` (hub_solid + tests/example).
+  **Alternatives Considered:** (a) hard-code a default D-flat — rejected (not adjustable, hidden). (b) new `hub_solid_dflat` method — rejected (would amend §8 trait). (c) manifold boolean cut on the server — rejected for this task (booleans are a server T-203 concern; STEP must stay boolean-free).
 
 ### 9.7 Handoffs (H)
 
@@ -524,4 +531,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T19:55+07:00 agent=geom-1 mem=v13 note="T-009 done: deploy/manifold Docker image (trixie, 117MB) with manifold3d 0.4.1 union runner; docker build --no-cache clean; union of fixture blade+hub STL = single watertight solid (genus 0, NoError), self-check PASS (8000/7000/10000 mm^3 exact), blade 126493.727 + hub 558932.941 = union 685426.668 mm^3; independent Node validator: 4050 tris, 0 boundary/non-manifold edges; Docker Desktop started to run it; gotchas: maniclot-csg-sys git-clones C++ at build time, runtime base must match rust:1-slim glibc (trixie)"
 [RE-ACK] 2026-11-05T20:10+07:00 agent=geom-1 mem=v13 last_entry=H-geom1-008 note="lead: 'next' -> T-010 kernel-decision takeover approved (all deps T-005..T-009 done); recording the final truck-vs-occt Decision in §9.3 from in-session evidence (truck=STEP, Manifold=server booleans, occt=optional feature)"
 [END] 2026-11-05T20:12+07:00 agent=geom-1 mem=v14 note="T-010 done: kernel decision recorded as D-geom1-009 in §9.3 -> truck = B-rep/STEP (truck-modeling 0.6), Manifold manifold3d 0.4.1 = server booleans/3MF, OCCT = optional feature only; no §8 CadKernel change needed; closes Phase 0 (all T-001..T-010 final: T-001 in-progress only for CI/remote); Phase 1 T-101/T-102 unblocked"
+[RE-ACK] 2026-11-05T20:20+07:00 agent=geom-1 mem=v14 last_entry=H-geom1-009 note="lead: 'continues' -> T-102 cad takeover approved (D-geom1-010 + P-geom1-001 Accepted); adding optional Hub.shaft_flat_radial_mm and hub_solid D-flat via tsweep of a holed annular face (no booleans); round-bore revolve path unchanged"
 ```
