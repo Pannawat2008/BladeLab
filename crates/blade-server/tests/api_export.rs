@@ -92,7 +92,7 @@ async fn exports_stl_3mf_and_step_and_caches_with_blake3() {
         .uri("/api/v1/export?format=step&part=assembly")
         .body(Body::from(LINEAR_FIXTURE))
         .unwrap();
-    let resp_step = app.oneshot(req_step).await.unwrap();
+    let resp_step = app.clone().oneshot(req_step).await.unwrap();
     assert_eq!(resp_step.status(), StatusCode::OK);
     assert_eq!(
         resp_step.headers().get(header::CONTENT_TYPE).unwrap(),
@@ -104,6 +104,24 @@ async fn exports_stl_3mf_and_step_and_caches_with_blake3() {
     let step_text = std::str::from_utf8(&step_bytes).unwrap();
     assert!(step_text.starts_with("ISO-10303-21;"));
     assert_eq!(step_text.matches("MANIFOLD_SOLID_BREP(").count(), 2);
+
+    // 6. 3MF unified blade+hub assembly export (T-203) -> single watertight manifold part
+    let req_3mf_asm = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/export?format=3mf&part=assembly")
+        .body(Body::from(LINEAR_FIXTURE))
+        .unwrap();
+    let resp_3mf_asm = app.oneshot(req_3mf_asm).await.unwrap();
+    assert_eq!(resp_3mf_asm.status(), StatusCode::OK);
+    assert_eq!(
+        resp_3mf_asm.headers().get(header::CONTENT_TYPE).unwrap(),
+        "model/3mf"
+    );
+    let threemf_asm_bytes = to_bytes(resp_3mf_asm.into_body(), 8 * 1024 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(&threemf_asm_bytes[..4], b"PK\x03\x04");
+    assert!(threemf_asm_bytes.len() > threemf_bytes.len());
 }
 
 #[tokio::test]

@@ -26,8 +26,10 @@
 //! assert!(step.contains("SI_UNIT(.MILLI.,.METRE.)"));
 //! ```
 
+pub mod assembly;
 pub mod error;
 pub mod kernel;
 
+pub use assembly::{assembly_mesh, hub_mesh, HUB_CIRCUMFERENCE_SEGMENTS};
 pub use error::CadError;
 pub use kernel::{CadKernel, TruckKernel};

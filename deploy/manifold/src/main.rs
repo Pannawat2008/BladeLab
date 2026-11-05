@@ -28,10 +28,11 @@ fn main() {
         }
     };
 
-    // Hub geometry matches the fixture: hollow cylinder along +z, base at
-    // z = 0, length 50 mm, outer diameter 120 mm, bore 12 mm.
-    let hub_outer = Manifold::cylinder(50.0, 60.0, 60.0, 64, false);
-    let hub_inner = Manifold::cylinder(50.0, 6.0, 6.0, 64, false);
+    // Hub geometry matches the fixture: hollow cylinder along +z, length 50 mm,
+    // outer diameter 120 mm, bore 12 mm, shifted along +z so the top 2 mm of the
+    // hub overlaps the blade root at z = 60 mm (T-203: unified watertight solid).
+    let hub_outer = Manifold::cylinder(50.0, 60.0, 60.0, 64, false).translate(0.0, 0.0, 12.0);
+    let hub_inner = Manifold::cylinder(50.0, 6.0, 6.0, 64, false).translate(0.0, 0.0, 12.0);
     let hub = hub_outer.difference(&hub_inner);
 
     let union_ = blade.union(&hub);
@@ -39,7 +40,12 @@ fn main() {
         eprintln!("FAIL: union is empty");
         std::process::exit(1);
     }
-    if let Err(error) = write_stl(&union_, output) {
+    let write_res = if output.to_ascii_lowercase().ends_with(".3mf") {
+        write_3mf(&union_, output)
+    } else {
+        write_stl(&union_, output)
+    };
+    if let Err(error) = write_res {
         eprintln!("FAIL: cannot write {output}: {error}");
         std::process::exit(1);
     }
@@ -172,6 +178,38 @@ fn write_stl(manifold: &Manifold, path: &str) -> Result<(), String> {
         out.extend_from_slice(&[0u8, 0]);
     }
     fs::write(path, &out).map_err(|error| error.to_string())
+}
+
+/// Writes a 3MF archive from the manifold (`T-203`).
+fn write_3mf(manifold: &Manifold, path: &str) -> Result<(), String> {
+    use std::fmt::Write as _;
+    let (props, n_props, triangles) = manifold.to_mesh_f64();
+    let vert_count = props.len() / n_props;
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <model unit=\"millimeter\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n\
+         <resources><object id=\"1\" name=\"assembly\" type=\"model\"><mesh><vertices>\n",
+    );
+    for idx in 0..vert_count {
+        let base = idx * n_props;
+        let _ = writeln!(
+            xml,
+            "<vertex x=\"{:.6}\" y=\"{:.6}\" z=\"{:.6}\"/>",
+            props[base],
+            props[base + 1],
+            props[base + 2]
+        );
+    }
+    xml.push_str("</vertices><triangles>\n");
+    for tri in triangles.chunks_exact(3) {
+        let _ = writeln!(
+            xml,
+            "<triangle v1=\"{}\" v2=\"{}\" v3=\"{}\"/>",
+            tri[0], tri[1], tri[2]
+        );
+    }
+    xml.push_str("</triangles></mesh></object></resources><build><item objectid=\"1\"/></build></model>\n");
+    fs::write(path, xml.as_bytes()).map_err(|error| error.to_string())
 }
 
 fn face_normal(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> [f64; 3] {

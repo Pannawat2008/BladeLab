@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 32**
+> **MEMORY_VERSION: 33**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -225,7 +225,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 |---|---|---|---|---|---|---|---|
 | T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | done | 2026-11-06 01:04 | T-101 | Malformed formulas return friendly errors without panicking |
 | T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
-| T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | in-progress | 2026-11-06 01:16 | T-102 | Yields a single watertight manifold part |
+| T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | done | 2026-11-06 01:23 | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
 | T-205 | UI: Curve editor, value scrubbing, locking & binding | web | | todo | | T-201 | Conforms to UI interaction specifications |
 
@@ -384,6 +384,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-024** | 2026-11-06 01:13 | geom-1 | T-202
   `data/airfoils/{SG6043,SD7062,E387}.dat` provide the Selig-format low-Reynolds wind-turbine library airfoils embedded via `include_str!` into `crates/blade-geom/src/airfoil/dat.rs`. `DatAirfoil::from_dat` parses both Selig and Lednicer `.dat` files, enforces finite open trailing-edge thickness (`D-lead1-003`), and resamples onto cosine-spaced chordwise stations (`2·n − 1` points per `D-geom1-001`). `blend_airfoils(&Airfoil, &Airfoil, weight)` and `build_blended_sections` interpolate smoothly between root and tip contours, and `blade_model::resolve` + `blade_geom::build_sections` now support `AirfoilSpec::Named` (`SG6043`, `SD7062`, `E387`).
   refs: data/airfoils/*.dat, crates/blade-geom/src/airfoil/dat.rs, crates/blade-geom/src/sections.rs, crates/blade-model/src/resolve.rs | supersedes: –
+- **F-geom1-025** | 2026-11-06 01:23 | geom-1 | T-203
+  `blade_cad::assembly::{hub_mesh, assembly_mesh}` and `deploy/manifold` deliver unified blade+hub assembly meshes and 3MF export: `assembly_mesh` opens the blade's root cap and topologically welds the `P`-vertex root contour into sector 0 of the hub's `+z` annular cap via a transition collar (`P + 4` punctured-quad fan + `2P` collar triangles), yielding a **single connected, genus-1 watertight 2-manifold solid** (`boundary_edges == 0`, `non_manifold_edges == 0`, `inconsistent_edges == 0`, `degenerate_triangles == 0`, `connected_components == 1`) across all 5 canonical fixtures (both round and D-flat bores). `blade-cli` and `blade-server` (`POST /api/v1/export`) now support `--part hub` and `--part assembly` for `stl`, `3mf`, and `step`.
+  refs: crates/blade-cad/src/assembly.rs, crates/blade-cli/src/lib.rs, deploy/manifold/src/main.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -624,6 +627,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-202 is `done`. `data/airfoils/{SG6043,SD7062,E387}.dat` and `blade_geom::{DatAirfoil, library_airfoil, library_airfoil_names, blend_airfoils, build_blended_sections}` are implemented and wired into `blade_model::resolve` and `blade_geom::build_sections`. All 3 library airfoils (`SG6043`, `SD7062`, `E387`), Lednicer `.dat` import, and root-to-tip airfoil blending pass all unit and end-to-end loft tests. Workspace total is **117 Rust tests + 4 Node tests**, all green.
   **Next:** **T-203** (Unified blade+hub assembly via Manifold booleans + 3MF), **T-204** (PostgreSQL persistence: designs, versioning), and **T-205** (UI: Curve editor, value scrubbing, locking & binding).
   **Cautions:** `resolve()` preserves step-function `AirfoilStation` selection on `station.airfoil` so existing multi-station fixtures (`naca2415-multistation-dflat.json`) keep byte-identical golden geometry; use `blend_airfoils` or `build_blended_sections` for smooth contour transitions.
+- **H-geom1-019** | 2026-11-06 01:23 | geom-1 | T-203 | Recipient: lead, cad, server, qa
+  **Progress:** T-203 is `done`. `blade_cad::{hub_mesh, assembly_mesh}` and `deploy/manifold` produce unified watertight blade+hub manifold solids and `.3mf` / `.stl` exports; `blade-cli` and `blade-server` (`POST /api/v1/export`) now support `part=hub` and `part=assembly` across all 3 formats (`stl`, `3mf`, `step`). Verified across all 5 canonical fixtures (`check_mesh.is_valid_solid() == true`, `connected_components == 1`). Workspace total is **118 Rust tests + 4 Node tests**, all green.
+  **Next:** **T-204** (PostgreSQL persistence: designs, versioning) and **T-205** (UI: Curve editor, value scrubbing, locking & binding).
+  **Cautions:** `assembly_mesh` stays in `blade-cad` (native/server-side) while `deploy/manifold` provides the containerized `manifold3d` C++ boolean runner, keeping core crates 100% boolean-free and `wasm32`-clean (`D-lead1-005`).
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -671,4 +678,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T01:05:00+07:00 agent=geom-1 mem=v29 last_entry=H-geom1-017 task=T-202 note="lead: 'do all phase2' -> claiming T-202 (Airfoil library SG6043/SD7062/E387 + .dat import + blending) under D-geom1-018 / P-geom1-004"
 [END] 2026-11-06T01:14+07:00 agent=geom-1 mem=v31 note="T-202 done: data/airfoils/{SG6043,SD7062,E387}.dat + DatAirfoil + library_airfoil + blend_airfoils + build_blended_sections + AirfoilSpec::Named support in resolve/build_sections; 117 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-024, H-geom1-018 recorded"
 [RE-ACK] 2026-11-06T01:16:00+07:00 agent=geom-1 mem=v31 last_entry=H-geom1-018 task=T-203 note="lead: 'do all phase2' -> claiming T-203 (Unified blade+hub assembly via Manifold booleans + 3MF) under D-geom1-019"
+[END] 2026-11-06T01:23+07:00 agent=geom-1 mem=v33 note="T-203 done: blade_cad::{hub_mesh, assembly_mesh} + deploy/manifold 3MF/overlap union + blade-cli/blade-server assembly 3MF/STL export; single connected watertight manifold solid across all 5 fixtures; 118 Rust tests + 4 Node tests + fmt/clippy/wasm32 clean; F-geom1-025, H-geom1-019 recorded"
 ```

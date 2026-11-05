@@ -54,10 +54,15 @@ fn rejects_invalid_cli_arguments_with_clear_errors() {
         Err(CliError::Usage(_))
     ));
     assert!(matches!(
-        export_design_bytes(LINEAR_FIXTURE, ExportFormat::Stl, ExportPart::Hub),
-        Err(CliError::PartRequiresStep {
-            part: ExportPart::Hub
-        })
+        parse_args([
+            "export",
+            "design.json",
+            "--format",
+            "stl",
+            "--part",
+            "bogus"
+        ]),
+        Err(CliError::UnsupportedPart(_))
     ));
 }
 
@@ -92,6 +97,14 @@ fn exports_valid_stl_3mf_and_step_for_both_fixtures() {
             .expect("STEP assembly export succeeds");
         let step_asm_str = std::str::from_utf8(&step_asm).expect("UTF-8 STEP");
         assert_eq!(step_asm_str.matches("MANIFOLD_SOLID_BREP(").count(), 2);
+
+        // 4. Unified assembly 3MF and STL (T-203): single watertight manifold part
+        let threemf_asm = export_design_bytes(raw, ExportFormat::ThreeMf, ExportPart::Assembly)
+            .expect("3MF assembly export succeeds");
+        assert_eq!(&threemf_asm[..4], b"PK\x03\x04");
+        let stl_asm = export_design_bytes(raw, ExportFormat::Stl, ExportPart::Assembly)
+            .expect("STL assembly export succeeds");
+        assert!(stl_asm.len() > stl.len());
     }
 }
 

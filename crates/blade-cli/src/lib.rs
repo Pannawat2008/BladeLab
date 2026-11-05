@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use blade_cad::{CadError, CadKernel, TruckKernel};
+use blade_cad::{assembly_mesh, hub_mesh, CadError, CadKernel, TruckKernel};
 use blade_geom::{build_sections, loft, GeomError};
 use blade_mesh::{check_mesh, tessellate, write_3mf, write_stl, MeshError, MeshOptions};
 use blade_model::{resolve, Design, ModelError};
@@ -248,18 +248,24 @@ pub fn export_design_bytes(
     format: ExportFormat,
     part: ExportPart,
 ) -> Result<Vec<u8>, CliError> {
-    if part != ExportPart::Blade && format != ExportFormat::Step {
-        return Err(CliError::PartRequiresStep { part });
-    }
-
     let design = Design::from_json(design_json)?;
     let resolved = resolve(&design)?;
 
     match format {
         ExportFormat::Stl | ExportFormat::ThreeMf => {
-            let sections = build_sections(&resolved)?;
-            let surface = loft(&sections)?;
-            let mesh = tessellate(&surface, &MeshOptions::default())?;
+            let mesh = match part {
+                ExportPart::Blade => {
+                    let sections = build_sections(&resolved)?;
+                    let surface = loft(&sections)?;
+                    tessellate(&surface, &MeshOptions::default())?
+                }
+                ExportPart::Hub => hub_mesh(&resolved.hub)?,
+                ExportPart::Assembly => {
+                    let sections = build_sections(&resolved)?;
+                    let surface = loft(&sections)?;
+                    assembly_mesh(&surface, &resolved.hub)?
+                }
+            };
             let report = check_mesh(&mesh);
             if !report.is_valid_solid() {
                 return Err(CliError::InvalidMeshSolid(report.issues().join("; ")));

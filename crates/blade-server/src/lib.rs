@@ -225,12 +225,6 @@ async fn handle_export(
     }
     validate(&design).map_err(ServerError::InvalidDesign)?;
 
-    if part != ExportPart::Blade && format != ExportFormat::Step {
-        return Err(ServerError::BadRequest(format!(
-            "part `{part:?}` is only supported with format `step`"
-        )));
-    }
-
     let canonical_json =
         serde_json::to_string(&design).map_err(|err| ServerError::BadRequest(err.to_string()))?;
     let digest = compute_blake3_key(&canonical_json, format, part);
