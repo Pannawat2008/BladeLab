@@ -206,7 +206,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-006 | blade-cad: Blade solid using truck → STEP export | cad | geom-1 | done | 2026-11-05 18:24 | T-004 | Opens in FreeCAD as a valid solid in mm units |
 | T-007 | CI: Headless STEP verification using FreeCAD | qa | geom-1 | done | 2026-11-05 18:45 | T-006 | CI job fails if exported STEP file is not a valid solid |
 | T-008 | blade-wasm + Three.js live blade rendering | web | geom-1 | done | 2026-11-05 19:15 | T-005 | Web view renders blade, updates within 50 ms upon twist change |
-| T-009 | Build manifold-csg inside Docker container | server | | todo | | T-001 | `docker build` succeeds, successfully unions blade + hub |
+| T-009 | Build manifold-csg inside Docker container | server | geom-1 | in-progress | 2026-11-05 19:20 | T-001 | `docker build` succeeds, successfully unions blade + hub |
 | T-010 | Finalize kernel decision (truck vs occt) | lead | | todo | | T-005..T-009 | Recorded as a Decision in §9.3 |
 
 ### Phase 1 — MVP
@@ -389,6 +389,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-007** | 2026-11-05 19:00 | geom-1 | T-008 | **Accepted**
   The lead delegated the next-task choice in-session on 2026-11-05 ("up to you"), which approves the **T-008** takeover (web role: `crates/blade-wasm/` + `web/`). Scope: (1) a `wasm-bindgen` crate that wraps the existing `blade-model → blade-geom → blade-mesh` pipeline (`Design::from_json → resolve → build_sections → loft → tessellate`) behind one `build_mesh(design_json, overrides_json)` call returning indexed triangle data; (2) a Three.js view that renders the blade and re-runs the pipeline from slider overrides (tip twist / tip chord), meeting the 50 ms update budget, verified by a Node benchmark of the compiled wasm. STEP stays out of the wasm bundle (§2). The live-twist knob is implemented as an override that mutates the parsed design's `CurveSource::Linear` distributions, so no §8/core interface changes are needed. qa-role `.github/` is untouched by this task.
   refs: plan.md §7 T-008, §3 (web/ + crates/blade-wasm/), §8 | supersedes: –
+- **D-geom1-008** | 2026-11-05 19:20 | geom-1 | T-009 | **Accepted**
+  The lead's "next" instruction in-session on 2026-11-05 approves the **T-009** takeover (server role: manifold boolean-CSG inside Docker). Since no `server` agent exists in this workspace, geom-1 owns the §4 server path `deploy/`. Scope: a `Dockerfile` that builds a working Manifold boolean engine in a container and a small runner that unions the blade and hub (the two fixture STLs) into one watertight mesh, satisfying "docker build succeeds, successfully unions blade + hub". It is a *verification spike* — the production API integration is T-203 — and D-lead1-005 (booleans only via manifold, server-side) is honoured. Local verification needs the Docker Desktop engine, which is installed but was not running at claim time.
+  refs: plan.md §7 T-009, §4 (server row → deploy/), D-lead1-005, T-203 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -497,4 +500,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T18:45+07:00 agent=geom-1 mem=v11 note="T-007 done: .github/workflows/step-check.yml (build + step-check jobs) and tests/step_check.py (FreeCAD OCCT headless validator); local proof runs: 2 positive PASS/exit0 (blade solids=1 z 60..600, assembly solids=2) and 4 negative FAIL/exit1 (corrupt, solids mismatch, z-bound, missing path); ran via FreeCAD bin/python.exe because FreeCADCmd argv conventions are hostile (L-geom1-010); CI activation still blocked by no git remote"
 [RE-ACK] 2026-11-05T19:00+07:00 agent=geom-1 mem=v11 last_entry=H-geom1-006 note="lead delegated next-task choice ('up to you') -> T-008 web takeover approved (D-geom1-007); building crates/blade-wasm (wasm-bindgen wrap of model->geom->mesh) + web/ Three.js viewer with live twist/chord sliders and a 50 ms update budget"
 [END] 2026-11-05T19:15+07:00 agent=geom-1 mem=v12 note="T-008 done: crates/blade-wasm build_mesh(design_json, overrides_json) wraps resolve->sections->loft->tessellate; web/ Vite+Three.js viewer renders blade (0 console errors), live twist/chord edits rebuild in 0.5 ms browser / 0.43 avg 0.80 max ms in Node bench (budget 50 ms); baseline matches STL (1771/3538/126493.7 mm^3/span 60..600); 83 workspace tests + fmt/clippy clean; wasm 292 kB, vite build bundles it; npm run wasm regenerates glue (wasm-bindgen 0.2.130)"
+[RE-ACK] 2026-11-05T19:20+07:00 agent=geom-1 mem=v12 last_entry=H-geom1-007 note="lead: 'next' -> T-009 server-role takeover approved (D-geom1-008); building deploy/ Docker image with a Manifold boolean engine and unioning fixture blade+hub STLs; Docker Desktop engine not running yet, starting it for local verification"
 ```
