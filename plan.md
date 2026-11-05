@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 23**
+> **MEMORY_VERSION: 24**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -218,7 +218,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
-| T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | | todo | | T-005 | CI fails if geometry changes unexpectedly |
+| T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | in-progress | 2026-11-06 00:35 | T-005 | CI fails if geometry changes unexpectedly |
 
 ### Phase 2 — Advanced Tuning & Full STEP Support
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
@@ -431,6 +431,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-014** | 2026-11-06 00:13 | geom-1 | T-106 | **Accepted**
   The lead's "do nex" instruction in-session on 2026-11-06 approves the **T-106** takeover (`web` role: `ts-rs` bindings on `blade-model` schema types, generated `web/src/types/blade-model.ts`, and a test/CI check verifying that the committed TS definitions match the latest Rust structs). `ts-rs` is pure Rust and `wasm32`-clean; no §8 function signatures are modified.
   refs: plan.md §7 T-106, §2, §6.2 | supersedes: –
+- **D-geom1-015** | 2026-11-06 00:35 | geom-1 | T-107 | **Accepted**
+  The lead's "do next" instruction in-session on 2026-11-06 approves the **T-107** takeover (`qa` role: 5 canonical design fixtures under `fixtures/`, golden snapshot file `fixtures/golden_snapshots.json`, and an integration test suite verifying volume, surface area, vertex/triangle counts, and 3D bounding-box `x/y/z` min/max snapshots across all 5 fixtures so CI fails if geometry changes unexpectedly). No §8 function signatures are modified.
+  refs: plan.md §7 T-107, §4 (qa row), §6.2 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -603,4 +606,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-05T23:43+07:00 agent=geom-1 mem=v21 note="T-103 done: crates/blade-server Axum POST /api/v1/export (stl, 3mf, step) with canonical blake3 caching (ETag + HIT/MISS + 304) and panic containment (CatchPanicLayer + spawn_blocking catch_unwind); 106 workspace tests + fmt/clippy/wasm32 clean; F-geom1-019, H-geom1-013 recorded"
 [RE-ACK] 2026-11-06T00:13:00+07:00 agent=geom-1 mem=v21 last_entry=H-geom1-013 task=T-106 note="lead: 'do nex' -> claiming T-106 (ts-rs automated TS type generation from blade-model + CI drift check) under D-geom1-014"
 [END] 2026-11-06T00:20+07:00 agent=geom-1 mem=v23 note="T-106 done: ts-rs 10.1.0 bindings on blade-model + web/src/types/blade-model.ts + ts_bindings drift test + CI step + web lint/typecheck/test scripts; 107 Rust tests + 1 Node test + fmt/clippy/wasm32/vite build clean; F-geom1-020, L-geom1-015, H-geom1-014 recorded"
+[RE-ACK] 2026-11-06T00:35:00+07:00 agent=geom-1 mem=v23 last_entry=H-geom1-014 task=T-107 note="lead: 'do next' -> claiming T-107 (5 fixtures + volume/bounding-box golden snapshots) under D-geom1-015"
 ```
