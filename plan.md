@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 26**
+> **MEMORY_VERSION: 27**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-06 00:50 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-06 00:56 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -375,6 +375,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   5. `naca6409-high-tsr-5blade.json` (13 stations, 2093 verts, 4182 tris, `V = 18 600.657824 mm³`, `A = 21 979.778880 mm²`, `z = 50..500 mm`, 8-face D-flat hub).
   All 5 pass both watertight mesh + golden bbox/volume checks and `TruckKernel` B-rep STEP round-trip checks.
   refs: fixtures/*.json, crates/blade-mesh/tests/golden_snapshots.rs, crates/blade-cad/tests/step.rs | supersedes: –
+- **F-geom1-022** | 2026-11-06 00:56 | geom-1 | T-105
+  `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` deliver the T-105 Layer-1 + Layer-3 workbench: (1) `DesignHistory` bounded immutable undo/redo stack (`commit`, `undo`, `redo`, `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` + toolbar buttons with counts); (2) Layer-1 rotor controls (`radius_mm`, `hub_radius_mm`, `blade_count`, `design_tsr`, `wind_speed_mps`, `station_count`) and Linear vs Schmitz distribution mode switcher; (3) `resolveStationsPreview` + Layer-3 per-station override table (`chord_mm`, `twist_deg`, row `×` clear, `Clear Overrides`). Every edit rebuilds the 3D mesh via `blade-wasm::build_mesh` in `< 1 ms` (`avg 0.46 ms`, `max 0.76 ms` over 40 edits).
+  refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -584,6 +587,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-107 is `done`. Added 3 new canonical fixtures (`naca0012-constant.json`, `naca2415-multistation-dflat.json`, `naca6409-high-tsr-5blade.json`), bringing the `fixtures/` suite to 5 designs covering linear/constant/Schmitz curves, symmetric/cambered/multi-station airfoils, Layer-3 mid-span & tip overrides, and round/D-flat hubs. `crates/blade-mesh/tests/golden_snapshots.rs` + `fixtures/golden_snapshots.json` verify exact topology, volume (`±1e-3 mm³`), surface area (`±1e-3 mm²`), min triangle altitude, and 3D bounding box (`±1e-5 mm`), plus a mutation test proving that a 1 mm geometry change fails the check. `crates/blade-cad/tests/step.rs` also verifies B-rep STEP export for all 5 fixtures. Workspace is now at **110 Rust tests + 1 Node test**, all green.
   **Next:** **T-105** (`UI: Layer 1 controls + Layer 3 per-station table`) is the final remaining task in **Phase 1 — MVP**.
   **Cautions:** If an approved geometry algorithm change alters mesh output, regenerate snapshots with `BLADELAB_UPDATE_GOLDEN=1 cargo test -p blade-mesh --test golden_snapshots`.
+- **H-geom1-016** | 2026-11-06 00:56 | geom-1 | T-105 | Recipient: lead, web, geom, qa
+  **Progress:** T-105 is `done`, completing **100% of Phase 1 — MVP** (`T-101` through `T-107` all `done`). `web/` now features Layer-1 rotor & distribution controls (Linear & Schmitz), a live Layer-3 per-station override table, and an Undo/Redo history stack (`DesignHistory`). Verified by 4 Node tests in `web/scripts/types.test.mjs` (including end-to-end wasm `build_mesh` verification of Layer-1 edits, Layer-3 station overrides, and Undo/Redo exact geometry restoration), `tsc --noEmit`, `vite build`, and the 40-edit latency benchmark (`max 0.76 ms < 50 ms`). Workspace total is **110 Rust tests + 4 Node tests**, all green.
+  **Next:** Phase 2 (`T-201`: Layer 2 Bézier curves and `evalexpr` formulas with variable `x = r/R`; `T-202`: Airfoil library + `.dat` import + blending; `T-203`: Unified blade+hub assembly via Manifold booleans + 3MF; `T-204`: PostgreSQL persistence; `T-205`: UI curve editor).
+  **Cautions:** Range sliders (`#twist`, `#chord`) update the 3D viewport on `input` and push a single snapshot onto `DesignHistory` on `change` so dragging a slider does not flood the undo stack.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -625,4 +632,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T00:35:00+07:00 agent=geom-1 mem=v23 last_entry=H-geom1-014 task=T-107 note="lead: 'do next' -> claiming T-107 (5 fixtures + volume/bounding-box golden snapshots) under D-geom1-015"
 [END] 2026-11-06T00:40+07:00 agent=geom-1 mem=v25 note="T-107 done: 5 fixtures in fixtures/ + fixtures/golden_snapshots.json + crates/blade-mesh/tests/golden_snapshots.rs + blade-cad 5-fixture STEP test + CI step; 110 Rust tests + 1 Node test + fmt/clippy/wasm32 clean; F-geom1-021, H-geom1-015 recorded"
 [RE-ACK] 2026-11-06T00:50:00+07:00 agent=geom-1 mem=v25 last_entry=H-geom1-015 task=T-105 note="lead: 'do next' -> claiming T-105 (UI: Layer 1 controls + Layer 3 per-station table + undo/redo) under D-geom1-016"
+[END] 2026-11-06T00:56+07:00 agent=geom-1 mem=v27 note="T-105 done (closes Phase 1 MVP): web/src/state.ts + web/index.html + web/src/main.ts (Layer 1 rotor/distribution controls, Layer 3 per-station override table, DesignHistory undo/redo, live <1 ms wasm 3D updates); 110 Rust tests + 4 Node tests + tsc + vite build + bench clean; F-geom1-022, H-geom1-016 recorded"
 ```

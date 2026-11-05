@@ -3,19 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BladeLab — live blade preview</title>
+    <title>BladeLab — Layer 1 &amp; Layer 3 Blade Workbench</title>
     <style>
       :root {
         color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
       }
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: #14161a;
+        background: #111318;
         color: #e8eaed;
-        font: 13px/1.5 system-ui, sans-serif;
+        font: 12.5px/1.45 "Inter", system-ui, -apple-system, sans-serif;
       }
       #app {
         position: fixed;
@@ -25,59 +28,324 @@
         position: fixed;
         top: 12px;
         left: 12px;
-        width: 260px;
-        padding: 12px 14px;
-        background: rgba(20, 22, 26, 0.86);
-        border: 1px solid #2b2f36;
-        border-radius: 8px;
-        backdrop-filter: blur(4px);
-        user-select: none;
+        bottom: 12px;
+        width: 390px;
+        max-width: calc(100vw - 24px);
+        display: flex;
+        flex-direction: column;
+        background: rgba(18, 21, 27, 0.92);
+        border: 1px solid #2b313c;
+        border-radius: 10px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
       }
-      #panel h1 {
-        font-size: 14px;
-        margin: 0 0 10px;
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 1px solid #262b35;
+        background: rgba(25, 29, 37, 0.85);
+      }
+      .panel-header h1 {
+        font-size: 13.5px;
+        font-weight: 600;
+        margin: 0;
+        letter-spacing: 0.01em;
+      }
+      .toolbar {
+        display: flex;
+        gap: 6px;
+      }
+      button {
+        background: #232832;
+        color: #e8eaed;
+        border: 1px solid #363d4a;
+        border-radius: 5px;
+        padding: 4px 8px;
+        font-size: 11.5px;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      button:hover:not(:disabled) {
+        background: #2e3543;
+        border-color: #4f8bd6;
+      }
+      button:disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+      .panel-scroll {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 14px;
+      }
+      section {
+        margin-bottom: 14px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #232833;
+      }
+      section:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #8b95a7;
+        margin-bottom: 8px;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 10px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .field label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11.5px;
+        color: #c3c9d4;
+      }
+      .field input[type="number"],
+      .field select {
+        width: 100%;
+        background: #161920;
+        color: #e8eaed;
+        border: 1px solid #2e3440;
+        border-radius: 5px;
+        padding: 4px 7px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .field input[type="number"]:focus,
+      .field select:focus {
+        outline: none;
+        border-color: #4f8bd6;
       }
       .row {
-        margin: 8px 0;
+        margin: 7px 0;
       }
       .row label {
         display: flex;
         justify-content: space-between;
         margin-bottom: 2px;
+        font-size: 11.5px;
+        color: #c3c9d4;
       }
       .row input[type="range"] {
         width: 100%;
       }
-      #stats {
-        margin-top: 10px;
-        padding-top: 8px;
-        border-top: 1px solid #2b2f36;
+      .mode-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .mode-tabs button.active {
+        background: #2b4c7e;
+        border-color: #5b9bf0;
+        color: #ffffff;
+      }
+      table.station-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11.5px;
         font-variant-numeric: tabular-nums;
+      }
+      table.station-table th {
+        text-align: left;
+        font-weight: 600;
+        color: #8b95a7;
+        padding: 4px 4px;
+        border-bottom: 1px solid #2b313c;
+      }
+      table.station-table td {
+        padding: 3px 4px;
+        border-bottom: 1px solid #1d212a;
+      }
+      table.station-table tr.overridden {
+        background: rgba(79, 139, 214, 0.12);
+      }
+      table.station-table input[type="number"] {
+        width: 68px;
+        background: #151820;
+        color: #e8eaed;
+        border: 1px solid #2c323e;
+        border-radius: 4px;
+        padding: 2px 5px;
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      table.station-table tr.overridden input[type="number"] {
+        border-color: #4f8bd6;
+        color: #9ec5ff;
+        font-weight: 600;
+      }
+      .btn-mini {
+        padding: 1px 6px;
+        font-size: 11px;
+      }
+      #error-banner {
+        display: none;
+        margin: 0 14px 8px;
+        padding: 6px 9px;
+        border-radius: 6px;
+        background: rgba(220, 68, 68, 0.18);
+        border: 1px solid #d85858;
+        color: #ffb3b3;
+        font-size: 11.5px;
+      }
+      #stats {
+        padding: 9px 14px;
+        border-top: 1px solid #262b35;
+        background: rgba(15, 18, 23, 0.95);
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
       }
       #stats .ok {
         color: #7bd88f;
+        font-weight: 600;
       }
       #stats .slow {
         color: #ff9d66;
+        font-weight: 600;
       }
     </style>
   </head>
   <body>
     <div id="app"></div>
     <div id="panel">
-      <h1>BladeLab · live blade</h1>
-      <div class="row">
-        <label for="twist">Tip twist <span id="twist-val">3°</span></label>
-        <input id="twist" type="range" min="0" max="20" step="0.5" value="3" />
+      <div class="panel-header">
+        <h1>BladeLab · Workbench</h1>
+        <div class="toolbar">
+          <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+          <button id="btn-redo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+          <button id="btn-reset" title="Reset to initial fixture">Reset</button>
+        </div>
       </div>
-      <div class="row">
-        <label for="chord">Tip chord <span id="chord-val">35 mm</span></label>
-        <input id="chord" type="range" min="20" max="70" step="1" value="35" />
+
+      <div class="panel-scroll">
+        <!-- Layer 1: Global Rotor Parameters -->
+        <section id="layer1-rotor">
+          <div class="section-title">
+            <span>Layer 1 · Rotor Parameters</span>
+            <span id="rotor-summary">R=600 mm · B=3</span>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="rotor-radius">Tip Radius R (mm)</label>
+              <input id="rotor-radius" type="number" min="100" max="2500" step="10" value="600" />
+            </div>
+            <div class="field">
+              <label for="rotor-hub-radius">Hub Radius r₀ (mm)</label>
+              <input id="rotor-hub-radius" type="number" min="10" max="1000" step="5" value="60" />
+            </div>
+            <div class="field">
+              <label for="rotor-blades">Blades B</label>
+              <input id="rotor-blades" type="number" min="1" max="12" step="1" value="3" />
+            </div>
+            <div class="field">
+              <label for="rotor-tsr">Design TSR λ</label>
+              <input id="rotor-tsr" type="number" min="0.5" max="15" step="0.25" value="4.5" />
+            </div>
+            <div class="field">
+              <label for="rotor-wind">Wind Speed (m/s)</label>
+              <input id="rotor-wind" type="number" min="1" max="50" step="0.5" value="8.0" />
+            </div>
+            <div class="field">
+              <label for="rotor-stations">Stations N</label>
+              <input id="rotor-stations" type="number" min="3" max="41" step="1" value="11" />
+            </div>
+          </div>
+        </section>
+
+        <!-- Layer 1 / 2: Spanwise Distribution Mode -->
+        <section id="layer1-distributions">
+          <div class="section-title">
+            <span>Layer 1/2 · Chord &amp; Twist Law</span>
+          </div>
+          <div class="mode-tabs">
+            <button id="mode-linear" class="active" type="button">Linear Law</button>
+            <button id="mode-schmitz" type="button">Schmitz Optimum</button>
+          </div>
+
+          <div id="controls-linear">
+            <div class="grid-2">
+              <div class="field">
+                <label for="root-chord">Root Chord (mm)</label>
+                <input id="root-chord" type="number" min="5" max="300" step="1" value="70" />
+              </div>
+              <div class="field">
+                <label for="root-twist">Root Twist (°)</label>
+                <input id="root-twist" type="number" min="-45" max="70" step="0.5" value="20" />
+              </div>
+            </div>
+            <div class="row">
+              <label for="twist">Tip twist <span id="twist-val">3°</span></label>
+              <input id="twist" type="range" min="0" max="25" step="0.5" value="3" />
+            </div>
+            <div class="row">
+              <label for="chord">Tip chord <span id="chord-val">35 mm</span></label>
+              <input id="chord" type="range" min="10" max="120" step="1" value="35" />
+            </div>
+          </div>
+
+          <div id="controls-schmitz" style="display: none">
+            <div class="grid-2">
+              <div class="field">
+                <label for="schmitz-cl">Design C_l</label>
+                <input id="schmitz-cl" type="number" min="0.2" max="2.5" step="0.05" value="1.0" />
+              </div>
+              <div class="field">
+                <label for="schmitz-alpha">Design α (°)</label>
+                <input id="schmitz-alpha" type="number" min="-15" max="25" step="0.5" value="6.0" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Layer 3: Per-Station Override Table -->
+        <section id="layer3-stations">
+          <div class="section-title">
+            <span>Layer 3 · Per-Station Table</span>
+            <button id="btn-clear-overrides" class="btn-mini" type="button">Clear Overrides</button>
+          </div>
+          <table class="station-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>r/R</th>
+                <th>r (mm)</th>
+                <th>Chord (mm)</th>
+                <th>Twist (°)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="station-table-body"></tbody>
+          </table>
+        </section>
       </div>
+
+      <div id="error-banner"></div>
+
       <div id="stats">
-        update: <span id="ms" class="ok">–</span> ·
-        <span id="tris">–</span> tris ·
-        <span id="vol">–</span> mm³
+        <span>update: <span id="ms" class="ok">–</span></span>
+        <span><span id="tris">–</span> tris</span>
+        <span><span id="vol">–</span> mm³</span>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
