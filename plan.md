@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 17**
-> **LAST_UPDATED: 2026-11-05 23:29 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 18**
+> **LAST_UPDATED: 2026-11-05 23:31 (UTC+7) by geom-1**
 
 ---
 
@@ -215,7 +215,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-101 | Layer 1: Initial chord/twist generation via Schmitz formulas | geom | geom-1 | done | 2026-11-05 23:29 | T-010 | Matches hand-calculated fixture values |
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | | todo | | T-005, T-006 | Integration tests pass; panics do not crash server |
-| T-104 | blade-cli: `bladelab export design.json --format step` | server | | todo | | T-005, T-006 | Generates valid files for all formats |
+| T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | in-progress | 2026-11-05 23:31 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | | todo | | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | | todo | | T-005 | CI fails if geometry changes unexpectedly |
@@ -413,6 +413,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-011** | 2026-11-05 23:20 | geom-1 | T-101 | **Accepted**
   The lead's in-session selection on 2026-11-05 approves **T-101** (`geom` role) and accepts **P-geom1-002**: (1) `crates/blade-geom` gains the `schmitz` module implementing Schmitz optimum-rotor inflow angle `φ(r) = (2/3)·atan(R/(λ·r))`, chord `c(r) = (16πr / (B·Cl))·sin²(φ(r)/2)`, and twist `β(r) = φ_deg(r) − α_design` across single stations and full rotor grids; (2) `blade_model::CurveSource` gains the additive `Schmitz { design_cl, design_alpha_deg }` variant so designs can specify `"type": "schmitz"` in `distributions.chord_mm` and `distributions.twist_deg` and resolve through `blade_model::resolve` without changing any §8 function signature.
   refs: plan.md §7 T-101, §9.6 P-geom1-002, §8 | supersedes: –
+- **D-geom1-012** | 2026-11-05 23:31 | geom-1 | T-104 | **Accepted**
+  The lead's "do next task" instruction in-session on 2026-11-05 approves the **T-104** takeover (`server` role: `crates/blade-cli/`, plus `write_3mf` in `crates/blade-mesh/` per §3 "Tessellation, STL/3MF, mesh checks" and root `Cargo.toml` workspace membership). Scope: `bladelab export <design.json> --format <stl|3mf|step> [-o <output>] [--part <blade|hub|assembly>]` CLI binary + library, generating validated STL, 3MF (OPC ZIP + 3MF Core XML in mm units, pure Rust with zero C/C++ deps so `blade-mesh` stays `wasm32`-clean), and STEP (`TruckKernel`, boolean-free per F-lead1-002). No §8 signatures are modified.
+  refs: plan.md §7 T-104, §3, §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -564,4 +567,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [ACK] 2026-11-05T23:20:00+07:00 agent=geom-1 mem=v15 last_entry=H-geom1-010 task=T-101
 [ACK-NOTE] geom-1: F-lead1-001 (mm/deg, f64, wasm32-clean, no panics/NaN), D-lead1-002 (B-spline loft single geometry source), F-geom1-007/008 (schema v1 + resolve over uniform stations + Layer-3 overrides) and D-geom1-009/010 confirmed. Claiming T-101 (Schmitz Layer-1 chord/twist generation) with P-geom1-002 / D-geom1-011 Accepted.
 [END] 2026-11-05T23:29+07:00 agent=geom-1 mem=v17 note="T-101 done: blade_geom::schmitz module + blade_model::CurveSource::Schmitz + fixtures/naca4412-schmitz.json; matches 11-station hand-calculated reference values to <1e-12 and lofts within 1e-6 mm; 97 workspace tests + fmt/clippy/wasm32 clean; F-geom1-017, L-geom1-014, H-geom1-011 recorded"
+[RE-ACK] 2026-11-05T23:31:00+07:00 agent=geom-1 mem=v17 last_entry=H-geom1-011 task=T-104 note="lead: 'do next task' -> claiming T-104 (blade-cli export for stl, 3mf, step) under D-geom1-012"
 ```
