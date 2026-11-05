@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 27**
+> **MEMORY_VERSION: 28**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -223,7 +223,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 2 — Advanced Tuning & Full STEP Support
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | | todo | | T-101 | Malformed formulas return friendly errors without panicking |
+| T-201 | Layer 2: Bézier curves and formulas (evalexpr, variable x = r/R) | geom | geom-1 | in-progress | 2026-11-06 00:58 | T-101 | Malformed formulas return friendly errors without panicking |
 | T-202 | Airfoil library + .dat import + blending | geom | | todo | | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | | todo | | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | | todo | | T-103 | Full CRUD + version tracking functional |
@@ -449,6 +449,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-016** | 2026-11-06 00:50 | geom-1 | T-105 | **Accepted**
   The lead's "do next" instruction in-session on 2026-11-06 approves the **T-105** takeover (`web` role: `web/` UI for Layer 1 rotor/distribution controls + Layer 3 per-station override table + Undo/Redo history stack, with live `< 50 ms` 3D model updates via `blade-wasm`). Scope: pure-TypeScript state/history/station-resolution module (`web/src/state.ts`) using `web/src/types/blade-model.ts`, DOM/Three.js integration in `web/index.html` and `web/src/main.ts`, and Node unit tests for undo/redo, Layer-1 edits, and Layer-3 station table overrides. No §8 signatures are modified.
   refs: plan.md §7 T-105, §3, §6.2 | supersedes: –
+- **D-geom1-017** | 2026-11-06 00:58 | geom-1 | T-201 | **Accepted**
+  The lead's "do all phase2" instruction in-session on 2026-11-06 approves **T-201** (`geom` role) and accepts **P-geom1-003**: `blade_model::CurveSource` gains `Bezier { points: Vec<BezierControlPoint> }` (with `BezierControlPoint { x, y }` over blade span `x ∈ [0, 1]` or radial `r/R`, evaluated via De Casteljau / monotonic-x cubic or general Bernstein evaluation) and `Formula { expr: String }` (evaluated via `evalexpr` with variable `x = r / R`, plus `s`, `r`, `R`, `r_hub`, `B`, `tsr`, `pi`). Malformed formulas, unknown variables, division by zero, and non-finite outputs are caught in `validate()` and `eval_*()` and returned as clear `ValidationIssue` messages without panicking. `evalexpr` is pure Rust and `wasm32`-clean; no §8 function signatures are modified.
+  refs: plan.md §7 T-201, §9.6 P-geom1-003, §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -524,6 +527,11 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Rationale:** T-101 requires Layer-1 Schmitz chord/twist generation that matches hand-calculated fixture values and integrates seamlessly with Layer-3 overrides and the `Design → resolve → build_sections → loft` pipeline without altering §8 signatures.
   **Impacted Crates:** `blade-model` (additive `CurveSource::Schmitz` variant, `validate`, `resolve`), `blade-geom` (`schmitz` module + re-exports), `fixtures/naca4412-schmitz.json`.
   **Alternatives Considered:** (a) standalone helper in `blade-geom` only, with no `CurveSource` support — rejected because JSON fixtures could not declaratively express Schmitz Layer-1 distributions in `resolve()`. (b) separate `ChordSource` and `TwistSource` enums — rejected because it would break existing `CurveSource` callers.
+- **P-geom1-003** | 2026-11-06 00:58 | geom-1 | T-201 | **State: Accepted (D-geom1-017)**
+  **Proposed Change:** Add `CurveSource::Bezier { points: Vec<BezierControlPoint> }` (`BezierControlPoint { x: f64, y: f64 }`) and `CurveSource::Formula { expr: String }` to `blade_model::CurveSource`. `Bezier` evaluates a Bernstein/De Casteljau curve over `x ∈ [0, 1]` (solving `x(t) = s` via bisection when control-point `x` values are monotonic `[0, 1]`, or evaluating `y(s)` directly), while `Formula` evaluates `expr` via `evalexpr` with context `x = r/R`, `s`, `r`, `R`, `r_hub`, `B`, `tsr`, and `pi`.
+  **Rationale:** T-201 requires Layer-2 Bézier curves and `evalexpr` formulas (`x = r/R`) that integrate directly into `Design` JSON, `validate()`, `resolve()`, and `ts-rs` TypeScript bindings (`T-106`/`T-205`).
+  **Impacted Crates:** `blade-model` (`schema`, `validate`, `resolve`, `Cargo.toml`), `blade-geom` (`curve` module re-exports), `web/src/types/blade-model.ts`.
+  **Alternatives Considered:** Putting `evalexpr` only in `blade-geom` — rejected because `blade_model::validate` and `blade_model::resolve` evaluate `CurveSource` directly during schema validation and station resolution.
 
 ### 9.7 Handoffs (H)
 
@@ -633,4 +641,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T00:40+07:00 agent=geom-1 mem=v25 note="T-107 done: 5 fixtures in fixtures/ + fixtures/golden_snapshots.json + crates/blade-mesh/tests/golden_snapshots.rs + blade-cad 5-fixture STEP test + CI step; 110 Rust tests + 1 Node test + fmt/clippy/wasm32 clean; F-geom1-021, H-geom1-015 recorded"
 [RE-ACK] 2026-11-06T00:50:00+07:00 agent=geom-1 mem=v25 last_entry=H-geom1-015 task=T-105 note="lead: 'do next' -> claiming T-105 (UI: Layer 1 controls + Layer 3 per-station table + undo/redo) under D-geom1-016"
 [END] 2026-11-06T00:56+07:00 agent=geom-1 mem=v27 note="T-105 done (closes Phase 1 MVP): web/src/state.ts + web/index.html + web/src/main.ts (Layer 1 rotor/distribution controls, Layer 3 per-station override table, DesignHistory undo/redo, live <1 ms wasm 3D updates); 110 Rust tests + 4 Node tests + tsc + vite build + bench clean; F-geom1-022, H-geom1-016 recorded"
+[RE-ACK] 2026-11-06T00:58:00+07:00 agent=geom-1 mem=v27 last_entry=H-geom1-016 task=T-201 note="lead: 'do all phase2' -> claiming T-201 (Layer 2 Bezier curves and evalexpr formulas with x = r/R) under D-geom1-017 / P-geom1-003"
 ```
