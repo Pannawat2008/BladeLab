@@ -6,10 +6,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
 import init, { build_mesh } from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
+import type { Design } from "./types/blade-model";
 
 // ---- wasm bootstrap (fetches the compiled core, then exposes build_mesh) ----
 await init(wasmUrl);
-void designJson; // bundled here so the module is self-contained
+const baseDesign: Design = JSON.parse(designJson);
+const baseDesignJson = JSON.stringify(baseDesign);
 
 // ---- scene ----
 const scene = new THREE.Scene();
@@ -46,7 +48,7 @@ function rebuild() {
   };
 
   const start = performance.now();
-  const data = build_mesh(designJson, JSON.stringify(overrides));
+  const data = build_mesh(baseDesignJson, JSON.stringify(overrides));
   const elapsed = performance.now() - start;
 
   if (mesh !== null) {

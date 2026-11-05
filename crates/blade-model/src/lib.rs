@@ -15,8 +15,8 @@ pub mod validate;
 pub use error::{ModelError, ValidationIssue};
 pub use resolve::{resolve, ResolvedAirfoil, ResolvedBlade, ResolvedStation};
 pub use schema::{
-    AirfoilSpec, AirfoilStation, CurveSource, Design, Distributions, Hub, Manufacturing, Rotor,
-    StationOverride, SCHEMA_VERSION,
+    typescript_bindings, AirfoilSpec, AirfoilStation, CurveSource, Design, Distributions, Hub,
+    Manufacturing, Rotor, StationOverride, SCHEMA_VERSION,
 };
 pub use validate::validate;
 

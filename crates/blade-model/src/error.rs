@@ -2,9 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use ts_rs::TS;
 
 /// One semantic problem inside a [`crate::Design`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ValidationIssue {
     /// JSON-ish path of the offending field, for example `rotor.radius_mm`.
     pub path: String,

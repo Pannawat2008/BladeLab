@@ -17,6 +17,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
+      - name: Verify generated TypeScript types match Rust structs (T-106)
+        run: cargo test -p blade-model --test ts_bindings
       - run: cargo test --workspace
       - run: |
           cargo fmt --all -- --check

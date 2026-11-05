@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 22**
+> **MEMORY_VERSION: 23**
 > **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
 
 ---
@@ -217,7 +217,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
 | T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | | todo | | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
-| T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | in-progress | 2026-11-06 00:13 | T-002 | CI checks that generated types match latest Rust structs |
+| T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | | todo | | T-005 | CI fails if geometry changes unexpectedly |
 
 ### Phase 2 — Advanced Tuning & Full STEP Support
@@ -363,6 +363,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-019** | 2026-11-05 23:43 | geom-1 | T-103
   `crates/blade-server` (Axum 0.8.9, Tokio 1.54, `blake3` 1.8.7) exposes `GET /healthz` and `POST /api/v1/export` supporting both `{ "design": ..., "format": "stl|3mf|step", "part": "blade|hub|assembly" }` envelopes and bare `Design` JSON bodies with `?format=...&part=...` query parameters. Cache keys hash canonicalized `Design` JSON + format + part via `blake3` (so whitespace differences still hit cache), emitting `ETag`, `X-BladeLab-Cache: HIT|MISS`, and `304 Not Modified` on `If-None-Match`. Panics in handlers or blocking workers are caught by `CatchPanicLayer` + `spawn_blocking(catch_unwind(...))` and converted to HTTP 500 JSON without crashing the server.
   refs: crates/blade-server/src/{lib,main}.rs, crates/blade-server/tests/api_export.rs | supersedes: –
+- **F-geom1-020** | 2026-11-06 00:20 | geom-1 | T-106
+  `blade-model` derives `ts_rs::TS` (`ts-rs` 10.1.0, pure Rust and `wasm32`-clean) on all schema and validation structs (`Design`, `Rotor`, `Distributions`, `CurveSource`, `AirfoilStation`, `AirfoilSpec`, `StationOverride`, `Hub`, `Manufacturing`, `ValidationIssue`) and exposes `blade_model::typescript_bindings() -> String`. `crates/blade-model/tests/ts_bindings.rs` and `.github/workflows/step-check.yml` assert that `web/src/types/blade-model.ts` is byte-for-byte identical to `typescript_bindings()` (regenerated via `BLADELAB_UPDATE_TS=1 cargo test -p blade-model --test ts_bindings`). `web/src/main.ts` imports `Design` from `./types/blade-model` and `web/package.json` now provides `lint`, `typecheck` (`tsc --noEmit`), and `test` (`node --test scripts/types.test.mjs`).
+  refs: crates/blade-model/src/{schema,error}.rs, crates/blade-model/tests/ts_bindings.rs, web/src/types/blade-model.ts, .github/workflows/step-check.yml | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -485,6 +488,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-014** | 2026-11-05 23:29 | geom-1 | T-101
   Schmitz chord `c(λ_r) ∝ λ_r · sin²((1/3)·atan(1/λ_r))` is **not** monotonically decreasing near the axis: it vanishes as `r → 0` and reaches its stationary maximum where `tan(θ) = (1/3)·sin(6θ)` with `θ = (1/3)·atan(1/λ_r)`, i.e. at `λ_r* ≈ 0.7577` (`φ ≈ 35.24°`). Only for `λ_r > 0.7577` does chord strictly taper toward the tip; inflow angle `φ(r)` and twist `β(r)` decrease strictly across the entire span `(0, R]`.
   refs: crates/blade-geom/tests/properties.rs | supersedes: –
+- **L-geom1-015** | 2026-11-06 00:20 | geom-1 | T-106
+  `ts-rs` 10.1.0 attribute notes: (1) combining `#[serde(default, skip_serializing_if = "Option::is_none")]` triggers a macro warning (`failed to parse serde attribute`) and emits a non-optional field `field: number | null`; use `#[serde(default)]` + `#[ts(optional = nullable)]` so `ts-rs` generates `field?: number | null` cleanly with zero warnings. (2) In `web/src/vite-env.d.ts`, `declare module "../pkg/blade_wasm.js"` is rejected by `tsc` (`TS7016`) when the relative `.js` file exists on disk without a sibling `.d.ts`; use a wildcard ambient module pattern `declare module "*blade_wasm.js"` instead.
+  refs: crates/blade-model/src/schema.rs, web/src/vite-env.d.ts | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -555,6 +561,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-103 is `done`. `crates/blade-server` implements `POST /api/v1/export` (`stl`, `3mf`, `step`) with `blake3` caching (`ExportCache` + `CacheStats`) and panic containment (`CatchPanicLayer` + `spawn_blocking` `catch_unwind`). Verified by 3 integration tests in `crates/blade-server/tests/api_export.rs` (format exports, `MISS`→`HIT` cache verification across whitespace-reformatted JSON, `304 Not Modified`, 400/422 error responses, and simulated panic recovery proving subsequent requests still return `200 OK`). Workspace total is now **106 tests**, fmt/clippy/wasm32 clean.
   **Next:** Remaining Phase 1 tasks are **T-106** (`ts-rs` automated generation of TS types from `blade-model`), **T-107** (golden tests: 5 fixtures + volume/bounding box snapshots), and **T-105** (UI: Layer 1 controls + Layer 3 per-station table). T-204 (PostgreSQL persistence) is also unblocked by T-103.
   **Cautions:** `ExportCache` is in-memory per process; `AppState` is `Clone` (`Arc`-backed) so `T-204` can attach a `sqlx::PgPool` alongside `cache`.
+- **H-geom1-014** | 2026-11-06 00:20 | geom-1 | T-106 | Recipient: lead, web, qa
+  **Progress:** T-106 is `done`. `ts-rs` 10.1.0 is wired into `blade-model` (`blade_model::typescript_bindings()`), `web/src/types/blade-model.ts` is generated and consumed by `web/src/main.ts`, `crates/blade-model/tests/ts_bindings.rs` and `.github/workflows/step-check.yml` fail CI if Rust structs drift from `web/src/types/blade-model.ts`, and `web/package.json` now passes `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`. Workspace total is now **107 Rust tests + 1 Node test**, all green.
+  **Next:** Remaining Phase 1 tasks are **T-107** (golden tests: 5 fixtures + volume/bounding box snapshots) and **T-105** (UI: Layer 1 controls + Layer 3 per-station table, which can directly import `Design`, `Rotor`, `StationOverride`, etc. from `web/src/types/blade-model.ts`).
+  **Cautions:** Whenever any struct in `crates/blade-model/src/{schema,error}.rs` changes, re-run `BLADELAB_UPDATE_TS=1 cargo test -p blade-model --test ts_bindings` to update `web/src/types/blade-model.ts`.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -592,4 +602,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-05T23:39:00+07:00 agent=geom-1 mem=v19 last_entry=H-geom1-012 task=T-103 note="lead: 'Next' -> claiming T-103 (crates/blade-server Axum POST /api/v1/export with blake3 caching and panic containment) under D-geom1-013"
 [END] 2026-11-05T23:43+07:00 agent=geom-1 mem=v21 note="T-103 done: crates/blade-server Axum POST /api/v1/export (stl, 3mf, step) with canonical blake3 caching (ETag + HIT/MISS + 304) and panic containment (CatchPanicLayer + spawn_blocking catch_unwind); 106 workspace tests + fmt/clippy/wasm32 clean; F-geom1-019, H-geom1-013 recorded"
 [RE-ACK] 2026-11-06T00:13:00+07:00 agent=geom-1 mem=v21 last_entry=H-geom1-013 task=T-106 note="lead: 'do nex' -> claiming T-106 (ts-rs automated TS type generation from blade-model + CI drift check) under D-geom1-014"
+[END] 2026-11-06T00:20+07:00 agent=geom-1 mem=v23 note="T-106 done: ts-rs 10.1.0 bindings on blade-model + web/src/types/blade-model.ts + ts_bindings drift test + CI step + web lint/typecheck/test scripts; 107 Rust tests + 1 Node test + fmt/clippy/wasm32/vite build clean; F-geom1-020, L-geom1-015, H-geom1-014 recorded"
 ```

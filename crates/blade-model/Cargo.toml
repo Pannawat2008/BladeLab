@@ -11,6 +11,7 @@ description = "BladeLab design schema, validation and layer resolution (wasm + s
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+ts-rs.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
