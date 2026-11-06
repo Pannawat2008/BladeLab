@@ -209,7 +209,9 @@ impl PolarSet {
             if let Some(table) = self.get(name) {
                 return Ok(table.clone());
             }
-            return Err(AeroError::UnknownAirfoil(name.clone()));
+            // Library airfoils without a measured polar (e.g. `S833`) fall back to a
+            // Viterna-extrapolated NACA-equivalent table built from the station's
+            // camber and thickness, so the BEM solver still runs.
         }
 
         let m_f = airfoil.max_camber * 100.0;

@@ -576,6 +576,7 @@ export function airfoilShapeParams(spec: AirfoilSpec): {
       SG6043: [0.055, 0.42, 0.1],
       SD7062: [0.038, 0.38, 0.14],
       E387: [0.032, 0.4, 0.091],
+      S833: [0.025, 0.787, 0.18],
     };
     const [m, p, t] = table[spec.name] ?? [0.04, 0.4, 0.12];
     return { m, p, t, label: spec.name };
@@ -1291,6 +1292,10 @@ export function renderAirfoilSectionSvgMarkup(
         m = 0.032;
         p = 0.4;
         t = 0.091;
+      } else if (primary.name === "S833") {
+        m = 0.025;
+        p = 0.787;
+        t = 0.18;
       }
     } else {
       m = primary.max_camber;

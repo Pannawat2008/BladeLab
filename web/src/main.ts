@@ -462,6 +462,8 @@ function updateFabricationStatus(design: Design) {
       tRatio = 0.14;
     } else if (primary.name === "E387") {
       tRatio = 0.091;
+    } else if (primary.name === "S833") {
+      tRatio = 0.18;
     }
   }
   const rootThickMm = rootChord * tRatio;

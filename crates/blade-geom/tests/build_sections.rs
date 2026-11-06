@@ -105,7 +105,7 @@ fn library_airfoils_sg6043_sd7062_e387_and_blending_build_and_loft() {
     use blade_geom::build_blended_sections;
     use blade_model::AirfoilSpec;
 
-    for name in ["SG6043", "SD7062", "E387"] {
+    for name in ["SG6043", "SD7062", "E387", "S833"] {
         let mut design = Design::from_json(FIXTURE).expect("fixture parses");
         design.manufacturing.min_trailing_edge_mm = 0.05;
         for station in &mut design.airfoils {

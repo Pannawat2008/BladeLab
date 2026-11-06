@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 76**
-> **LAST_UPDATED: 2026-11-06 22:45 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 77**
+> **LAST_UPDATED: 2026-11-06 22:50 (UTC+7) by geom-1**
 
 ---
 
@@ -460,6 +460,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added "Blade sections" panel (`#layer2-sections`): Root / Mid / Tip tabs with live chord/twist summaries, per-section airfoil family, chord width, twist angle and thickness t/c (number + range), and a to-scale section-stack SVG (pitch-axis aligned, rotated by twist). Frontend-only: chord and twist are baked into 3-zone cosine-plateau formulas (`buildCosinePlateauExpr` now takes an explicit mid value; `parseCosinePlateauExpr` recovers center/width so sliders stay in sync after undo); airfoils are written as 3 stations (root 0, mid at plateau center, tip 1.0) via `applySectionAirfoils`. Verified through wasm build_mesh. Gotcha: NREL S833 is not in the kernel library (only SG6043, SD7062, E387 + NACA 4), so it is not offered; named profiles have fixed thickness (t/c field disabled).
   refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs
 
+- **F-geom1-047** | 2026-11-06 22:50 | geom-1 | T-105
+  Added `S833` (NREL 18% thick root airfoil, `t/c = 18.0%` at `36.3%` chord, `m = 2.52%` at `78.7%` chord) across the full stack: (1) embedded Selig coordinates in `data/airfoils/S833.dat` and registered `"S833"` in `blade-geom::airfoil::dat::LIBRARY_AIRFOIL_NAMES` and `library_airfoil`; (2) added `"S833"` resolution (`max_camber: 0.0252`, `camber_position: 0.787`, `thickness_ratio: 0.1800`) in `blade-model::resolve::resolve_airfoil`; (3) updated `blade-aero::PolarSet::resolve_for_station` so library airfoils without a pre-tabulated polar (`S833`) fall back cleanly to a Viterna-extrapolated table synthesized from station camber and thickness; (4) rebuilt both web (`web/pkg`) and Node (`target/glue-node`) wasm bundles; and (5) exposed `S833 (NREL Thick Root, 18%)` in both `#airfoil-family` and `#sec-airfoil` selectors and SVG preview helpers in `web/index.html`, `web/src/main.ts`, and `web/src/state.ts`.
+  refs: data/airfoils/S833.dat, crates/blade-geom/src/airfoil/dat.rs, crates/blade-model/src/resolve.rs, crates/blade-aero/src/polar.rs, web/index.html, web/src/main.ts, web/src/state.ts | supersedes: F-geom1-046
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -850,3 +854,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T22:37+07:00 agent=geom-1 mem=v75 note="fixed chord width mismatch: removed pinned tip override from web default design, added override warning with Clear in planform panel; tsc + 10 tests + build clean; F-geom1-045 recorded"
 [RE-ACK] 2026-11-06T22:37:00+07:00 agent=geom-1 mem=v75 last_entry=F-geom1-045 task=T-105 note="lead requested Root/Mid/Tip per-section editor (airfoil, chord, twist, thickness)"
 [END] 2026-11-06T22:46+07:00 agent=geom-1 mem=v76 note="added Blade sections panel with per-section airfoil/chord/twist/thickness and to-scale section stack; 11 tests + tsc + build clean; F-geom1-046 recorded"
+[RE-ACK] 2026-11-06T22:43:35+07:00 agent=geom-1 mem=v76 last_entry=F-geom1-046 task=T-105 note="lead requested adding NREL S833 root airfoil to kernel library and web UI"
+[END] 2026-11-06T22:50+07:00 agent=geom-1 mem=v77 note="added NREL S833 (18% thick root airfoil) to data/airfoils/S833.dat, blade-geom, blade-model, blade-aero polar fallback, rebuilt wasm, and wired into web UI; all Rust & Node tests + vite build pass; F-geom1-047 recorded"

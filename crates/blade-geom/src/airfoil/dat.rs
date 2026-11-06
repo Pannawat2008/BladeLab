@@ -1,5 +1,5 @@
 //! `.dat` (Selig / Lednicer) airfoil parser, built-in airfoil library
-//! (`SG6043`, `SD7062`, `E387`), cosine resampling, and contour blending (`T-202`).
+//! (`SG6043`, `SD7062`, `E387`, `S833`), cosine resampling, and contour blending (`T-202`).
 //!
 //! All built-in library airfoils live under `data/airfoils/*.dat` and are
 //! embedded at compile time via `include_str!` so `blade-geom` remains 100%
@@ -14,22 +14,23 @@ use crate::error::GeomError;
 const SG6043_DAT: &str = include_str!("../../../../data/airfoils/SG6043.dat");
 const SD7062_DAT: &str = include_str!("../../../../data/airfoils/SD7062.dat");
 const E387_DAT: &str = include_str!("../../../../data/airfoils/E387.dat");
+const S833_DAT: &str = include_str!("../../../../data/airfoils/S833.dat");
 
 /// Minimum open trailing-edge gap ratio `(y_upper(1) - y_lower(1)) / c`
 /// enforced when a `.dat` file has a pinched/closed trailing edge (`D-lead1-003`).
 const MIN_OPEN_TE_RATIO: f64 = 0.002;
 
 /// Canonical names of the built-in airfoil library (`T-202`).
-pub const LIBRARY_AIRFOIL_NAMES: [&str; 3] = ["SG6043", "SD7062", "E387"];
+pub const LIBRARY_AIRFOIL_NAMES: [&str; 4] = ["SG6043", "SD7062", "E387", "S833"];
 
-/// Returns the canonical built-in library airfoil names (`SG6043`, `SD7062`, `E387`).
+/// Returns the canonical built-in library airfoil names (`SG6043`, `SD7062`, `E387`, `S833`).
 #[must_use]
 pub const fn library_airfoil_names() -> &'static [&'static str] {
     &LIBRARY_AIRFOIL_NAMES
 }
 
 /// Looks up a built-in library airfoil by name (case-insensitive: `"SG6043"`,
-/// `"SD7062"`, `"E387"`).
+/// `"SD7062"`, `"E387"`, `"S833"`).
 ///
 /// # Errors
 ///
@@ -42,9 +43,11 @@ pub fn library_airfoil(name: &str) -> Result<DatAirfoil, GeomError> {
         DatAirfoil::from_dat(SD7062_DAT)
     } else if trimmed.eq_ignore_ascii_case("E387") {
         DatAirfoil::from_dat(E387_DAT)
+    } else if trimmed.eq_ignore_ascii_case("S833") {
+        DatAirfoil::from_dat(S833_DAT)
     } else {
         Err(GeomError::InvalidAirfoilData(format!(
-            "unknown library airfoil `{trimmed}` (expected one of SG6043, SD7062, E387)"
+            "unknown library airfoil `{trimmed}` (expected one of SG6043, SD7062, E387, S833)"
         )))
     }
 }
@@ -412,6 +415,7 @@ mod tests {
             ("SG6043", 0.095, 0.115),
             ("SD7062", 0.130, 0.155),
             ("E387", 0.085, 0.100),
+            ("S833", 0.170, 0.195),
         ];
 
         for (name, t_min, t_max) in expected_thickness {

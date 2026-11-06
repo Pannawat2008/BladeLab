@@ -48,7 +48,7 @@ pub struct ResolvedAirfoil {
     pub camber_position: f64,
     /// Thickness ratio `t`.
     pub thickness_ratio: f64,
-    /// Canonical built-in library airfoil name (`"SG6043"`, `"SD7062"`, `"E387"`),
+    /// Canonical built-in library airfoil name (`"SG6043"`, `"SD7062"`, `"E387"`, `"S833"`),
     /// or `None` when the station uses a 4-digit NACA profile (`T-202`).
     pub name: Option<String>,
 }
@@ -183,6 +183,13 @@ fn resolve_airfoil(spec: &AirfoilSpec) -> Result<ResolvedAirfoil, ModelError> {
                     camber_position: 0.405,
                     thickness_ratio: 0.0907,
                     name: Some("E387".to_string()),
+                })
+            } else if trimmed.eq_ignore_ascii_case("S833") {
+                Ok(ResolvedAirfoil {
+                    max_camber: 0.0252,
+                    camber_position: 0.787,
+                    thickness_ratio: 0.1800,
+                    name: Some("S833".to_string()),
                 })
             } else {
                 Err(ModelError::UnsupportedAirfoil(name.clone()))

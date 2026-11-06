@@ -170,3 +170,21 @@ proptest! {
         prop_assert!((eval.cd - shifted.cd).abs() < 1e-9);
     }
 }
+
+#[test]
+fn library_airfoil_without_measured_polar_falls_back_to_synthesized_table() {
+    use blade_model::AirfoilSpec;
+    let json = include_str!("../../../fixtures/naca4412-linear.json");
+    let mut design = Design::from_json(json).expect("fixture parses");
+    for station in &mut design.airfoils {
+        station.airfoil = AirfoilSpec::Named {
+            name: "S833".to_string(),
+        };
+    }
+    let blade = resolve(&design).expect("S833 resolves");
+    let set = PolarSet::builtin();
+    let table = set
+        .resolve_for_station(&blade.stations[0].airfoil)
+        .expect("S833 falls back to a synthesized polar");
+    assert!(table.eval(6.0, 200_000.0).is_ok());
+}

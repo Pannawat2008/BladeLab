@@ -149,8 +149,8 @@ fn named_airfoils_are_rejected_with_a_clear_error() {
 }
 
 #[test]
-fn resolves_library_airfoils_sg6043_sd7062_and_e387() {
-    for (name, expected_thickness) in [("SG6043", 0.1002), ("SD7062", 0.1398), ("E387", 0.0907)] {
+fn resolves_library_airfoils_sg6043_sd7062_e387_and_s833() {
+    for (name, expected_thickness) in [("SG6043", 0.1002), ("SD7062", 0.1398), ("E387", 0.0907), ("S833", 0.18)] {
         let mut design = typical();
         for station in &mut design.airfoils {
             station.airfoil = AirfoilSpec::Named {

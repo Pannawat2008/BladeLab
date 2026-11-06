@@ -1566,7 +1566,7 @@ mod tests {
     fn library_airfoils_sg6043_sd7062_e387_tessellate_with_spar_hole_and_splits() {
         use blade_model::AirfoilSpec;
         let json = include_str!("../../../fixtures/naca4412-linear.json");
-        for name in ["SG6043", "SD7062", "E387"] {
+        for name in ["SG6043", "SD7062", "E387", "S833"] {
             let mut design = Design::from_json(json).unwrap();
             for st in &mut design.airfoils {
                 st.airfoil = AirfoilSpec::Named {
