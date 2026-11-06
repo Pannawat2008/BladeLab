@@ -1,16 +1,22 @@
-// Real-time blade workbench (T-008 + T-105 + T-205):
-// - Layer 1 rotor & distribution controls (Linear / Schmitz)
-// - Layer 2 interactive Bézier curve editor & Formula inputs
+// Real-time BladeLab CAD & BEM Telemetry Workbench:
+// - Layer 1 rotor & distribution controls (Linear / Schmitz) + direct Blade Length & Pitch Axis
+// - Layer 2 interactive Bézier curve editor, Formula inputs & live 2D Airfoil Section SVG
 // - Value scrubbing (Shift 10× / Alt 0.1×), station locking & taper binding
 // - Layer 3 per-station override table
 // - Undo / Redo history stack (buttons + Ctrl+Z / Ctrl+Y)
-// - Live < 50 ms Three.js mesh rebuild via blade-wasm
+// - Full 3D Rotor Assembly view (B blades + hub) + Global IBL & 3-point Studio Illumination
+// - One-click STL, 3MF, STEP, and JSON export + Phase 3 BEM telemetry & experimental data fit
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
-import init, { build_mesh, simulate_aero } from "../pkg/blade_wasm.js";
+import init, {
+  build_mesh,
+  export_3mf_bytes,
+  export_stl_bytes,
+  simulate_aero,
+} from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
 import {
   type AeroSimulationBundle,
@@ -32,6 +38,7 @@ import {
   parseExperimentalDataLog,
   preserveLockedStations,
   RATIO_EPS,
+  renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
   resolveStationsPreview,
   scaleAllChords,
@@ -53,10 +60,10 @@ let workingDesign: Design = history.current();
 
 // ---- scene ----
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111318);
+scene.background = new THREE.Color(0x0c0f14);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 1, 8000);
-camera.position.set(260, 210, 540);
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 1, 10000);
+camera.position.set(420, 320, 820);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
@@ -72,7 +79,9 @@ scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).textur
 scene.environmentIntensity = 0.85;
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(30, 0, 330);
+controls.target.set(0, 0, 120);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
 controls.update();
 
 // Omnidirectional global + 3-point studio light rig (zero dark sides when orbiting)
@@ -106,8 +115,8 @@ function setGlobalIlluminationScale(scale: number) {
 }
 setGlobalIlluminationScale(1.35);
 
-const grid = new THREE.GridHelper(1400, 28, 0x3a3f47, 0x23272e);
-grid.position.y = -60;
+const grid = new THREE.GridHelper(1800, 36, 0x2c3648, 0x181f2b);
+grid.position.y = -120;
 scene.add(grid);
 
 // ---- DOM elements ----
@@ -115,6 +124,21 @@ const btnUndo = document.getElementById("btn-undo") as HTMLButtonElement;
 const btnRedo = document.getElementById("btn-redo") as HTMLButtonElement;
 const btnReset = document.getElementById("btn-reset") as HTMLButtonElement;
 const btnClearOverrides = document.getElementById("btn-clear-overrides") as HTMLButtonElement;
+
+const btnViewSingle = document.getElementById("btn-view-single") as HTMLButtonElement;
+const btnViewRotor = document.getElementById("btn-view-rotor") as HTMLButtonElement;
+const btnViewWireframe = document.getElementById("btn-view-wireframe") as HTMLButtonElement;
+const btnViewSpin = document.getElementById("btn-view-spin") as HTMLButtonElement;
+const btnCamIso = document.getElementById("btn-cam-iso") as HTMLButtonElement;
+const btnCamTop = document.getElementById("btn-cam-top") as HTMLButtonElement;
+const btnCamTip = document.getElementById("btn-cam-tip") as HTMLButtonElement;
+
+const selectExportPart = document.getElementById("export-part") as HTMLSelectElement;
+const btnExportStl = document.getElementById("btn-export-stl") as HTMLButtonElement;
+const btnExport3mf = document.getElementById("btn-export-3mf") as HTMLButtonElement;
+const btnExportStep = document.getElementById("btn-export-step") as HTMLButtonElement;
+const btnExportJson = document.getElementById("btn-export-json") as HTMLButtonElement;
+const exportStatus = document.getElementById("export-status")!;
 
 const rotorSummary = document.getElementById("rotor-summary")!;
 const inputRadius = document.getElementById("rotor-radius") as HTMLInputElement;
@@ -143,6 +167,7 @@ const selectAirfoilFamily = document.getElementById("airfoil-family") as HTMLSel
 const naca4Controls = document.getElementById("naca4-controls")!;
 const inputAirfoilThickness = document.getElementById("airfoil-thickness") as HTMLInputElement;
 const inputAirfoilCamber = document.getElementById("airfoil-camber") as HTMLInputElement;
+const airfoilPreviewSvg = document.getElementById("airfoil-preview-svg") as unknown as SVGSVGElement;
 
 const btnModeLinear = document.getElementById("mode-linear") as HTMLButtonElement;
 const btnModeSchmitz = document.getElementById("mode-schmitz") as HTMLButtonElement;
@@ -179,6 +204,10 @@ const stationTableBody = document.getElementById("station-table-body")!;
 const errorBanner = document.getElementById("error-banner")!;
 
 const aeroSummary = document.getElementById("aero-summary")!;
+const kpiCp = document.getElementById("kpi-cp")!;
+const kpiPeakCp = document.getElementById("kpi-peak-cp")!;
+const kpiPower = document.getElementById("kpi-power")!;
+const kpiGenElec = document.getElementById("kpi-gen-elec")!;
 const cpTsrSvg = document.getElementById("cp-tsr-svg") as unknown as SVGSVGElement;
 const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
 const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
@@ -195,6 +224,10 @@ const lockedSpanRatios: number[] = [];
 let baselineBundleA: AeroSimulationBundle | null = null;
 let latestBundleB: AeroSimulationBundle | null = null;
 
+let viewMode: "single" | "rotor" = "rotor";
+let wireframeMode = false;
+let spinRotorMode = false;
+
 function isStationLocked(spanRatio: number): boolean {
   return lockedSpanRatios.some((r) => Math.abs(r - spanRatio) <= RATIO_EPS);
 }
@@ -208,19 +241,21 @@ function toggleStationLock(spanRatio: number): void {
   }
 }
 
-// ---- 3D mesh rebuild ----
-let mesh: THREE.Mesh | null = null;
-let pitchAxisLine: THREE.Line | null = null;
+// ---- 3D mesh & rotor assembly rebuild ----
+let rotorGroup: THREE.Group | null = null;
 
 function applyMeshChordOffset() {
   const ox = sliderChordOffsetX ? sliderChordOffsetX.valueAsNumber || 0 : 0;
   const oy = sliderChordOffsetY ? sliderChordOffsetY.valueAsNumber || 0 : 0;
-  if (mesh) {
-    mesh.position.set(ox, oy, 0);
-  }
-  if (pitchAxisLine) {
-    pitchAxisLine.position.set(ox, oy, 0);
-  }
+  if (!rotorGroup) return;
+  rotorGroup.children.forEach((child) => {
+    if (child.userData.isBladeBranch) {
+      const inner = child.children[0];
+      if (inner) {
+        inner.position.set(ox, oy, 0);
+      }
+    }
+  });
 }
 
 function rebuild3D(design: Design) {
@@ -232,34 +267,28 @@ function rebuild3D(design: Design) {
     errorBanner.style.display = "none";
     errorBanner.textContent = "";
 
-    if (mesh !== null) {
-      mesh.geometry.dispose();
-      scene.remove(mesh);
+    if (rotorGroup !== null) {
+      scene.remove(rotorGroup);
     }
-    if (pitchAxisLine !== null) {
-      pitchAxisLine.geometry.dispose();
-      scene.remove(pitchAxisLine);
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
+    rotorGroup = new THREE.Group();
+
+    const bladeGeo = new THREE.BufferGeometry();
+    bladeGeo.setAttribute(
       "position",
       new THREE.BufferAttribute(data.positions as Float32Array, 3),
     );
-    geometry.setIndex(new THREE.BufferAttribute(data.indices as Uint32Array, 1));
-    geometry.computeVertexNormals();
+    bladeGeo.setIndex(new THREE.BufferAttribute(data.indices as Uint32Array, 1));
+    bladeGeo.computeVertexNormals();
 
-    mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({
-        color: 0x4f8bd6,
-        metalness: 0.12,
-        roughness: 0.52,
-        side: THREE.DoubleSide,
-      }),
-    );
-    scene.add(mesh);
+    const bladeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3b82f6,
+      metalness: 0.18,
+      roughness: 0.42,
+      wireframe: wireframeMode,
+      side: THREE.DoubleSide,
+    });
 
-    // Build visual pitch-axis reference line along the blade span
+    // Pitch-axis reference line for each blade
     const stationRows = resolveStationsPreview(design);
     const axisPoints = stationRows.map(
       (r) =>
@@ -270,11 +299,64 @@ function rebuild3D(design: Design) {
         ),
     );
     const lineGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
-    pitchAxisLine = new THREE.Line(
-      lineGeo,
-      new THREE.LineBasicMaterial({ color: 0xf5a623 }),
-    );
-    scene.add(pitchAxisLine);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b });
+
+    const count = viewMode === "rotor" ? Math.max(1, design.rotor.blade_count) : 1;
+    for (let i = 0; i < count; i++) {
+      const branch = new THREE.Group();
+      branch.userData.isBladeBranch = true;
+      const inner = new THREE.Group();
+      // Center the pitch axis at x=0 when assembling the multi-blade rotor
+      const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
+      const pivotShift =
+        viewMode === "rotor" ? -design.rotor.pitch_axis_ratio * rootChord : 0;
+
+      const bladeMesh = new THREE.Mesh(bladeGeo, bladeMaterial);
+      bladeMesh.position.x = pivotShift;
+      const axisLine = new THREE.Line(lineGeo, lineMat);
+      axisLine.position.x = pivotShift;
+
+      inner.add(bladeMesh);
+      inner.add(axisLine);
+      branch.add(inner);
+
+      if (viewMode === "rotor") {
+        const angle = (2 * Math.PI * i) / count;
+        branch.rotation.y = angle;
+      }
+      rotorGroup.add(branch);
+    }
+
+    if (viewMode === "rotor") {
+      const hubOuterR = Math.max(12, design.hub.diameter_mm / 2);
+      const hubInnerR = Math.max(2, Math.min(hubOuterR - 2, design.hub.bore_diameter_mm / 2));
+      const hubLen = Math.max(10, design.hub.length_mm);
+
+      const hubShape = new THREE.Shape();
+      hubShape.absarc(0, 0, hubOuterR, 0, Math.PI * 2, false);
+      const boreHole = new THREE.Path();
+      boreHole.absarc(0, 0, hubInnerR, 0, Math.PI * 2, true);
+      hubShape.holes.push(boreHole);
+
+      const hubGeo = new THREE.ExtrudeGeometry(hubShape, {
+        depth: hubLen,
+        bevelEnabled: false,
+        curveSegments: 48,
+      });
+      hubGeo.rotateX(Math.PI / 2);
+      hubGeo.translate(0, hubLen / 2, 0);
+
+      const hubMat = new THREE.MeshStandardMaterial({
+        color: 0x64748b,
+        metalness: 0.45,
+        roughness: 0.35,
+        wireframe: wireframeMode,
+      });
+      const hubMesh = new THREE.Mesh(hubGeo, hubMat);
+      rotorGroup.add(hubMesh);
+    }
+
+    scene.add(rotorGroup);
     applyMeshChordOffset();
 
     updateStats(elapsed, data);
@@ -304,13 +386,15 @@ function updateAeroPanel(design: Design) {
     const bundle = JSON.parse(rawJson) as AeroSimulationBundle;
     latestBundleB = bundle;
 
-    aeroSummary.textContent = `Cp=${bundle.design_point.cp.toFixed(3)} (pk ${bundle.peak_cp.toFixed(
-      3,
-    )} @ λ=${bundle.peak_tsr.toFixed(1)}) · P=${bundle.design_point.power_w.toFixed(0)} W`;
+    aeroSummary.textContent = `Cp=${bundle.design_point.cp.toFixed(3)} · P=${bundle.design_point.power_w.toFixed(0)} W`;
+    kpiCp.textContent = bundle.design_point.cp.toFixed(3);
+    kpiPeakCp.textContent = `${bundle.peak_cp.toFixed(3)} @${bundle.peak_tsr.toFixed(1)}`;
+    kpiPower.textContent = `${bundle.design_point.power_w.toFixed(1)} W`;
 
     if (bundle.generator_match) {
       const gm = bundle.generator_match;
       const st = gm.generator;
+      kpiGenElec.textContent = `${st.terminal_voltage_v.toFixed(1)}V / ${st.electrical_power_w.toFixed(0)}W`;
       genSummary.textContent = `Eq: ${st.rotor_rpm.toFixed(0)} RPM (λ=${gm.tip_speed_ratio.toFixed(
         2,
       )}) · V_load=${st.terminal_voltage_v.toFixed(1)} V · I=${st.current_a.toFixed(
@@ -319,6 +403,7 @@ function updateAeroPanel(design: Design) {
         0,
       )}%)`;
     } else {
+      kpiGenElec.textContent = "–";
       genSummary.textContent = "Gen: uncoupled";
     }
 
@@ -420,6 +505,7 @@ function syncControlsFromDesign(design: Design) {
       );
     }
   }
+  airfoilPreviewSvg.innerHTML = renderAirfoilSectionSvgMarkup(design);
 
   const mode = activeDistributionMode(design);
   btnModeLinear.classList.toggle("active", mode === "linear");
@@ -462,8 +548,8 @@ function syncControlsFromDesign(design: Design) {
   const counts = history.counts();
   btnUndo.disabled = !history.canUndo();
   btnRedo.disabled = !history.canRedo();
-  btnUndo.textContent = counts.undo > 0 ? `↶ Undo (${counts.undo})` : "↶ Undo";
-  btnRedo.textContent = counts.redo > 0 ? `↷ Redo (${counts.redo})` : "↷ Redo";
+  btnUndo.textContent = counts.undo > 0 ? `Undo (${counts.undo})` : "Undo";
+  btnRedo.textContent = counts.redo > 0 ? `Redo (${counts.redo})` : "Redo";
 
   renderStationTable(design);
 }
@@ -501,8 +587,8 @@ function renderBezierEditor(design: Design) {
   const polyPts = pts.map((p) => `${toSvgX(p.x).toFixed(1)},${toSvgY(p.y).toFixed(1)}`).join(" ");
 
   bezierSvg.innerHTML = `
-    <polyline points="${polyPts}" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="3 3" />
-    <path d="${samples.join(" ")}" fill="none" stroke="#5b9bf0" stroke-width="2" />
+    <polyline points="${polyPts}" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="3 3" />
+    <path d="${samples.join(" ")}" fill="none" stroke="#3b82f6" stroke-width="2" />
   `;
 
   pts.forEach((pt, idx) => {
@@ -510,8 +596,8 @@ function renderBezierEditor(design: Design) {
     circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
     circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
     circle.setAttribute("r", "5.5");
-    circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f5a623" : "#9ec5ff");
-    circle.setAttribute("stroke", "#111318");
+    circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f59e0b" : "#60a5fa");
+    circle.setAttribute("stroke", "#0c0f14");
     circle.setAttribute("stroke-width", "1.5");
     circle.style.cursor = "grab";
 
@@ -670,7 +756,7 @@ function renderStationTable(design: Design) {
     const lockBtn = document.createElement("button");
     lockBtn.type = "button";
     lockBtn.className = locked ? "lock-btn locked" : "lock-btn";
-    lockBtn.textContent = locked ? "🔒" : "🔓";
+    lockBtn.textContent = locked ? "Locked" : "Pin";
     lockBtn.title = locked
       ? "Station locked against Layer 1/2 changes (click to unlock)"
       : "Click to lock station against Layer 1/2 changes";
@@ -685,7 +771,7 @@ function renderStationTable(design: Design) {
       const clearBtn = document.createElement("button");
       clearBtn.type = "button";
       clearBtn.className = "btn-mini";
-      clearBtn.textContent = "×";
+      clearBtn.textContent = "Reset";
       clearBtn.title = "Clear station override";
       clearBtn.addEventListener("click", () => {
         commitDesign(clearStationOverride(workingDesign, row.span_ratio));
@@ -704,6 +790,158 @@ function commitDesign(next: Design) {
   syncControlsFromDesign(workingDesign);
   rebuild3D(workingDesign);
 }
+
+// ---- 3D Viewport Mode & Camera Listeners ----
+btnViewSingle.addEventListener("click", () => {
+  viewMode = "single";
+  btnViewSingle.classList.add("active");
+  btnViewRotor.classList.remove("active");
+  controls.target.set(30, 0, workingDesign.rotor.radius_mm * 0.55);
+  rebuild3D(workingDesign);
+});
+
+btnViewRotor.addEventListener("click", () => {
+  viewMode = "rotor";
+  btnViewRotor.classList.add("active");
+  btnViewSingle.classList.remove("active");
+  controls.target.set(0, 0, 0);
+  rebuild3D(workingDesign);
+});
+
+btnViewWireframe.addEventListener("click", () => {
+  wireframeMode = !wireframeMode;
+  btnViewWireframe.classList.toggle("active", wireframeMode);
+  rebuild3D(workingDesign);
+});
+
+btnViewSpin.addEventListener("click", () => {
+  spinRotorMode = !spinRotorMode;
+  btnViewSpin.classList.toggle("active", spinRotorMode);
+});
+
+btnCamIso.addEventListener("click", () => {
+  const r = workingDesign.rotor.radius_mm;
+  camera.position.set(r * 0.85, r * 0.65, r * 1.35);
+  controls.target.set(0, 0, viewMode === "rotor" ? 0 : r * 0.5);
+  controls.update();
+});
+
+btnCamTop.addEventListener("click", () => {
+  const r = workingDesign.rotor.radius_mm;
+  camera.position.set(0, r * 1.9, 0.01);
+  controls.target.set(0, 0, viewMode === "rotor" ? 0 : r * 0.5);
+  controls.update();
+});
+
+btnCamTip.addEventListener("click", () => {
+  const r = workingDesign.rotor.radius_mm;
+  camera.position.set(0, 60, r * 1.75);
+  controls.target.set(0, 0, viewMode === "rotor" ? 0 : r * 0.5);
+  controls.update();
+});
+
+// ---- CAD & Mesh Export Listeners (STL, 3MF, STEP, JSON) ----
+function triggerBlobDownload(bytes: Uint8Array | string, filename: string, mime: string) {
+  const blob =
+    typeof bytes === "string"
+      ? new Blob([bytes], { type: mime })
+      : new Blob([bytes.buffer as ArrayBuffer], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function handleExport(format: "stl" | "3mf" | "step") {
+  const part = selectExportPart.value as "blade" | "assembly" | "hub";
+  const baseName = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}-${part}`;
+  exportStatus.textContent = `Exporting ${format.toUpperCase()}...`;
+
+  try {
+    // Fast in-browser wasm export for single blade STL and 3MF
+    if (part === "blade" && format === "stl") {
+      const bytes = export_stl_bytes(JSON.stringify(workingDesign));
+      triggerBlobDownload(bytes, `${baseName}.stl`, "model/stl");
+      exportStatus.textContent = `Saved ${baseName}.stl (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+      return;
+    }
+    if (part === "blade" && format === "3mf") {
+      const bytes = export_3mf_bytes(JSON.stringify(workingDesign));
+      triggerBlobDownload(
+        bytes,
+        `${baseName}.3mf`,
+        "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+      );
+      exportStatus.textContent = `Saved ${baseName}.3mf (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+      return;
+    }
+
+    // Server-side export for STEP or unified blade+hub assembly/hub parts
+    const resp = await fetch(`/api/v1/export?format=${format}&part=${part}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workingDesign),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${errText}`);
+    }
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    const mime =
+      format === "step"
+        ? "application/step"
+        : format === "3mf"
+          ? "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"
+          : "model/stl";
+    triggerBlobDownload(buf, `${baseName}.${format}`, mime);
+    exportStatus.textContent = `Saved ${baseName}.${format} (${(buf.byteLength / 1024).toFixed(1)} kB)`;
+  } catch (err) {
+    // Fallback to in-browser blade STL/3MF if server is offline
+    if (format === "stl") {
+      const bytes = export_stl_bytes(JSON.stringify(workingDesign));
+      triggerBlobDownload(bytes, `${baseName}-blade.stl`, "model/stl");
+      exportStatus.textContent = `Saved blade STL (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+      return;
+    }
+    if (format === "3mf") {
+      const bytes = export_3mf_bytes(JSON.stringify(workingDesign));
+      triggerBlobDownload(
+        bytes,
+        `${baseName}-blade.3mf`,
+        "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+      );
+      exportStatus.textContent = `Saved blade 3MF (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+      return;
+    }
+    exportStatus.textContent = `Export failed: ${String(err)}`;
+  }
+}
+
+btnExportStl.addEventListener("click", () => {
+  void handleExport("stl");
+});
+
+btnExport3mf.addEventListener("click", () => {
+  void handleExport("3mf");
+});
+
+btnExportStep.addEventListener("click", () => {
+  void handleExport("step");
+});
+
+btnExportJson.addEventListener("click", () => {
+  const filename = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}.json`;
+  triggerBlobDownload(
+    JSON.stringify(workingDesign, null, 2),
+    filename,
+    "application/json",
+  );
+  exportStatus.textContent = `Saved ${filename}`;
+});
 
 // ---- Layer 1 Rotor Listeners ----
 function bindRotorNumberInput(input: HTMLInputElement, field: keyof Design["rotor"], isInt = false) {
@@ -1052,7 +1290,18 @@ addEventListener("keydown", (event) => {
 });
 
 // ---- render loop ----
-renderer.setAnimationLoop(() => {
+let lastFrameTime = performance.now();
+renderer.setAnimationLoop((now) => {
+  const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+  lastFrameTime = now;
+
+  if (spinRotorMode && rotorGroup) {
+    const rpm = latestBundleB?.design_point.rpm ?? 300;
+    // Visually scaled angular rate so high-RPM rotors remain smooth to inspect
+    const visualRadPerSec = Math.min(8.0, (rpm * 2 * Math.PI) / 60 / 12);
+    rotorGroup.rotation.y += visualRadPerSec * dt;
+  }
+
   controls.update();
   renderer.render(scene, camera);
 });

@@ -3,10 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BladeLab — Layer 1 &amp; Layer 3 Blade Workbench</title>
+    <title>BladeLab — Rotor CAD &amp; BEM Telemetry Workbench</title>
     <style>
       :root {
         color-scheme: dark;
+        --bg-canvas: #0c0f14;
+        --bg-panel: rgba(19, 24, 32, 0.94);
+        --bg-well: #161c26;
+        --bg-input: #10151d;
+        --border-subtle: #242d3d;
+        --border-strong: #334155;
+        --text-primary: #f1f5f9;
+        --text-secondary: #cbd5e1;
+        --text-muted: #94a3b8;
+        --accent: #3b82f6;
+        --accent-dim: rgba(59, 130, 246, 0.16);
+        --datum: #f59e0b;
+        --status-ok: #10b981;
+        --status-err: #ef4444;
+        --radius-panel: 10px;
+        --radius-well: 6px;
+        --radius-control: 4px;
       }
       * {
         box-sizing: border-box;
@@ -16,64 +33,137 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: #111318;
-        color: #e8eaed;
-        font: 12.5px/1.45 "Inter", system-ui, -apple-system, sans-serif;
+        background: var(--bg-canvas);
+        color: var(--text-primary);
+        font: 12.5px/1.45 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       #app {
         position: fixed;
         inset: 0;
       }
+
+      /* Left Geometry & Airfoil Engineering Dock */
       #panel {
         position: fixed;
         top: 12px;
         left: 12px;
         bottom: 12px;
-        width: 390px;
+        width: 392px;
         max-width: calc(100vw - 24px);
         display: flex;
         flex-direction: column;
-        background: rgba(18, 21, 27, 0.92);
-        border: 1px solid #2b313c;
-        border-radius: 10px;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        background: var(--bg-panel);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-panel);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
         overflow: hidden;
+        z-index: 10;
       }
+
+      /* Top-Right Viewport & CAD Export Bar */
+      #top-dock {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        left: 416px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-panel);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+        z-index: 10;
+      }
+
+      /* Right Aerodynamics & Telemetry Dock */
+      #aero-dock {
+        position: fixed;
+        top: 66px;
+        right: 12px;
+        bottom: 12px;
+        width: 376px;
+        max-width: calc(100vw - 24px);
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-panel);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+        z-index: 10;
+      }
+
+      @media (max-width: 1120px) {
+        #top-dock {
+          left: auto;
+          width: 376px;
+        }
+      }
+
       .panel-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 10px 14px;
-        border-bottom: 1px solid #262b35;
-        background: rgba(25, 29, 37, 0.85);
+        border-bottom: 1px solid var(--border-subtle);
+        background: rgba(16, 21, 29, 0.9);
       }
-      .panel-header h1 {
-        font-size: 13.5px;
+      .panel-header h1,
+      .panel-header h2 {
+        font-size: 13px;
         font-weight: 600;
         margin: 0;
         letter-spacing: 0.01em;
+        color: var(--text-primary);
       }
       .toolbar {
         display: flex;
-        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .toolbar-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-right: 2px;
       }
       button {
-        background: #232832;
-        color: #e8eaed;
-        border: 1px solid #363d4a;
-        border-radius: 5px;
+        background: var(--bg-well);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
         padding: 4px 8px;
         font-size: 11.5px;
+        font-weight: 500;
         cursor: pointer;
-        transition: background 0.12s, border-color 0.12s;
+        transition: background 0.12s ease-out, border-color 0.12s ease-out, transform 0.1s ease-out;
       }
       button:hover:not(:disabled) {
-        background: #2e3543;
-        border-color: #4f8bd6;
+        background: #222c3c;
+        border-color: var(--accent);
+      }
+      button:active:not(:disabled) {
+        transform: scale(0.97);
+      }
+      button.active,
+      button.btn-primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #ffffff;
+      }
+      button.btn-primary:hover:not(:disabled) {
+        background: #2563eb;
       }
       button:disabled {
-        opacity: 0.42;
+        opacity: 0.4;
         cursor: not-allowed;
       }
       .panel-scroll {
@@ -84,7 +174,7 @@
       section {
         margin-bottom: 14px;
         padding-bottom: 12px;
-        border-bottom: 1px solid #232833;
+        border-bottom: 1px solid var(--border-subtle);
       }
       section:last-child {
         margin-bottom: 0;
@@ -95,17 +185,46 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #8b95a7;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--text-secondary);
         margin-bottom: 8px;
+      }
+      .section-meta {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
       }
       .grid-2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8px 10px;
+      }
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .kpi-card {
+        background: var(--bg-well);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-well);
+        padding: 6px 7px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .kpi-label {
+        font-size: 10px;
+        color: var(--text-muted);
+      }
+      .kpi-val {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
       }
       .field {
         display: flex;
@@ -116,34 +235,40 @@
         display: flex;
         justify-content: space-between;
         font-size: 11.5px;
-        color: #c3c9d4;
+        color: var(--text-secondary);
       }
       .scrub-label {
         cursor: ew-resize;
         user-select: none;
-        border-bottom: 1px dotted #4a5568;
+        border-bottom: 1px dotted var(--border-strong);
       }
       .scrub-label:hover {
-        color: #9ec5ff;
-        border-bottom-color: #5b9bf0;
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      .field input[type="number"],
+      .field input[type="text"],
+      .field select,
+      .compact-select {
+        background: var(--bg-input);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
+        padding: 4px 7px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
       }
       .field input[type="number"],
       .field input[type="text"],
       .field select {
         width: 100%;
-        background: #161920;
-        color: #e8eaed;
-        border: 1px solid #2e3440;
-        border-radius: 5px;
-        padding: 4px 7px;
-        font-size: 12px;
-        font-variant-numeric: tabular-nums;
       }
       .field input[type="number"]:focus,
       .field input[type="text"]:focus,
-      .field select:focus {
+      .field select:focus,
+      .compact-select:focus {
         outline: none;
-        border-color: #4f8bd6;
+        border-color: var(--accent);
       }
       .bind-row {
         display: flex;
@@ -151,10 +276,10 @@
         justify-content: space-between;
         gap: 8px;
         margin: 6px 0 8px;
-        padding: 5px 8px;
-        background: rgba(35, 41, 52, 0.55);
-        border: 1px solid #282f3c;
-        border-radius: 6px;
+        padding: 6px 8px;
+        background: var(--bg-well);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-well);
         font-size: 11.5px;
       }
       .bind-row label {
@@ -162,14 +287,14 @@
         align-items: center;
         gap: 5px;
         cursor: pointer;
-        color: #c3c9d4;
+        color: var(--text-secondary);
       }
       .bind-row input[type="number"] {
         width: 68px;
-        background: #151820;
-        color: #e8eaed;
-        border: 1px solid #2e3440;
-        border-radius: 4px;
+        background: var(--bg-input);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
         padding: 2px 5px;
         font-size: 11.5px;
       }
@@ -177,19 +302,28 @@
       #cp-tsr-svg {
         width: 100%;
         height: 150px;
-        background: #14171e;
-        border: 1px solid #2c3340;
-        border-radius: 6px;
+        background: var(--bg-input);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-well);
         display: block;
         margin-bottom: 8px;
         touch-action: none;
       }
+      #airfoil-preview-svg {
+        width: 100%;
+        height: 92px;
+        background: var(--bg-input);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-well);
+        display: block;
+        margin-top: 8px;
+      }
       .aero-legend {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 10px;
         font-size: 10.5px;
-        color: #9ba5b7;
+        color: var(--text-muted);
         margin-bottom: 6px;
       }
       .aero-legend span {
@@ -205,37 +339,38 @@
       }
       .aero-subbox {
         margin-top: 8px;
-        padding: 6px 8px;
-        background: rgba(25, 30, 39, 0.7);
-        border: 1px solid #262c38;
-        border-radius: 6px;
+        padding: 7px 9px;
+        background: var(--bg-well);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-well);
         font-size: 11px;
         font-variant-numeric: tabular-nums;
       }
       .field textarea {
         width: 100%;
-        background: #161920;
-        color: #e8eaed;
-        border: 1px solid #2e3440;
-        border-radius: 5px;
+        background: var(--bg-input);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
         padding: 5px 7px;
         font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         resize: vertical;
       }
       .field textarea:focus {
         outline: none;
-        border-color: #4f8bd6;
+        border-color: var(--accent);
       }
       .lock-btn {
-        padding: 1px 5px;
-        font-size: 11px;
+        padding: 2px 5px;
+        font-size: 10.5px;
         background: transparent;
         border-color: transparent;
+        color: var(--text-muted);
       }
       .lock-btn.locked {
-        background: rgba(245, 166, 35, 0.2);
-        border-color: #f5a623;
-        color: #ffd27d;
+        background: rgba(245, 158, 11, 0.16);
+        border-color: var(--datum);
+        color: var(--datum);
       }
       .row {
         margin: 7px 0;
@@ -245,20 +380,16 @@
         justify-content: space-between;
         margin-bottom: 2px;
         font-size: 11.5px;
-        color: #c3c9d4;
+        color: var(--text-secondary);
       }
       .row input[type="range"] {
         width: 100%;
+        accent-color: var(--accent);
       }
       .mode-tabs {
         display: flex;
-        gap: 6px;
+        gap: 5px;
         margin-bottom: 8px;
-      }
-      .mode-tabs button.active {
-        background: #2b4c7e;
-        border-color: #5b9bf0;
-        color: #ffffff;
       }
       table.station-table {
         width: 100%;
@@ -269,50 +400,56 @@
       table.station-table th {
         text-align: left;
         font-weight: 600;
-        color: #8b95a7;
+        color: var(--text-muted);
         padding: 4px 4px;
-        border-bottom: 1px solid #2b313c;
+        border-bottom: 1px solid var(--border-subtle);
       }
       table.station-table td {
         padding: 3px 4px;
-        border-bottom: 1px solid #1d212a;
+        border-bottom: 1px solid rgba(36, 45, 61, 0.55);
       }
       table.station-table tr.overridden {
-        background: rgba(79, 139, 214, 0.12);
+        background: var(--accent-dim);
       }
       table.station-table input[type="number"] {
-        width: 68px;
-        background: #151820;
-        color: #e8eaed;
-        border: 1px solid #2c323e;
-        border-radius: 4px;
+        width: 66px;
+        background: var(--bg-input);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
         padding: 2px 5px;
         font-size: 11.5px;
         font-variant-numeric: tabular-nums;
       }
       table.station-table tr.overridden input[type="number"] {
-        border-color: #4f8bd6;
-        color: #9ec5ff;
+        border-color: var(--accent);
+        color: #93c5fd;
         font-weight: 600;
       }
       .btn-mini {
-        padding: 1px 6px;
+        padding: 2px 7px;
         font-size: 11px;
+      }
+      #export-status {
+        font-size: 11px;
+        color: var(--status-ok);
+        font-variant-numeric: tabular-nums;
+        padding-left: 4px;
       }
       #error-banner {
         display: none;
         margin: 0 14px 8px;
         padding: 6px 9px;
-        border-radius: 6px;
-        background: rgba(220, 68, 68, 0.18);
-        border: 1px solid #d85858;
-        color: #ffb3b3;
+        border-radius: var(--radius-well);
+        background: rgba(239, 68, 68, 0.16);
+        border: 1px solid var(--status-err);
+        color: #fecaca;
         font-size: 11.5px;
       }
       #stats {
-        padding: 9px 14px;
-        border-top: 1px solid #262b35;
-        background: rgba(15, 18, 23, 0.95);
+        padding: 8px 14px;
+        border-top: 1px solid var(--border-subtle);
+        background: rgba(12, 15, 20, 0.95);
         font-size: 11.5px;
         font-variant-numeric: tabular-nums;
         display: flex;
@@ -320,23 +457,53 @@
         align-items: center;
       }
       #stats .ok {
-        color: #7bd88f;
+        color: var(--status-ok);
         font-weight: 600;
       }
       #stats .slow {
-        color: #ff9d66;
+        color: var(--datum);
         font-weight: 600;
       }
     </style>
   </head>
   <body>
     <div id="app"></div>
+
+    <!-- Top-Right 3D Viewport Mode & CAD Export Bar -->
+    <div id="top-dock">
+      <div class="toolbar">
+        <span class="toolbar-label">3D View:</span>
+        <button id="btn-view-single" type="button">Single Blade</button>
+        <button id="btn-view-rotor" class="active" type="button">Full Rotor (B×)</button>
+        <button id="btn-view-wireframe" type="button">Wireframe</button>
+        <button id="btn-view-spin" type="button">Spin Rotor</button>
+        <button id="btn-cam-iso" class="btn-mini" type="button" title="Isometric camera view">Iso</button>
+        <button id="btn-cam-top" class="btn-mini" type="button" title="Planform top view">Plan</button>
+        <button id="btn-cam-tip" class="btn-mini" type="button" title="Tip-down airfoil view">Tip</button>
+      </div>
+
+      <div class="toolbar" id="export-bar">
+        <span class="toolbar-label">Export Part:</span>
+        <select id="export-part" class="compact-select" title="Select part to export">
+          <option value="blade">Blade Only</option>
+          <option value="assembly">Full Assembly (Blade + Hub)</option>
+          <option value="hub">Hub Only</option>
+        </select>
+        <button id="btn-export-stl" class="btn-primary" type="button" title="Download watertight binary STL">Export STL</button>
+        <button id="btn-export-3mf" class="btn-primary" type="button" title="Download 3MF package (mm units)">Export 3MF</button>
+        <button id="btn-export-step" class="btn-primary" type="button" title="Download ISO-10303-21 B-rep STEP solid">Export STEP</button>
+        <button id="btn-export-json" type="button" title="Download Design JSON">Save JSON</button>
+        <span id="export-status">Ready</span>
+      </div>
+    </div>
+
+    <!-- Left Geometry & Airfoil Engineering Dock -->
     <div id="panel">
       <div class="panel-header">
-        <h1>BladeLab · Workbench</h1>
+        <h1>BladeLab · Geometry &amp; Airfoil</h1>
         <div class="toolbar">
-          <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
-          <button id="btn-redo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+          <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button id="btn-redo" title="Redo (Ctrl+Y)" disabled>Redo</button>
           <button id="btn-reset" title="Reset to initial fixture">Reset</button>
         </div>
       </div>
@@ -346,7 +513,7 @@
         <section id="layer1-rotor">
           <div class="section-title">
             <span>Layer 1 · Rotor Parameters</span>
-            <span id="rotor-summary">R=600 mm · B=3</span>
+            <span id="rotor-summary" class="section-meta">R=600 mm · L=540 mm · B=3</span>
           </div>
           <div class="grid-2">
             <div class="field">
@@ -400,10 +567,10 @@
           </div>
         </section>
 
-        <!-- Layer 1 / 2: Spanwise Distribution Mode -->
+        <!-- Layer 1 / 2: Spanwise Distribution Mode & Airfoil Profile -->
         <section id="layer1-distributions">
           <div class="section-title">
-            <span>Layer 1/2 · Chord &amp; Twist Law</span>
+            <span>Layer 1/2 · Chord, Twist &amp; Airfoil</span>
           </div>
           <div class="mode-tabs">
             <button id="mode-linear" class="active" type="button">Linear</button>
@@ -513,6 +680,7 @@
                 <input id="airfoil-camber" type="number" min="0" max="9.5" step="0.5" value="4" />
               </div>
             </div>
+            <svg id="airfoil-preview-svg" viewBox="0 0 320 92"></svg>
           </div>
         </section>
 
@@ -530,25 +698,57 @@
                 <th>r (mm)</th>
                 <th>Chord (mm)</th>
                 <th>Twist (°)</th>
-                <th title="Lock station against Layer 1/2 edits">🔒</th>
+                <th title="Lock station against Layer 1/2 edits">Lock</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="station-table-body"></tbody>
           </table>
         </section>
+      </div>
 
-        <!-- Phase 3: Aerodynamics, A/B Comparison, Generator & Test Data Logging -->
+      <div id="error-banner"></div>
+
+      <div id="stats">
+        <span>mesh: <span id="ms" class="ok">–</span></span>
+        <span><span id="tris">–</span> tris</span>
+        <span><span id="vol">–</span> mm³</span>
+      </div>
+    </div>
+
+    <!-- Right Aerodynamics, Telemetry & Test Data Dock -->
+    <div id="aero-dock">
+      <div class="panel-header">
+        <h2>Phase 3 · BEM Telemetry &amp; Test Bench</h2>
+        <span id="aero-summary" class="section-meta">Cp=– · P=– W</span>
+      </div>
+
+      <div class="panel-scroll">
         <section id="layer-aero">
-          <div class="section-title">
-            <span>Phase 3 · BEM &amp; Test Bench</span>
-            <span id="aero-summary">Cp=– · P=– W</span>
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Design Cp</span>
+              <span id="kpi-cp" class="kpi-val">–</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Peak Cp</span>
+              <span id="kpi-peak-cp" class="kpi-val">–</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Mech Power</span>
+              <span id="kpi-power" class="kpi-val">–</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Gen Output</span>
+              <span id="kpi-gen-elec" class="kpi-val">–</span>
+            </div>
           </div>
+
           <div class="aero-legend">
-            <span><i class="swatch" style="background: #5b9bf0"></i>Design B</span>
-            <span><i class="swatch" style="background: #9ec5ff"></i>Baseline A (dashed)</span>
-            <span><i class="swatch" style="background: #7bd88f"></i>Exp Data</span>
-            <span><i class="swatch" style="background: #f5a623"></i>Betz 0.593</span>
+            <span><i class="swatch" style="background: #10b981"></i>Design B</span>
+            <span><i class="swatch" style="background: #94a3b8"></i>Baseline A</span>
+            <span><i class="swatch" style="background: #f59e0b"></i>Exp Data</span>
+            <span><i class="swatch" style="background: #ef4444"></i>Betz 0.593</span>
           </div>
           <svg id="cp-tsr-svg" viewBox="0 0 320 155"></svg>
 
@@ -557,10 +757,10 @@
               <button id="btn-snapshot-a" class="btn-mini" type="button">Snapshot Baseline A</button>
               <button id="btn-clear-a" class="btn-mini" type="button" disabled>Clear A</button>
             </div>
-            <span id="ab-delta-summary" style="font-size: 11px; color: #9ec5ff">No Baseline A</span>
+            <span id="ab-delta-summary" class="section-meta" style="color: #93c5fd">No Baseline A</span>
           </div>
 
-          <div class="grid-2" style="margin-top: 6px">
+          <div class="grid-2" style="margin-top: 8px">
             <div class="field">
               <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
               <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
@@ -576,26 +776,19 @@
           </div>
           <div id="gen-summary" class="aero-subbox">Gen: –</div>
 
-          <div class="field" style="margin-top: 8px">
+          <div class="field" style="margin-top: 10px">
             <label for="exp-data-input">Experimental Data Log (tsr, cp or rpm=.., power_w=..)</label>
             <textarea
               id="exp-data-input"
               rows="3"
-              placeholder="# Paste bench or wind-tunnel rows:&#10;3.5, 0.34&#10;4.5, 0.42&#10;rpm=570, power_w=195"
+              placeholder="# Paste wind-tunnel or bench rows:&#10;3.5, 0.34&#10;4.5, 0.42&#10;rpm=570, power_w=150"
             ></textarea>
           </div>
           <div id="exp-fit-summary" class="aero-subbox">Exp log: 0 pts</div>
         </section>
       </div>
-
-      <div id="error-banner"></div>
-
-      <div id="stats">
-        <span>update: <span id="ms" class="ok">–</span></span>
-        <span><span id="tris">–</span> tris</span>
-        <span><span id="vol">–</span> mm³</span>
-      </div>
     </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

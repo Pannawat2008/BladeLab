@@ -1,9 +1,16 @@
 import { defineConfig } from "vite";
 
-// Relative base so the built bundle works from a static file server / sub-path.
 export default defineConfig({
-  base: "./",
-  build: {
-    target: "es2022",
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:3000",
+        changeOrigin: true,
+      },
+      "/healthz": {
+        target: "http://127.0.0.1:3000",
+        changeOrigin: true,
+      },
+    },
   },
 });

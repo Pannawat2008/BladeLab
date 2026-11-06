@@ -22,6 +22,7 @@ import {
   evaluateExperimentalFit,
   interpolateSweepCp,
   parseExperimentalDataLog,
+  renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
   resolveStationsPreview,
   scaleAllChords,
@@ -379,4 +380,29 @@ test("blade length L, pitch-axis pivot, global chord width shift/scale, and airf
     const thickMesh = build_mesh(JSON.stringify(thickNaca), "{}");
     assert.ok(thickMesh.volume_mm3 > thinMesh.volume_mm3 * 1.3);
   }
+});
+
+test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm bytes work end-to-end", () => {
+  const nacaSvg = renderAirfoilSectionSvgMarkup(initialDesign);
+  assert.ok(nacaSvg.includes('class="airfoil-contour"'));
+  assert.ok(nacaSvg.includes('class="airfoil-camber"'));
+  assert.ok(nacaSvg.includes('class="pitch-axis-dot"'));
+
+  const sgDesign = updatePrimaryAirfoil(initialDesign, { type: "named", name: "SG6043" });
+  const sgSvg = renderAirfoilSectionSvgMarkup(sgDesign);
+  assert.ok(sgSvg.includes("SG6043"));
+
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  assert.ok(fs.existsSync(gluePath), "blade_wasm.js node glue must exist");
+  const require = createRequire(import.meta.url);
+  const { export_stl_bytes, export_3mf_bytes } = require(gluePath);
+
+  const stlBytes = export_stl_bytes(JSON.stringify(initialDesign));
+  assert.equal(stlBytes.byteLength, 84 + 50 * 3538);
+
+  const threemfBytes = export_3mf_bytes(JSON.stringify(initialDesign));
+  assert.ok(threemfBytes.byteLength > 10000);
+  // 3MF is a ZIP archive starting with 'PK\x03\x04'
+  assert.equal(threemfBytes[0], 0x50);
+  assert.equal(threemfBytes[1], 0x4b);
 });

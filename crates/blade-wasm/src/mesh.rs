@@ -5,7 +5,7 @@
 //! thin wasm bindings live in `lib.rs`.
 
 use blade_geom::{build_sections, loft};
-use blade_mesh::{tessellate, Mesh, MeshOptions};
+use blade_mesh::{check_mesh, tessellate, write_3mf, write_stl, Mesh, MeshOptions};
 use blade_model::{resolve, CurveSource, Design};
 
 /// A ready-to-render triangle mesh in millimetres.
@@ -67,6 +67,32 @@ pub fn build_mesh(design_json: &str, overrides: &Overrides) -> Result<MeshOutput
     let surface = loft(&sections).map_err(as_string)?;
     let mesh = tessellate(&surface, &MeshOptions { cap_ends: true }).map_err(as_string)?;
     Ok(output(&mesh))
+}
+
+/// Builds a validated watertight blade [`Mesh`] from `design_json`.
+pub fn build_validated_blade_mesh(design_json: &str) -> Result<Mesh, String> {
+    let design = Design::from_json(design_json).map_err(as_string)?;
+    let blade = resolve(&design).map_err(as_string)?;
+    let sections = build_sections(&blade).map_err(as_string)?;
+    let surface = loft(&sections).map_err(as_string)?;
+    let mesh = tessellate(&surface, &MeshOptions { cap_ends: true }).map_err(as_string)?;
+    let report = check_mesh(&mesh);
+    if !report.is_valid_solid() {
+        return Err("generated blade mesh is not a valid watertight solid".into());
+    }
+    Ok(mesh)
+}
+
+/// Serializes the blade mesh to binary STL bytes (`84 + 50 × tris`).
+pub fn export_stl(design_json: &str) -> Result<Vec<u8>, String> {
+    let mesh = build_validated_blade_mesh(design_json)?;
+    Ok(write_stl(&mesh))
+}
+
+/// Serializes the blade mesh to a 3MF archive (`.3mf` OPC ZIP in mm units).
+pub fn export_3mf(design_json: &str) -> Result<Vec<u8>, String> {
+    let mesh = build_validated_blade_mesh(design_json)?;
+    Ok(write_3mf(&mesh))
 }
 
 fn output(mesh: &Mesh) -> MeshOutput {

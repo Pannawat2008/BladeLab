@@ -1042,3 +1042,99 @@ export function renderCpTsrSvgMarkup(
 
   return parts.join("\n");
 }
+
+/**
+ * Generates an SVG cross-section diagram of the blade's primary airfoil
+ * showing the upper/lower contour, mean camber line, chord line, and the
+ * pitch-axis pivot marker at `x/c = rotor.pitch_axis_ratio`.
+ */
+export function renderAirfoilSectionSvgMarkup(design: Design): string {
+  const w = 320;
+  const h = 92;
+  const padX = 22;
+  const midY = 52;
+  const scale = w - 2 * padX;
+
+  const primary = design.airfoils[0]?.airfoil;
+  let m = 0.04;
+  let p = 0.4;
+  let t = 0.12;
+  let label = "NACA 4412";
+
+  if (primary) {
+    if (primary.type === "named") {
+      label = primary.name;
+      if (primary.name === "SG6043") {
+        m = 0.055;
+        p = 0.42;
+        t = 0.1;
+      } else if (primary.name === "SD7062") {
+        m = 0.038;
+        p = 0.38;
+        t = 0.14;
+      } else if (primary.name === "E387") {
+        m = 0.032;
+        p = 0.4;
+        t = 0.091;
+      }
+    } else {
+      m = primary.max_camber;
+      p = primary.camber_position > 0 ? primary.camber_position : 0.4;
+      t = primary.thickness_ratio;
+      label = `NACA t=${(t * 100).toFixed(1)}% m=${(m * 100).toFixed(1)}%`;
+    }
+  }
+
+  const samples = 48;
+  const upperPts: string[] = [];
+  const lowerPts: string[] = [];
+  const camberPts: string[] = [];
+
+  for (let i = 0; i <= samples; i++) {
+    const beta = (Math.PI * i) / samples;
+    const xc = 0.5 * (1 - Math.cos(beta));
+    const yt =
+      5 *
+      t *
+      (0.2969 * Math.sqrt(xc) -
+        0.126 * xc -
+        0.3516 * xc * xc +
+        0.2843 * xc * xc * xc -
+        0.1015 * xc * xc * xc * xc);
+    let yc = 0;
+    let dyc = 0;
+    if (m > 0 && p > 0 && p < 1) {
+      if (xc < p) {
+        yc = (m / (p * p)) * (2 * p * xc - xc * xc);
+        dyc = ((2 * m) / (p * p)) * (p - xc);
+      } else {
+        yc = (m / ((1 - p) * (1 - p))) * (1 - 2 * p + 2 * p * xc - xc * xc);
+        dyc = ((2 * m) / ((1 - p) * (1 - p))) * (p - xc);
+      }
+    }
+    const theta = Math.atan(dyc);
+    const xu = xc - yt * Math.sin(theta);
+    const yu = yc + yt * Math.cos(theta);
+    const xl = xc + yt * Math.sin(theta);
+    const yl = yc - yt * Math.cos(theta);
+
+    const toSvgX = (xVal: number) => (padX + xVal * scale).toFixed(1);
+    const toSvgY = (yVal: number) => (midY - yVal * scale * 1.35).toFixed(1);
+
+    upperPts.push(`${toSvgX(xu)},${toSvgY(yu)}`);
+    lowerPts.unshift(`${toSvgX(xl)},${toSvgY(yl)}`);
+    camberPts.push(`${i === 0 ? "M" : "L"}${toSvgX(xc)},${toSvgY(yc)}`);
+  }
+
+  const contourPoly = [...upperPts, ...lowerPts].join(" ");
+  const pivotX = (padX + design.rotor.pitch_axis_ratio * scale).toFixed(1);
+
+  return [
+    `<line x1="${padX}" y1="${midY}" x2="${w - padX}" y2="${midY}" stroke="#283242" stroke-width="1" stroke-dasharray="3 3" />`,
+    `<polygon class="airfoil-contour" points="${contourPoly}" fill="rgba(59, 130, 246, 0.18)" stroke="#3b82f6" stroke-width="1.75" />`,
+    `<path class="airfoil-camber" d="${camberPts.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="2 2" />`,
+    `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" />`,
+    `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="4.2" fill="#f59e0b" stroke="#0c0f14" stroke-width="1.4" />`,
+    `<text x="${padX}" y="14" fill="#94a3b8" font-size="10" font-family="ui-monospace, monospace">${label} · Pivot x/c=${design.rotor.pitch_axis_ratio.toFixed(2)}</text>`,
+  ].join("\n");
+}

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 49**
-> **LAST_UPDATED: 2026-11-06 11:35 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 51**
+> **LAST_UPDATED: 2026-11-06 11:58 (UTC+7) by geom-1**
 
 ---
 
@@ -408,6 +408,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-032** | 2026-11-06 11:22 | geom-1 | T-205
   `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` now also expose direct **Blade Length** controls (`#rotor-blade-length`, `#rotor-length-slider`, `updateBladeLengthMm` syncing $L = R - r_0$), **Move Chord / Pitch-Axis** controls (`#rotor-pitch-axis`, `updatePitchAxisRatio`, `#chord-offset-x`, `#chord-offset-y`, and a 3D orange pitch-axis reference line in Three.js), **All-Chords Width** shift/scale buttons (`−5 mm`, `+5 mm`, `×0.9`, `×1.1` via `shiftAllChordsMm` / `scaleAllChords`), and **Airfoil Profile Family & Thickness/Camber** controls (`#airfoil-family`: `NACA 4-Digit`, `SG6043`, `SD7062`, `E387`, plus `#airfoil-thickness` and `#airfoil-camber` via `updatePrimaryAirfoil`).
   refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
+- **F-geom1-033** | 2026-11-06 11:58 | geom-1 | T-105
+  Applied the workspace UI design skills (`find-skills`, `frontend-design`, `ui-taste`) to upgrade the Web Workbench (`web/index.html`, `web/src/main.ts`, `web/src/state.ts`, `web/vite.config.ts`) and `crates/blade-wasm`: (1) `blade-wasm` now exposes `export_stl_bytes(design_json)` and `export_3mf_bytes(design_json)` for instant `< 2 ms` in-browser single-blade binary `.stl` and `.3mf` download, while `web/vite.config.ts` proxies `/api` to `http://127.0.0.1:3000` (`blade-server`) so `Export STEP` and `Full Assembly (Blade + Hub)` / `Hub Only` exports work seamlessly in the browser; (2) added a floating top-right Viewport & Export Dock (`#top-dock`, `#export-bar`) with `Single Blade`, `Full Rotor (B×)` multi-blade + hollow hub assembly preview, `Wireframe`, `Spin Rotor`, camera presets (`Iso`, `Plan`, `Tip`), and one-click `Export STL`, `Export 3MF`, `Export STEP`, and `Save JSON` buttons; (3) added a live 2D Airfoil Cross-Section SVG preview (`#airfoil-preview-svg`, `renderAirfoilSectionSvgMarkup`) showing upper/lower contour, mean camber line, and golden pitch-axis pivot reticle (`cx = pitch_axis_ratio`); and (4) split the UI into a left Geometry & Airfoil Dock (`#panel`) and right Aerodynamics & Telemetry Dock (`#aero-dock`) with 4 KPI cards (`Design Cp`, `Peak Cp`, `Mech Power`, `Gen Electrical`).
+  refs: crates/blade-wasm/src/{lib,mesh}.rs, web/src/{state,main,vite-env.d}.ts, web/index.html, web/vite.config.ts | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -758,4 +761,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T11:22+07:00 agent=geom-1 mem=v47 note="added UI controls for Blade Length L=R-r0, Move Chord (Pitch Axis x/c + 3D X/Y offset sliders + 3D pitch-axis line), All-Chords width shift/scale (-5/+5 mm, x0.9/x1.1), and Airfoil Family/Thickness/Camber; 8 Node tests + tsc + vite build clean; F-geom1-032 recorded"
 [RE-ACK] 2026-11-06T11:33:00+07:00 agent=geom-1 mem=v47 last_entry=F-geom1-032 task=T-008 note="lead requested adding global light illumination to the 3D viewport"
 [END] 2026-11-06T11:35+07:00 agent=geom-1 mem=v49 note="added global light illumination (PMREM RoomEnvironment IBL + Ambient + Hemisphere + 3-point Key/Fill/Rim studio light rig + ACESFilmicToneMapping + live #global-light-intensity slider) in web/src/main.ts and web/index.html; 8 Node tests + tsc + vite build clean"
+[RE-ACK] 2026-11-06T11:49:00+07:00 agent=geom-1 mem=v49 last_entry=F-geom1-032 task=T-105 note="lead requested applying UI skills (frontend-design / ui-taste), making the UI more visual, and adding CAD/mesh export buttons (STL, 3MF, STEP, JSON) to the web workbench"
+[END] 2026-11-06T11:58+07:00 agent=geom-1 mem=v51 note="upgraded web workbench via frontend-design + ui-taste skills: top-right Viewport & Export Dock (Export STL/3MF via blade-wasm, Export STEP/Assembly via blade-server proxy, Save JSON, Single Blade vs Full Rotor B-blade + hub 3D assembly preview, Spin Rotor, Wireframe, Iso/Plan/Tip camera presets), live 2D Airfoil Cross-Section SVG preview, and split Left Geometry / Right Aero-Telemetry docks; 138 Rust tests + 9 Node tests + tsc + vite build clean; F-geom1-033 recorded"
 ```

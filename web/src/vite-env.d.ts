@@ -14,5 +14,7 @@ declare module "*blade_wasm.js" {
 
   export function build_mesh(design_json: string, overrides_json: string): MeshData;
   export function simulate_aero(design_json: string, options_json: string): string;
+  export function export_stl_bytes(design_json: string): Uint8Array;
+  export function export_3mf_bytes(design_json: string): Uint8Array;
   export default function init(module_or_path?: string | URL | Request | Response | BufferSource | WebAssembly.Module): Promise<unknown>;
 }

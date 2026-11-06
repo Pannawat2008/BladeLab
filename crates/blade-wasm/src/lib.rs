@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 
 pub mod mesh;
 
-use mesh::{build_mesh as run_pipeline, MeshOutput, Overrides};
+use mesh::{build_mesh as run_pipeline, export_3mf, export_stl, MeshOutput, Overrides};
 
 /// Live-edit overrides deserialised from the web UI (all fields optional).
 #[derive(Debug, Default, Deserialize)]
@@ -243,6 +243,18 @@ pub fn run_aero_simulation(design_json: &str, options_json: &str) -> Result<Stri
 #[wasm_bindgen]
 pub fn simulate_aero(design_json: &str, options_json: &str) -> Result<String, JsValue> {
     run_aero_simulation(design_json, options_json).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports the current blade design as a binary STL byte buffer (`Uint8Array` in JS).
+#[wasm_bindgen]
+pub fn export_stl_bytes(design_json: &str) -> Result<Vec<u8>, JsValue> {
+    export_stl(design_json).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports the current blade design as a 3MF archive byte buffer (`Uint8Array` in JS).
+#[wasm_bindgen]
+pub fn export_3mf_bytes(design_json: &str) -> Result<Vec<u8>, JsValue> {
+    export_3mf(design_json).map_err(|e| JsValue::from_str(&e))
 }
 
 #[cfg(test)]
