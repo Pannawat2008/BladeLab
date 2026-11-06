@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 61**
-> **LAST_UPDATED: 2026-11-06 15:45 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 62**
+> **LAST_UPDATED: 2026-11-06 16:42 (UTC+7) by geom-1**
 
 ---
 
@@ -801,4 +801,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T14:53+07:00 agent=geom-1 mem=v59 note="fixed section 0 cap triangulation on SG6043/SD7062/E387 in crates/blade-mesh/src/tessellate.rs (collinear .dat facet pass + keyhole-bridge ear validation); verified plain, spar-hole, round-pin, and rectangular-key meshes across all 3 library airfoils; rebuilt wasm; L-geom1-016 recorded"
 [RE-ACK] 2026-11-06T15:36:00+07:00 agent=geom-1 mem=v59 last_entry=L-geom1-016 task=T-005 note="lead requested: Interlocking Joint for split blade fabrication; adding interlocking joint geometries (Dovetail/Butterfly, Cruciform Cross-Lock, and Tapered Self-Centering Lock) to blade-mesh, blade-wasm, and web UI"
 [END] 2026-11-06T15:45+07:00 agent=geom-1 mem=v61 note="added Interlocking Joints (Dovetail Butterfly, Cruciform + Cross-Beam, 3D Snap-Lock Barb, and 3D Tapered Wedge) in crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/mesh.rs, and web UI (#align-shape, 1-click Joint Presets, and 2D SVG preview); verified watertight manifold meshes across all 4 interlocking types; F-geom1-037 recorded"
+[RE-ACK] 2026-11-06T16:42:30+07:00 agent=geom-1 mem=v61 last_entry=F-geom1-037 task=T-005 note="lead reported 3D model preview not level / not clean; aligned via /grill-me on: (1) straight coaxial CF spar tube bore & rod along span, (2) 32-deg crease-angle normals for crisp flat caps/split faces/pins + smooth airfoil skin, (3) centered hub/blade mid-plane & straight Z pitch-axis alignment, and (4) smooth cubic Catmull-Rom .dat resampling + denser spanwise loft tessellation"
 ```
