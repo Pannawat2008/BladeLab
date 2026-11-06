@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 67**
-> **LAST_UPDATED: 2026-11-06 18:28 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 68**
+> **LAST_UPDATED: 2026-11-06 21:41 (UTC+7) by geom-1**
 
 ---
 
@@ -816,4 +816,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T17:47+07:00 agent=geom-1 mem=v65 note="upgraded web/index.html and web/src/main.ts for appealing CAD/telemetry styling and full responsiveness: glassmorphic docks, color-coded KPI cards, custom range sliders, desktop dock toggles (#btn-toggle-left, #btn-toggle-right, #btn-zen-3d + [ / ] shortcuts), quick-jump section nav pills with scroll-spy, collapsible section headers, and <=1180px / <=720px mobile/tablet workspace switcher (#mobile-workspace-nav); 9 Node tests + tsc + vite build clean; F-geom1-039 recorded"
 [RE-ACK] 2026-11-06T18:21:30+07:00 agent=geom-1 mem=v65 last_entry=F-geom1-039 task=T-105 note="lead requested: web check, fix any UI/layout/interaction problems found, and apply strict /ui-taste audit & anti-slop craft (reference/audit.md + reference/anti-slop-craft.md)"
 [END] 2026-11-06T18:28+07:00 agent=geom-1 mem=v67 note="completed /ui-taste 5-dimension web audit & fixes in web/index.html and web/src/main.ts: ResizeObserver --top-dock-h prevents toolbar wrap overlap, inert/aria-hidden prevents hidden dock tab traps, semantic button[data-collapse-section] + focus-visible, pointercancel/lostpointercapture + touch-action:none on scrubbers, removed WebGL-taxing backdrop-filter blur, and passed all 9 Anti-Slop pre-flight checks (1 accent, 1 grey family, 4-step radius lock, inline SVG icons, unified labels); F-geom1-040 recorded"
+[RE-ACK] 2026-11-06T21:41:50+07:00 agent=geom-1 mem=v67 last_entry=F-geom1-040 task=T-105 note="lead invoked /unslop; executing unslop audit (references/signs.md + references/tokens.md) and presenting 5-line Direction for confirmation"
 ```
