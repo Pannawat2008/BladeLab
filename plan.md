@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 36**
-> **LAST_UPDATED: 2026-11-06 00:13 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 37**
+> **LAST_UPDATED: 2026-11-06 09:20 (UTC+7) by geom-1**
 
 ---
 
@@ -227,7 +227,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-202 | Airfoil library + .dat import + blending | geom | geom-1 | done | 2026-11-06 01:13 | T-003 | SG6043, SD7062, E387 pass all tests |
 | T-203 | Unified blade+hub assembly via Manifold booleans + 3MF | cad | geom-1 | done | 2026-11-06 01:23 | T-102 | Yields a single watertight manifold part |
 | T-204 | PostgreSQL persistence: designs, versioning | server | geom-1 | done | 2026-11-06 01:27 | T-103 | Full CRUD + version tracking functional |
-| T-205 | UI: Curve editor, value scrubbing, locking & binding | web | geom-1 | in-progress | 2026-11-06 01:28 | T-201 | Conforms to UI interaction specifications |
+| T-205 | UI: Curve editor, value scrubbing, locking & binding | web | geom-1 | done | 2026-11-06 09:18 | T-201 | Conforms to UI interaction specifications |
 
 ### Phase 3 — Simulation & Testing
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
@@ -390,6 +390,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-026** | 2026-11-06 01:27 | geom-1 | T-204
   `crates/blade-server/migrations/0001_designs.sql` (`POSTGRES_SCHEMA_SQL`) and `crates/blade-server/src/store.rs` (`DesignStore`, `DesignRecord`, `DesignSummary`, `DesignVersionRecord`) implement persistent design storage and immutable version tracking (`1, 2, ...`, `blake3` content digest, revision notes, and append-only version restore). `crates/blade-server` exposes `POST /api/v1/designs`, `GET /api/v1/designs`, `GET /api/v1/designs/{id}`, `PUT /api/v1/designs/{id}`, `DELETE /api/v1/designs/{id}`, `GET /api/v1/designs/{id}/versions`, `GET /api/v1/designs/{id}/versions/{version}`, and `POST /api/v1/designs/{id}/versions/{version}/restore`, validating every payload via `blade_model::validate`.
   refs: crates/blade-server/migrations/0001_designs.sql, crates/blade-server/src/{store,lib}.rs, crates/blade-server/tests/api_designs.rs | supersedes: –
+- **F-geom1-027** | 2026-11-06 09:18 | geom-1 | T-205
+  `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` deliver the T-205 Layer-2 UI interactions: (1) interactive SVG Bézier curve editor (`#bezier-svg`, `applyBezierCurve`, `updateBezierControlPoint`, `defaultChordBezierPoints`, `defaultTwistBezierPoints`) and Formula expression inputs (`#formula-chord`, `#formula-twist`, `applyFormulaCurve`); (2) horizontal pointer-drag value scrubbing on parameter labels (`applyScrubDelta`, supporting `Shift` 10× coarse and `Alt` 0.1× fine modifiers with `[min, max]` clamping); (3) per-station locking (`preserveLockedStations` + `🔒`/`🔓` buttons in the Layer-3 station table so locked stations preserve their effective chord/twist across Layer-1/2 edits) and root-to-tip chord taper binding (`applyBoundRootChord`, `tip = root · taperRatio`).
+  refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -644,6 +647,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-204 is `done`. `crates/blade-server` now provides `migrations/0001_designs.sql`, `DesignStore`, and the full `/api/v1/designs` CRUD + version history REST API (`create`, `list`, `get`, `update`, `delete`, `list_versions`, `get_version`, `restore_version`), verified by integration tests in `crates/blade-server/tests/api_designs.rs`. Workspace total is **120 Rust tests + 4 Node tests**, all green.
   **Next:** **T-205** (`UI: Curve editor, value scrubbing, locking & binding`), the final task in **Phase 2**!
   **Cautions:** Restoring an older version via `POST /api/v1/designs/{id}/versions/{version}/restore` creates a new head version (`current_version + 1`) rather than rewriting history, keeping `design_versions` strictly append-only.
+- **H-geom1-021** | 2026-11-06 09:20 | geom-1 | T-205 | Recipient: lead, web, aero, qa
+  **Progress:** T-205 is `done`, completing **100% of Phase 2 — Advanced Tuning & Full STEP Support** (`T-201` through `T-205` all `done`). `web/` now includes the interactive Layer-2 Bézier curve editor and Formula editor (`x = r/R`), horizontal pointer-drag value scrubbing (`Shift` 10× / `Alt` 0.1×), per-station locking (`🔒` / `🔓`), and root-to-tip chord taper binding (`tip = root · taperRatio`). Verified by 6 Node tests in `web/scripts/types.test.mjs` (including wasm `build_mesh` verification of Bézier and Formula curves), `tsc --noEmit`, and `vite build`. Workspace total is **120 Rust tests + 6 Node tests**, all green.
+  **Next:** **Phase 3 — Simulation & Testing** (`T-301`: Precomputed polars + Viterna extrapolation; `T-302`: BEM solver (Ning 2014 + Brent) + Prandtl + Glauert; `T-303`: Generator matching; `T-304`: UI Cp–TSR charts, A/B comparison, test data logging).
+  **Cautions:** Dragging a Bézier control point updates the SVG curve, station table, and 3D mesh live on `pointermove` and commits a single snapshot onto `DesignHistory` on `pointerup`.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -695,4 +702,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T01:24:00+07:00 agent=geom-1 mem=v33 last_entry=H-geom1-019 task=T-204 note="lead: 'do all phase2' -> claiming T-204 (PostgreSQL persistence: designs, versioning) under D-geom1-020"
 [END] 2026-11-06T01:27+07:00 agent=geom-1 mem=v35 note="T-204 done: crates/blade-server/migrations/0001_designs.sql + DesignStore + /api/v1/designs CRUD and version history endpoints; 120 Rust tests + 4 Node tests + fmt/clippy clean; F-geom1-026, H-geom1-020 recorded"
 [RE-ACK] 2026-11-06T01:28:00+07:00 agent=geom-1 mem=v35 last_entry=H-geom1-020 task=T-205 note="lead: 'do all phase2' -> claiming T-205 (UI: Curve editor, value scrubbing, locking & binding) under D-geom1-021"
+[END] 2026-11-06T09:20+07:00 agent=geom-1 mem=v37 note="T-205 done (closes Phase 2): web/src/state.ts + web/index.html + web/src/main.ts (interactive Bezier SVG curve editor, Formula editor, Shift/Alt value scrubbing, station locking, root-tip taper binding); 120 Rust tests + 6 Node tests + tsc + vite build clean; F-geom1-027, H-geom1-021 recorded"
 ```

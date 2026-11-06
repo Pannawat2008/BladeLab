@@ -118,7 +118,17 @@
         font-size: 11.5px;
         color: #c3c9d4;
       }
+      .scrub-label {
+        cursor: ew-resize;
+        user-select: none;
+        border-bottom: 1px dotted #4a5568;
+      }
+      .scrub-label:hover {
+        color: #9ec5ff;
+        border-bottom-color: #5b9bf0;
+      }
       .field input[type="number"],
+      .field input[type="text"],
       .field select {
         width: 100%;
         background: #161920;
@@ -130,9 +140,59 @@
         font-variant-numeric: tabular-nums;
       }
       .field input[type="number"]:focus,
+      .field input[type="text"]:focus,
       .field select:focus {
         outline: none;
         border-color: #4f8bd6;
+      }
+      .bind-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 6px 0 8px;
+        padding: 5px 8px;
+        background: rgba(35, 41, 52, 0.55);
+        border: 1px solid #282f3c;
+        border-radius: 6px;
+        font-size: 11.5px;
+      }
+      .bind-row label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        cursor: pointer;
+        color: #c3c9d4;
+      }
+      .bind-row input[type="number"] {
+        width: 68px;
+        background: #151820;
+        color: #e8eaed;
+        border: 1px solid #2e3440;
+        border-radius: 4px;
+        padding: 2px 5px;
+        font-size: 11.5px;
+      }
+      #bezier-svg {
+        width: 100%;
+        height: 150px;
+        background: #14171e;
+        border: 1px solid #2c3340;
+        border-radius: 6px;
+        display: block;
+        margin-bottom: 8px;
+        touch-action: none;
+      }
+      .lock-btn {
+        padding: 1px 5px;
+        font-size: 11px;
+        background: transparent;
+        border-color: transparent;
+      }
+      .lock-btn.locked {
+        background: rgba(245, 166, 35, 0.2);
+        border-color: #f5a623;
+        color: #ffd27d;
       }
       .row {
         margin: 7px 0;
@@ -247,27 +307,27 @@
           </div>
           <div class="grid-2">
             <div class="field">
-              <label for="rotor-radius">Tip Radius R (mm)</label>
+              <label for="rotor-radius" class="scrub-label" data-scrub-for="rotor-radius" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Tip Radius R (mm)</label>
               <input id="rotor-radius" type="number" min="100" max="2500" step="10" value="600" />
             </div>
             <div class="field">
-              <label for="rotor-hub-radius">Hub Radius r₀ (mm)</label>
+              <label for="rotor-hub-radius" class="scrub-label" data-scrub-for="rotor-hub-radius" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Hub Radius r₀ (mm)</label>
               <input id="rotor-hub-radius" type="number" min="10" max="1000" step="5" value="60" />
             </div>
             <div class="field">
-              <label for="rotor-blades">Blades B</label>
+              <label for="rotor-blades" class="scrub-label" data-scrub-for="rotor-blades" title="Drag horizontally to scrub">Blades B</label>
               <input id="rotor-blades" type="number" min="1" max="12" step="1" value="3" />
             </div>
             <div class="field">
-              <label for="rotor-tsr">Design TSR λ</label>
+              <label for="rotor-tsr" class="scrub-label" data-scrub-for="rotor-tsr" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Design TSR λ</label>
               <input id="rotor-tsr" type="number" min="0.5" max="15" step="0.25" value="4.5" />
             </div>
             <div class="field">
-              <label for="rotor-wind">Wind Speed (m/s)</label>
+              <label for="rotor-wind" class="scrub-label" data-scrub-for="rotor-wind" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Wind Speed (m/s)</label>
               <input id="rotor-wind" type="number" min="1" max="50" step="0.5" value="8.0" />
             </div>
             <div class="field">
-              <label for="rotor-stations">Stations N</label>
+              <label for="rotor-stations" class="scrub-label" data-scrub-for="rotor-stations" title="Drag horizontally to scrub">Stations N</label>
               <input id="rotor-stations" type="number" min="3" max="41" step="1" value="11" />
             </div>
           </div>
@@ -279,18 +339,28 @@
             <span>Layer 1/2 · Chord &amp; Twist Law</span>
           </div>
           <div class="mode-tabs">
-            <button id="mode-linear" class="active" type="button">Linear Law</button>
-            <button id="mode-schmitz" type="button">Schmitz Optimum</button>
+            <button id="mode-linear" class="active" type="button">Linear</button>
+            <button id="mode-schmitz" type="button">Schmitz</button>
+            <button id="mode-bezier" type="button">Bézier</button>
+            <button id="mode-formula" type="button">Formula</button>
+          </div>
+
+          <div class="bind-row">
+            <label for="bind-taper">
+              <input id="bind-taper" type="checkbox" />
+              Bind Tip = Root × Taper
+            </label>
+            <input id="taper-ratio" type="number" min="0.1" max="2.0" step="0.05" value="0.5" title="Tip-to-root chord taper ratio" />
           </div>
 
           <div id="controls-linear">
             <div class="grid-2">
               <div class="field">
-                <label for="root-chord">Root Chord (mm)</label>
+                <label for="root-chord" class="scrub-label" data-scrub-for="root-chord" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Root Chord (mm)</label>
                 <input id="root-chord" type="number" min="5" max="300" step="1" value="70" />
               </div>
               <div class="field">
-                <label for="root-twist">Root Twist (°)</label>
+                <label for="root-twist" class="scrub-label" data-scrub-for="root-twist" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Root Twist (°)</label>
                 <input id="root-twist" type="number" min="-45" max="70" step="0.5" value="20" />
               </div>
             </div>
@@ -307,13 +377,42 @@
           <div id="controls-schmitz" style="display: none">
             <div class="grid-2">
               <div class="field">
-                <label for="schmitz-cl">Design C_l</label>
+                <label for="schmitz-cl" class="scrub-label" data-scrub-for="schmitz-cl">Design C_l</label>
                 <input id="schmitz-cl" type="number" min="0.2" max="2.5" step="0.05" value="1.0" />
               </div>
               <div class="field">
-                <label for="schmitz-alpha">Design α (°)</label>
+                <label for="schmitz-alpha" class="scrub-label" data-scrub-for="schmitz-alpha">Design α (°)</label>
                 <input id="schmitz-alpha" type="number" min="-15" max="25" step="0.5" value="6.0" />
               </div>
+            </div>
+          </div>
+
+          <div id="controls-bezier" style="display: none">
+            <div class="mode-tabs">
+              <button id="bezier-target-chord" class="active" type="button">Chord (mm)</button>
+              <button id="bezier-target-twist" type="button">Twist (°)</button>
+            </div>
+            <svg id="bezier-svg" viewBox="0 0 320 150"></svg>
+            <table class="station-table">
+              <thead>
+                <tr>
+                  <th>Pt</th>
+                  <th>s (0..1)</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody id="bezier-points-body"></tbody>
+            </table>
+          </div>
+
+          <div id="controls-formula" style="display: none">
+            <div class="field" style="margin-bottom: 8px">
+              <label for="formula-chord">Chord Formula (mm, x=r/R, s=0..1)</label>
+              <input id="formula-chord" type="text" value="70 - 35 * s" />
+            </div>
+            <div class="field">
+              <label for="formula-twist">Twist Formula (°, x=r/R, s=0..1)</label>
+              <input id="formula-twist" type="text" value="20 - 17 * s" />
             </div>
           </div>
         </section>
@@ -332,6 +431,7 @@
                 <th>r (mm)</th>
                 <th>Chord (mm)</th>
                 <th>Twist (°)</th>
+                <th title="Lock station against Layer 1/2 edits">🔒</th>
                 <th></th>
               </tr>
             </thead>

@@ -1,6 +1,8 @@
-// Pure state management for BladeLab UI (T-105):
+// Pure state management for BladeLab UI (T-105 + T-205):
 // - Undo/redo history stack over immutable `Design` snapshots
 // - Layer 1 rotor & distribution helpers (Linear / Constant / Schmitz)
+// - Layer 2 Bézier curve editor & formula helpers
+// - Value scrubbing (normal / Shift 10× / Alt 0.1×), station locking & taper binding
 // - Layer 3 per-station resolution and override editing
 
 import type {
@@ -249,12 +251,71 @@ export function updateRotorField<K extends keyof Rotor>(
 }
 
 /**
+ * Preserves the effective chord and twist of any station whose `span_ratio`
+ * appears in `lockedSpanRatios` when transitioning from `before` to `after`.
+ */
+export function preserveLockedStations(
+  before: Design,
+  after: Design,
+  lockedSpanRatios: readonly number[],
+): Design {
+  if (lockedSpanRatios.length === 0) {
+    return after;
+  }
+  const beforeRows = resolveStationsPreview(before);
+  let next = cloneDesign(after);
+  for (const lockedRatio of lockedSpanRatios) {
+    const matched = beforeRows.find(
+      (row) => Math.abs(row.span_ratio - lockedRatio) <= RATIO_EPS,
+    );
+    if (matched) {
+      next = setStationOverride(next, matched.span_ratio, {
+        chord_mm: matched.effective_chord_mm,
+        twist_deg: matched.effective_twist_deg,
+      });
+    }
+  }
+  return next;
+}
+
+/**
+ * Default 4-point cubic Bézier control polygon for chord (in mm).
+ */
+export function defaultChordBezierPoints(
+  rootMm = 70.0,
+  tipMm = 35.0,
+): BezierControlPoint[] {
+  return [
+    { x: 0.0, y: rootMm },
+    { x: 1.0 / 3.0, y: rootMm + (tipMm - rootMm) * 0.25 },
+    { x: 2.0 / 3.0, y: rootMm + (tipMm - rootMm) * 0.7 },
+    { x: 1.0, y: tipMm },
+  ];
+}
+
+/**
+ * Default 4-point cubic Bézier control polygon for twist (in degrees).
+ */
+export function defaultTwistBezierPoints(
+  rootDeg = 20.0,
+  tipDeg = 3.0,
+): BezierControlPoint[] {
+  return [
+    { x: 0.0, y: rootDeg },
+    { x: 1.0 / 3.0, y: rootDeg + (tipDeg - rootDeg) * 0.45 },
+    { x: 2.0 / 3.0, y: rootDeg + (tipDeg - rootDeg) * 0.8 },
+    { x: 1.0, y: tipDeg },
+  ];
+}
+
+/**
  * Switches Layer-1/2 distributions to Schmitz optimum-rotor curves.
  */
 export function applySchmitzLayer1(
   design: Design,
   designCl = 1.0,
   designAlphaDeg = 6.0,
+  lockedSpanRatios: readonly number[] = [],
 ): Design {
   const next = cloneDesign(design);
   next.distributions.chord_mm = {
@@ -265,7 +326,7 @@ export function applySchmitzLayer1(
     type: "schmitz",
     design_alpha_deg: designAlphaDeg,
   };
-  return next;
+  return preserveLockedStations(design, next, lockedSpanRatios);
 }
 
 /**
@@ -277,6 +338,7 @@ export function applyLinearLayer1(
   tipChordMm = 35.0,
   rootTwistDeg = 20.0,
   tipTwistDeg = 3.0,
+  lockedSpanRatios: readonly number[] = [],
 ): Design {
   const next = cloneDesign(design);
   next.distributions.chord_mm = {
@@ -289,7 +351,139 @@ export function applyLinearLayer1(
     root: rootTwistDeg,
     tip: tipTwistDeg,
   };
-  return next;
+  return preserveLockedStations(design, next, lockedSpanRatios);
+}
+
+/**
+ * Sets a Layer-2 Bézier control polygon on `chord_mm` or `twist_deg`.
+ * Endpoint abscissae are clamped to `x_0 = 0` and `x_{n-1} = 1` and interior
+ * abscissae are kept monotonically non-decreasing in `[0, 1]`.
+ */
+export function applyBezierCurve(
+  design: Design,
+  target: "chord_mm" | "twist_deg",
+  points: BezierControlPoint[],
+  lockedSpanRatios: readonly number[] = [],
+): Design {
+  const next = cloneDesign(design);
+  const sanitized = points.map((pt, idx) => {
+    let x = Math.min(1, Math.max(0, pt.x));
+    if (idx === 0) x = 0;
+    if (idx === points.length - 1) x = 1;
+    return { x, y: pt.y };
+  });
+  for (let i = 1; i < sanitized.length - 1; i++) {
+    sanitized[i]!.x = Math.max(sanitized[i - 1]!.x, sanitized[i]!.x);
+  }
+  for (let i = sanitized.length - 2; i >= 1; i--) {
+    sanitized[i]!.x = Math.min(sanitized[i + 1]!.x, sanitized[i]!.x);
+  }
+  next.distributions[target] = {
+    type: "bezier",
+    points: sanitized,
+  };
+  return preserveLockedStations(design, next, lockedSpanRatios);
+}
+
+/**
+ * Updates a single Bézier control point on `chord_mm` or `twist_deg`,
+ * initializing from default cubic control points if the distribution is not
+ * already a Bézier curve.
+ */
+export function updateBezierControlPoint(
+  design: Design,
+  target: "chord_mm" | "twist_deg",
+  index: number,
+  patch: { x?: number; y?: number },
+  lockedSpanRatios: readonly number[] = [],
+): Design {
+  const current = design.distributions[target];
+  const basePoints =
+    current.type === "bezier"
+      ? current.points.map((p) => ({ ...p }))
+      : target === "chord_mm"
+        ? defaultChordBezierPoints()
+        : defaultTwistBezierPoints();
+  if (index < 0 || index >= basePoints.length) {
+    return cloneDesign(design);
+  }
+  const existing = basePoints[index]!;
+  basePoints[index] = {
+    x: patch.x !== undefined ? patch.x : existing.x,
+    y: patch.y !== undefined ? patch.y : existing.y,
+  };
+  return applyBezierCurve(design, target, basePoints, lockedSpanRatios);
+}
+
+/**
+ * Sets a Layer-2 formula (`evalexpr`, variable `x = r/R`) on `chord_mm` or `twist_deg`.
+ */
+export function applyFormulaCurve(
+  design: Design,
+  target: "chord_mm" | "twist_deg",
+  expr: string,
+  lockedSpanRatios: readonly number[] = [],
+): Design {
+  const next = cloneDesign(design);
+  next.distributions[target] = {
+    type: "formula",
+    expr,
+  };
+  return preserveLockedStations(design, next, lockedSpanRatios);
+}
+
+/**
+ * Computes a scrubbed numeric value from horizontal pointer drag (`deltaPx`),
+ * supporting `Shift` (10× coarse step) and `Alt` (0.1× fine step) modifiers
+ * and optional `[min, max]` clamping.
+ */
+export function applyScrubDelta(
+  currentValue: number,
+  deltaPx: number,
+  baseStep: number,
+  modifiers: { shiftKey?: boolean; altKey?: boolean } = {},
+  bounds: { min?: number; max?: number } = {},
+  pixelsPerStep = 4,
+): number {
+  const multiplier = modifiers.shiftKey ? 10 : modifiers.altKey ? 0.1 : 1;
+  const effectiveStep = baseStep * multiplier;
+  const steps = deltaPx / Math.max(1, pixelsPerStep);
+  let next = currentValue + steps * effectiveStep;
+  if (bounds.min !== undefined) {
+    next = Math.max(bounds.min, next);
+  }
+  if (bounds.max !== undefined) {
+    next = Math.min(bounds.max, next);
+  }
+  return Number(next.toFixed(6));
+}
+
+/**
+ * Updates `root` chord and binds `tip = root * taperRatio` across Linear or
+ * Bézier chord distributions, preserving any locked stations.
+ */
+export function applyBoundRootChord(
+  design: Design,
+  rootChordMm: number,
+  taperRatio: number,
+  lockedSpanRatios: readonly number[] = [],
+): Design {
+  const tipChordMm = Number((rootChordMm * taperRatio).toFixed(6));
+  const next = cloneDesign(design);
+  if (next.distributions.chord_mm.type === "bezier") {
+    const pts = next.distributions.chord_mm.points.map((p) => ({ ...p }));
+    if (pts.length >= 2) {
+      pts[0]!.y = rootChordMm;
+      pts[pts.length - 1]!.y = tipChordMm;
+      return applyBezierCurve(design, "chord_mm", pts, lockedSpanRatios);
+    }
+  }
+  next.distributions.chord_mm = {
+    type: "linear",
+    root: rootChordMm,
+    tip: tipChordMm,
+  };
+  return preserveLockedStations(design, next, lockedSpanRatios);
 }
 
 /**

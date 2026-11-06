@@ -1,5 +1,7 @@
-// Real-time blade workbench (T-008 + T-105):
+// Real-time blade workbench (T-008 + T-105 + T-205):
 // - Layer 1 rotor & distribution controls (Linear / Schmitz)
+// - Layer 2 interactive Bézier curve editor & Formula inputs
+// - Value scrubbing (Shift 10× / Alt 0.1×), station locking & taper binding
 // - Layer 3 per-station override table
 // - Undo / Redo history stack (buttons + Ctrl+Z / Ctrl+Y)
 // - Live < 50 ms Three.js mesh rebuild via blade-wasm
@@ -10,17 +12,27 @@ import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
 import init, { build_mesh } from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
 import {
+  applyBezierCurve,
+  applyBoundRootChord,
+  applyFormulaCurve,
   applyLinearLayer1,
   applySchmitzLayer1,
+  applyScrubDelta,
   clearAllOverrides,
   clearStationOverride,
   cloneDesign,
+  defaultChordBezierPoints,
+  defaultTwistBezierPoints,
   DesignHistory,
+  evalBezierPoints,
+  preserveLockedStations,
+  RATIO_EPS,
   resolveStationsPreview,
   setStationOverride,
+  updateBezierControlPoint,
   updateRotorField,
 } from "./state";
-import type { Design } from "./types/blade-model";
+import type { BezierControlPoint, Design } from "./types/blade-model";
 
 // ---- wasm bootstrap ----
 await init(wasmUrl);
@@ -69,8 +81,16 @@ const inputStations = document.getElementById("rotor-stations") as HTMLInputElem
 
 const btnModeLinear = document.getElementById("mode-linear") as HTMLButtonElement;
 const btnModeSchmitz = document.getElementById("mode-schmitz") as HTMLButtonElement;
+const btnModeBezier = document.getElementById("mode-bezier") as HTMLButtonElement;
+const btnModeFormula = document.getElementById("mode-formula") as HTMLButtonElement;
+
 const controlsLinear = document.getElementById("controls-linear")!;
 const controlsSchmitz = document.getElementById("controls-schmitz")!;
+const controlsBezier = document.getElementById("controls-bezier")!;
+const controlsFormula = document.getElementById("controls-formula")!;
+
+const inputBindTaper = document.getElementById("bind-taper") as HTMLInputElement;
+const inputTaperRatio = document.getElementById("taper-ratio") as HTMLInputElement;
 
 const inputRootChord = document.getElementById("root-chord") as HTMLInputElement;
 const inputRootTwist = document.getElementById("root-twist") as HTMLInputElement;
@@ -82,8 +102,32 @@ const chordVal = document.getElementById("chord-val")!;
 const inputSchmitzCl = document.getElementById("schmitz-cl") as HTMLInputElement;
 const inputSchmitzAlpha = document.getElementById("schmitz-alpha") as HTMLInputElement;
 
+const btnBezierTargetChord = document.getElementById("bezier-target-chord") as HTMLButtonElement;
+const btnBezierTargetTwist = document.getElementById("bezier-target-twist") as HTMLButtonElement;
+const bezierSvg = document.getElementById("bezier-svg") as unknown as SVGSVGElement;
+const bezierPointsBody = document.getElementById("bezier-points-body")!;
+
+const inputFormulaChord = document.getElementById("formula-chord") as HTMLInputElement;
+const inputFormulaTwist = document.getElementById("formula-twist") as HTMLInputElement;
+
 const stationTableBody = document.getElementById("station-table-body")!;
 const errorBanner = document.getElementById("error-banner")!;
+
+let bezierTarget: "chord_mm" | "twist_deg" = "chord_mm";
+const lockedSpanRatios: number[] = [];
+
+function isStationLocked(spanRatio: number): boolean {
+  return lockedSpanRatios.some((r) => Math.abs(r - spanRatio) <= RATIO_EPS);
+}
+
+function toggleStationLock(spanRatio: number): void {
+  const idx = lockedSpanRatios.findIndex((r) => Math.abs(r - spanRatio) <= RATIO_EPS);
+  if (idx >= 0) {
+    lockedSpanRatios.splice(idx, 1);
+  } else {
+    lockedSpanRatios.push(spanRatio);
+  }
+}
 
 // ---- 3D mesh rebuild ----
 let mesh: THREE.Mesh | null = null;
@@ -147,6 +191,14 @@ function updateStats(
 }
 
 // ---- UI synchronization ----
+function activeDistributionMode(design: Design): "linear" | "schmitz" | "bezier" | "formula" {
+  const { chord_mm, twist_deg } = design.distributions;
+  if (chord_mm.type === "bezier" || twist_deg.type === "bezier") return "bezier";
+  if (chord_mm.type === "formula" || twist_deg.type === "formula") return "formula";
+  if (chord_mm.type === "schmitz" || twist_deg.type === "schmitz") return "schmitz";
+  return "linear";
+}
+
 function syncControlsFromDesign(design: Design) {
   const { rotor, distributions } = design;
 
@@ -158,14 +210,16 @@ function syncControlsFromDesign(design: Design) {
   inputWind.value = String(rotor.wind_speed_mps);
   inputStations.value = String(rotor.station_count);
 
-  const isSchmitz =
-    distributions.chord_mm.type === "schmitz" ||
-    distributions.twist_deg.type === "schmitz";
+  const mode = activeDistributionMode(design);
+  btnModeLinear.classList.toggle("active", mode === "linear");
+  btnModeSchmitz.classList.toggle("active", mode === "schmitz");
+  btnModeBezier.classList.toggle("active", mode === "bezier");
+  btnModeFormula.classList.toggle("active", mode === "formula");
 
-  btnModeLinear.classList.toggle("active", !isSchmitz);
-  btnModeSchmitz.classList.toggle("active", isSchmitz);
-  controlsLinear.style.display = isSchmitz ? "none" : "block";
-  controlsSchmitz.style.display = isSchmitz ? "block" : "none";
+  controlsLinear.style.display = mode === "linear" ? "block" : "none";
+  controlsSchmitz.style.display = mode === "schmitz" ? "block" : "none";
+  controlsBezier.style.display = mode === "bezier" ? "block" : "none";
+  controlsFormula.style.display = mode === "formula" ? "block" : "none";
 
   if (distributions.chord_mm.type === "linear") {
     inputRootChord.value = String(distributions.chord_mm.root);
@@ -183,6 +237,16 @@ function syncControlsFromDesign(design: Design) {
   if (distributions.twist_deg.type === "schmitz") {
     inputSchmitzAlpha.value = String(distributions.twist_deg.design_alpha_deg ?? 6.0);
   }
+  if (distributions.chord_mm.type === "formula") {
+    inputFormulaChord.value = distributions.chord_mm.expr;
+  }
+  if (distributions.twist_deg.type === "formula") {
+    inputFormulaTwist.value = distributions.twist_deg.expr;
+  }
+
+  btnBezierTargetChord.classList.toggle("active", bezierTarget === "chord_mm");
+  btnBezierTargetTwist.classList.toggle("active", bezierTarget === "twist_deg");
+  renderBezierEditor(design);
 
   const counts = history.counts();
   btnUndo.disabled = !history.canUndo();
@@ -191,6 +255,142 @@ function syncControlsFromDesign(design: Design) {
   btnRedo.textContent = counts.redo > 0 ? `↷ Redo (${counts.redo})` : "↷ Redo";
 
   renderStationTable(design);
+}
+
+function getBezierPointsForTarget(
+  design: Design,
+  target: "chord_mm" | "twist_deg",
+): BezierControlPoint[] {
+  const curve = design.distributions[target];
+  if (curve.type === "bezier") {
+    return curve.points;
+  }
+  return target === "chord_mm" ? defaultChordBezierPoints() : defaultTwistBezierPoints();
+}
+
+function renderBezierEditor(design: Design) {
+  const pts = getBezierPointsForTarget(design, bezierTarget);
+  const w = 320;
+  const h = 150;
+  const padX = 24;
+  const padY = 18;
+  const yMin = bezierTarget === "chord_mm" ? 5 : -20;
+  const yMax = bezierTarget === "chord_mm" ? 140 : 45;
+
+  const toSvgX = (x: number) => padX + x * (w - 2 * padX);
+  const toSvgY = (y: number) =>
+    h - padY - ((y - yMin) / Math.max(1e-6, yMax - yMin)) * (h - 2 * padY);
+
+  const samples: string[] = [];
+  for (let i = 0; i <= 48; i++) {
+    const s = i / 48;
+    const y = evalBezierPoints(pts, s);
+    samples.push(`${i === 0 ? "M" : "L"}${toSvgX(s).toFixed(1)},${toSvgY(y).toFixed(1)}`);
+  }
+  const polyPts = pts.map((p) => `${toSvgX(p.x).toFixed(1)},${toSvgY(p.y).toFixed(1)}`).join(" ");
+
+  bezierSvg.innerHTML = `
+    <polyline points="${polyPts}" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="3 3" />
+    <path d="${samples.join(" ")}" fill="none" stroke="#5b9bf0" stroke-width="2" />
+  `;
+
+  pts.forEach((pt, idx) => {
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
+    circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
+    circle.setAttribute("r", "5.5");
+    circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f5a623" : "#9ec5ff");
+    circle.setAttribute("stroke", "#111318");
+    circle.setAttribute("stroke-width", "1.5");
+    circle.style.cursor = "grab";
+
+    circle.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      circle.setPointerCapture(ev.pointerId);
+      const baseSnap = history.current();
+
+      const onMove = (moveEv: PointerEvent) => {
+        const rect = bezierSvg.getBoundingClientRect();
+        const relX = (moveEv.clientX - rect.left) * (w / Math.max(1, rect.width));
+        const relY = (moveEv.clientY - rect.top) * (h / Math.max(1, rect.height));
+        const normX =
+          idx === 0
+            ? 0
+            : idx === pts.length - 1
+              ? 1
+              : Math.min(1, Math.max(0, (relX - padX) / (w - 2 * padX)));
+        const valY =
+          yMin + (1 - (relY - padY) / (h - 2 * padY)) * (yMax - yMin);
+        workingDesign = updateBezierControlPoint(
+          baseSnap,
+          bezierTarget,
+          idx,
+          {
+            x: Number(normX.toFixed(3)),
+            y: Number(Math.min(yMax, Math.max(yMin, valY)).toFixed(2)),
+          },
+          lockedSpanRatios,
+        );
+        renderBezierEditor(workingDesign);
+        renderStationTable(workingDesign);
+        rebuild3D(workingDesign);
+      };
+
+      const onUp = () => {
+        circle.removeEventListener("pointermove", onMove);
+        circle.removeEventListener("pointerup", onUp);
+        commitDesign(workingDesign);
+      };
+
+      circle.addEventListener("pointermove", onMove);
+      circle.addEventListener("pointerup", onUp);
+    });
+
+    bezierSvg.appendChild(circle);
+  });
+
+  bezierPointsBody.innerHTML = "";
+  pts.forEach((pt, idx) => {
+    const tr = document.createElement("tr");
+    const tdLabel = document.createElement("td");
+    tdLabel.textContent = `P${idx}`;
+
+    const tdX = document.createElement("td");
+    const inputX = document.createElement("input");
+    inputX.type = "number";
+    inputX.step = "0.05";
+    inputX.min = "0";
+    inputX.max = "1";
+    inputX.value = pt.x.toFixed(3);
+    inputX.disabled = idx === 0 || idx === pts.length - 1;
+    inputX.addEventListener("change", () => {
+      const val = Number.parseFloat(inputX.value);
+      if (Number.isFinite(val)) {
+        commitDesign(
+          updateBezierControlPoint(workingDesign, bezierTarget, idx, { x: val }, lockedSpanRatios),
+        );
+      }
+    });
+    tdX.appendChild(inputX);
+
+    const tdY = document.createElement("td");
+    const inputY = document.createElement("input");
+    inputY.type = "number";
+    inputY.step = "0.5";
+    inputY.value = pt.y.toFixed(2);
+    inputY.addEventListener("change", () => {
+      const val = Number.parseFloat(inputY.value);
+      if (Number.isFinite(val)) {
+        commitDesign(
+          updateBezierControlPoint(workingDesign, bezierTarget, idx, { y: val }, lockedSpanRatios),
+        );
+      }
+    });
+    tdY.appendChild(inputY);
+
+    tr.append(tdLabel, tdX, tdY);
+    bezierPointsBody.appendChild(tr);
+  });
 }
 
 function renderStationTable(design: Design) {
@@ -254,6 +454,21 @@ function renderStationTable(design: Design) {
     });
     tdTwist.appendChild(twistInput);
 
+    const tdLock = document.createElement("td");
+    const locked = isStationLocked(row.span_ratio);
+    const lockBtn = document.createElement("button");
+    lockBtn.type = "button";
+    lockBtn.className = locked ? "lock-btn locked" : "lock-btn";
+    lockBtn.textContent = locked ? "🔒" : "🔓";
+    lockBtn.title = locked
+      ? "Station locked against Layer 1/2 changes (click to unlock)"
+      : "Click to lock station against Layer 1/2 changes";
+    lockBtn.addEventListener("click", () => {
+      toggleStationLock(row.span_ratio);
+      renderStationTable(workingDesign);
+    });
+    tdLock.appendChild(lockBtn);
+
     const tdClear = document.createElement("td");
     if (row.has_override) {
       const clearBtn = document.createElement("button");
@@ -267,7 +482,7 @@ function renderStationTable(design: Design) {
       tdClear.appendChild(clearBtn);
     }
 
-    tr.append(tdIndex, tdRatio, tdRadius, tdChord, tdTwist, tdClear);
+    tr.append(tdIndex, tdRatio, tdRadius, tdChord, tdTwist, tdLock, tdClear);
     stationTableBody.appendChild(tr);
   }
 }
@@ -302,25 +517,77 @@ btnModeLinear.addEventListener("click", () => {
   const tipChord = Number.parseFloat(chordSlider.value) || 35;
   const rootTwist = Number.parseFloat(inputRootTwist.value) || 20;
   const tipTwist = Number.parseFloat(twistSlider.value) || 3;
-  commitDesign(applyLinearLayer1(workingDesign, rootChord, tipChord, rootTwist, tipTwist));
+  commitDesign(
+    applyLinearLayer1(workingDesign, rootChord, tipChord, rootTwist, tipTwist, lockedSpanRatios),
+  );
 });
 
 btnModeSchmitz.addEventListener("click", () => {
   const cl = Number.parseFloat(inputSchmitzCl.value) || 1.0;
   const alpha = Number.parseFloat(inputSchmitzAlpha.value) || 6.0;
-  commitDesign(applySchmitzLayer1(workingDesign, cl, alpha));
+  commitDesign(applySchmitzLayer1(workingDesign, cl, alpha, lockedSpanRatios));
+});
+
+btnModeBezier.addEventListener("click", () => {
+  const chordPts = getBezierPointsForTarget(workingDesign, "chord_mm");
+  const twistPts = getBezierPointsForTarget(workingDesign, "twist_deg");
+  const withChord = applyBezierCurve(workingDesign, "chord_mm", chordPts, lockedSpanRatios);
+  commitDesign(applyBezierCurve(withChord, "twist_deg", twistPts, lockedSpanRatios));
+});
+
+btnModeFormula.addEventListener("click", () => {
+  const chordExpr = inputFormulaChord.value.trim() || "70 - 35 * s";
+  const twistExpr = inputFormulaTwist.value.trim() || "20 - 17 * s";
+  const withChord = applyFormulaCurve(workingDesign, "chord_mm", chordExpr, lockedSpanRatios);
+  commitDesign(applyFormulaCurve(withChord, "twist_deg", twistExpr, lockedSpanRatios));
+});
+
+btnBezierTargetChord.addEventListener("click", () => {
+  bezierTarget = "chord_mm";
+  syncControlsFromDesign(workingDesign);
+});
+
+btnBezierTargetTwist.addEventListener("click", () => {
+  bezierTarget = "twist_deg";
+  syncControlsFromDesign(workingDesign);
+});
+
+inputFormulaChord.addEventListener("change", () => {
+  commitDesign(
+    applyFormulaCurve(workingDesign, "chord_mm", inputFormulaChord.value, lockedSpanRatios),
+  );
+});
+
+inputFormulaTwist.addEventListener("change", () => {
+  commitDesign(
+    applyFormulaCurve(workingDesign, "twist_deg", inputFormulaTwist.value, lockedSpanRatios),
+  );
 });
 
 inputRootChord.addEventListener("change", () => {
   const val = Number.parseFloat(inputRootChord.value);
-  if (Number.isFinite(val) && workingDesign.distributions.chord_mm.type === "linear") {
+  if (!Number.isFinite(val)) return;
+  if (inputBindTaper.checked) {
+    const ratio = Number.parseFloat(inputTaperRatio.value) || 0.5;
+    commitDesign(applyBoundRootChord(workingDesign, val, ratio, lockedSpanRatios));
+    return;
+  }
+  if (workingDesign.distributions.chord_mm.type === "linear") {
     const next = cloneDesign(workingDesign);
     next.distributions.chord_mm = {
       type: "linear",
       root: val,
       tip: workingDesign.distributions.chord_mm.tip,
     };
-    commitDesign(next);
+    commitDesign(preserveLockedStations(workingDesign, next, lockedSpanRatios));
+  }
+});
+
+inputTaperRatio.addEventListener("change", () => {
+  if (inputBindTaper.checked) {
+    const rootVal = Number.parseFloat(inputRootChord.value) || 70;
+    const ratio = Number.parseFloat(inputTaperRatio.value) || 0.5;
+    commitDesign(applyBoundRootChord(workingDesign, rootVal, ratio, lockedSpanRatios));
   }
 });
 
@@ -333,7 +600,7 @@ inputRootTwist.addEventListener("change", () => {
       root: val,
       tip: workingDesign.distributions.twist_deg.tip,
     };
-    commitDesign(next);
+    commitDesign(preserveLockedStations(workingDesign, next, lockedSpanRatios));
   }
 });
 
@@ -346,7 +613,7 @@ function applySliderEditToDesign(base: Design): Design {
   if (next.distributions.chord_mm.type === "linear") {
     next.distributions.chord_mm.tip = chordSlider.valueAsNumber;
   }
-  return next;
+  return preserveLockedStations(base, next, lockedSpanRatios);
 }
 
 function onSliderInput() {
@@ -370,7 +637,7 @@ inputSchmitzCl.addEventListener("change", () => {
   const cl = Number.parseFloat(inputSchmitzCl.value);
   const alpha = Number.parseFloat(inputSchmitzAlpha.value) || 6.0;
   if (Number.isFinite(cl) && cl > 0) {
-    commitDesign(applySchmitzLayer1(workingDesign, cl, alpha));
+    commitDesign(applySchmitzLayer1(workingDesign, cl, alpha, lockedSpanRatios));
   }
 });
 
@@ -378,8 +645,46 @@ inputSchmitzAlpha.addEventListener("change", () => {
   const cl = Number.parseFloat(inputSchmitzCl.value) || 1.0;
   const alpha = Number.parseFloat(inputSchmitzAlpha.value);
   if (Number.isFinite(alpha)) {
-    commitDesign(applySchmitzLayer1(workingDesign, cl, alpha));
+    commitDesign(applySchmitzLayer1(workingDesign, cl, alpha, lockedSpanRatios));
   }
+});
+
+// ---- Value Scrubbing on [data-scrub-for] labels ----
+document.querySelectorAll<HTMLElement>("[data-scrub-for]").forEach((labelEl) => {
+  const targetId = labelEl.dataset.scrubFor;
+  if (!targetId) return;
+  const inputEl = document.getElementById(targetId) as HTMLInputElement | null;
+  if (!inputEl) return;
+
+  labelEl.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    labelEl.setPointerCapture(ev.pointerId);
+    const startX = ev.clientX;
+    const startVal = Number.parseFloat(inputEl.value) || 0;
+    const step = Number.parseFloat(inputEl.step) || 1;
+    const min = inputEl.min !== "" ? Number.parseFloat(inputEl.min) : undefined;
+    const max = inputEl.max !== "" ? Number.parseFloat(inputEl.max) : undefined;
+
+    const onMove = (moveEv: PointerEvent) => {
+      const nextVal = applyScrubDelta(
+        startVal,
+        moveEv.clientX - startX,
+        step,
+        { shiftKey: moveEv.shiftKey, altKey: moveEv.altKey },
+        { min, max },
+      );
+      inputEl.value = String(nextVal);
+      inputEl.dispatchEvent(new Event("change"));
+    };
+
+    const onUp = () => {
+      labelEl.removeEventListener("pointermove", onMove);
+      labelEl.removeEventListener("pointerup", onUp);
+    };
+
+    labelEl.addEventListener("pointermove", onMove);
+    labelEl.addEventListener("pointerup", onUp);
+  });
 });
 
 // ---- Layer 3 Clear All Overrides ----

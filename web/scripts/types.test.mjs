@@ -7,13 +7,20 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import {
+  applyBezierCurve,
+  applyBoundRootChord,
+  applyFormulaCurve,
   applyLinearLayer1,
   applySchmitzLayer1,
+  applyScrubDelta,
   clearAllOverrides,
   clearStationOverride,
+  defaultChordBezierPoints,
+  defaultTwistBezierPoints,
   DesignHistory,
   resolveStationsPreview,
   setStationOverride,
+  updateBezierControlPoint,
   updateRotorField,
 } from "../src/state.ts";
 
@@ -168,4 +175,85 @@ test("live 3D model updates via wasm on Layer 1 & Layer 3 edits and Undo/Redo wi
   const restored = build_mesh(JSON.stringify(history.current()), "{}");
   assert.ok(Math.abs(restored.volume_mm3 - baseline.volume_mm3) < 1e-6);
   assert.deepEqual(Array.from(restored.positions), Array.from(baseline.positions));
+});
+
+test("Layer 2 Bézier curve editor and Formula helpers match Rust wasm evaluation (T-205)", () => {
+  const cleared = clearAllOverrides(initialDesign);
+  const withBezier = applyBezierCurve(cleared, "chord_mm", defaultChordBezierPoints(80, 40));
+  const withTwistBezier = applyBezierCurve(
+    withBezier,
+    "twist_deg",
+    defaultTwistBezierPoints(22, 4),
+  );
+  const rows = resolveStationsPreview(withTwistBezier);
+  assert.ok(Math.abs(rows[0].effective_chord_mm - 80.0) < 1e-6);
+  assert.ok(Math.abs(rows[10].effective_chord_mm - 40.0) < 1e-6);
+  assert.ok(Math.abs(rows[0].effective_twist_deg - 22.0) < 1e-6);
+  assert.ok(Math.abs(rows[10].effective_twist_deg - 4.0) < 1e-6);
+
+  // Drag interior control point P1 up to 95 mm and clamp endpoint P0 x to 0
+  const dragged = updateBezierControlPoint(withTwistBezier, "chord_mm", 1, {
+    x: 0.35,
+    y: 95.0,
+  });
+  const draggedRows = resolveStationsPreview(dragged);
+  assert.ok(draggedRows[3].effective_chord_mm > rows[3].effective_chord_mm);
+
+  // Formula curve helper (variable x = r/R, s = 0..1)
+  const withFormula = applyFormulaCurve(dragged, "chord_mm", "90 - 50 * s");
+  const formulaRows = resolveStationsPreview(withFormula);
+  assert.ok(Math.abs(formulaRows[0].effective_chord_mm - 90.0) < 1e-6);
+  assert.ok(Math.abs(formulaRows[5].effective_chord_mm - 65.0) < 1e-6);
+  assert.ok(Math.abs(formulaRows[10].effective_chord_mm - 40.0) < 1e-6);
+
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  if (fs.existsSync(gluePath)) {
+    const require = createRequire(import.meta.url);
+    const { build_mesh } = require(gluePath);
+    const bezierMesh = build_mesh(JSON.stringify(dragged), "{}");
+    const formulaMesh = build_mesh(JSON.stringify(withFormula), "{}");
+    assert.equal(bezierMesh.triangle_count, 3538);
+    assert.equal(formulaMesh.triangle_count, 3538);
+    assert.ok(bezierMesh.volume_mm3 > 100000);
+    assert.ok(formulaMesh.volume_mm3 > 100000);
+  }
+});
+
+test("value scrubbing, station locking, and taper binding conform to UI interaction rules (T-205)", () => {
+  // 1. Value scrubbing: normal (1×), Shift (10×), Alt (0.1×), and min/max clamping
+  assert.equal(applyScrubDelta(600, 16, 10), 640); // 16 px / 4 px per step = +4 steps * 10 = +40
+  assert.equal(applyScrubDelta(600, 16, 10, { shiftKey: true }), 1000); // +4 * 100 = +400
+  assert.equal(applyScrubDelta(600, 16, 10, { altKey: true }), 604); // +4 * 1 = +4
+  assert.equal(
+    applyScrubDelta(600, 500, 10, { shiftKey: true }, { min: 100, max: 2500 }),
+    2500,
+  );
+  assert.equal(
+    applyScrubDelta(600, -500, 10, { shiftKey: true }, { min: 100, max: 2500 }),
+    100,
+  );
+
+  // 2. Station locking: locking station 5 (r/R = 0.55) preserves its chord & twist across Layer 1/2 edits
+  const base = clearAllOverrides(initialDesign);
+  const baseRows = resolveStationsPreview(base);
+  const lockedRatio = baseRows[5].span_ratio;
+  const lockedChord = baseRows[5].effective_chord_mm;
+  const lockedTwist = baseRows[5].effective_twist_deg;
+
+  const afterSchmitz = applySchmitzLayer1(base, 1.2, 5.0, [lockedRatio]);
+  const schmitzRows = resolveStationsPreview(afterSchmitz);
+  assert.ok(Math.abs(schmitzRows[5].effective_chord_mm - lockedChord) < 1e-6);
+  assert.ok(Math.abs(schmitzRows[5].effective_twist_deg - lockedTwist) < 1e-6);
+  // Unlocked stations did change to Schmitz values
+  assert.ok(Math.abs(schmitzRows[0].effective_chord_mm - baseRows[0].effective_chord_mm) > 10);
+
+  // 3. Parameter binding: root chord bound to tip via taperRatio = 0.45
+  const bound = applyBoundRootChord(base, 80.0, 0.45, [lockedRatio]);
+  assert.equal(bound.distributions.chord_mm.type, "linear");
+  assert.equal(bound.distributions.chord_mm.root, 80.0);
+  assert.equal(bound.distributions.chord_mm.tip, 36.0);
+  const boundRows = resolveStationsPreview(bound);
+  assert.ok(Math.abs(boundRows[0].effective_chord_mm - 80.0) < 1e-6);
+  assert.ok(Math.abs(boundRows[10].effective_chord_mm - 36.0) < 1e-6);
+  assert.ok(Math.abs(boundRows[5].effective_chord_mm - lockedChord) < 1e-6);
 });
