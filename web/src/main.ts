@@ -8,6 +8,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
 import init, { build_mesh, simulate_aero } from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
@@ -60,16 +61,50 @@ camera.position.set(260, 210, 540);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
 document.getElementById("app")!.appendChild(renderer.domElement);
+
+// Global Image-Based Lighting (IBL) via PMREM RoomEnvironment
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.85;
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(30, 0, 330);
 controls.update();
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x22242a, 1.15));
-const key = new THREE.DirectionalLight(0xffffff, 1.65);
-key.position.set(160, 260, 320);
-scene.add(key);
+// Omnidirectional global + 3-point studio light rig (zero dark sides when orbiting)
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+scene.add(ambientLight);
+
+const hemiLight = new THREE.HemisphereLight(0xeef4ff, 0x384152, 1.35);
+scene.add(hemiLight);
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.85);
+keyLight.position.set(220, 340, 380);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xdbeafe, 1.2);
+fillLight.position.set(-240, -190, -260);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xfef3c7, 0.95);
+rimLight.position.set(-160, 240, -360);
+scene.add(rimLight);
+
+function setGlobalIlluminationScale(scale: number) {
+  const s = Math.max(0.1, scale);
+  renderer.toneMappingExposure = 1.05 * s;
+  scene.environmentIntensity = 0.65 * s;
+  ambientLight.intensity = 0.7 * s;
+  hemiLight.intensity = 1.0 * s;
+  keyLight.intensity = 1.4 * s;
+  fillLight.intensity = 0.9 * s;
+  rimLight.intensity = 0.7 * s;
+}
+setGlobalIlluminationScale(1.35);
 
 const grid = new THREE.GridHelper(1400, 28, 0x3a3f47, 0x23272e);
 grid.position.y = -60;
@@ -96,6 +131,8 @@ const sliderChordOffsetX = document.getElementById("chord-offset-x") as HTMLInpu
 const chordOffsetXVal = document.getElementById("chord-offset-x-val")!;
 const sliderChordOffsetY = document.getElementById("chord-offset-y") as HTMLInputElement;
 const chordOffsetYVal = document.getElementById("chord-offset-y-val")!;
+const sliderGlobalLight = document.getElementById("global-light-intensity") as HTMLInputElement;
+const globalLightVal = document.getElementById("global-light-val")!;
 
 const btnChordMinus = document.getElementById("btn-chord-minus") as HTMLButtonElement;
 const btnChordPlus = document.getElementById("btn-chord-plus") as HTMLButtonElement;
@@ -721,6 +758,12 @@ sliderChordOffsetX.addEventListener("input", () => {
 sliderChordOffsetY.addEventListener("input", () => {
   chordOffsetYVal.textContent = `${sliderChordOffsetY.valueAsNumber} mm`;
   applyMeshChordOffset();
+});
+
+sliderGlobalLight.addEventListener("input", () => {
+  const val = sliderGlobalLight.valueAsNumber || 1.35;
+  globalLightVal.textContent = `${val.toFixed(2)}×`;
+  setGlobalIlluminationScale(val);
 });
 
 btnChordMinus.addEventListener("click", () => {

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 47**
-> **LAST_UPDATED: 2026-11-06 11:22 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 49**
+> **LAST_UPDATED: 2026-11-06 11:35 (UTC+7) by geom-1**
 
 ---
 
@@ -756,4 +756,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T10:04+07:00 agent=geom-1 mem=v45 note="T-304 done (closes Phase 3): blade-wasm simulate_aero + web/ Cp-TSR SVG chart, A/B comparison, generator controls, and experimental test data logger with RMSE/MAE fit; 138 Rust tests + 7 Node tests + tsc + vite build clean; F-geom1-031, H-geom1-025 recorded"
 [RE-ACK] 2026-11-06T11:18:00+07:00 agent=geom-1 mem=v45 last_entry=H-geom1-025 task=T-205 note="lead requested adding UI controls for Move Chord (pitch_axis_ratio + 3D chord X-offset + global chord scale), direct Blade Length (L = R - r0), and Airfoil Profile/Thickness/Camber"
 [END] 2026-11-06T11:22+07:00 agent=geom-1 mem=v47 note="added UI controls for Blade Length L=R-r0, Move Chord (Pitch Axis x/c + 3D X/Y offset sliders + 3D pitch-axis line), All-Chords width shift/scale (-5/+5 mm, x0.9/x1.1), and Airfoil Family/Thickness/Camber; 8 Node tests + tsc + vite build clean; F-geom1-032 recorded"
+[RE-ACK] 2026-11-06T11:33:00+07:00 agent=geom-1 mem=v47 last_entry=F-geom1-032 task=T-008 note="lead requested adding global light illumination to the 3D viewport"
+[END] 2026-11-06T11:35+07:00 agent=geom-1 mem=v49 note="added global light illumination (PMREM RoomEnvironment IBL + Ambient + Hemisphere + 3-point Key/Fill/Rim studio light rig + ACESFilmicToneMapping + live #global-light-intensity slider) in web/src/main.ts and web/index.html; 8 Node tests + tsc + vite build clean"
 ```
