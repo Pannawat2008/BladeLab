@@ -936,6 +936,24 @@
         color: var(--text-muted);
       }
 
+      .planform-pin {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 8px 12px;
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--datum);
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.32);
+        border-radius: var(--radius-control);
+      }
+      .planform-pin[hidden] {
+        display: none;
+      }
+
       /* Station Table (Right-aligned numeric columns, uniform 32px rows) */
       .table-wrap {
         width: 100%;
@@ -1501,6 +1519,10 @@
               <span class="zone zone-tip" id="zone-tip"><i></i>Tip</span>
             </div>
             <div class="zone-ranges" id="planform-zone-ranges">Root 0 – 0.13 m | Mid 0.13 – 0.23 m | Tip 0.23 – 0.40 m</div>
+            <div class="planform-pin" id="planform-pin" hidden>
+              <span id="planform-pin-text"></span>
+              <button id="btn-planform-unpin" class="btn-mini" type="button">Clear overrides</button>
+            </div>
           </div>
         </section>
 

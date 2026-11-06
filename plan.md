@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 74**
-> **LAST_UPDATED: 2026-11-06 22:30 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 75**
+> **LAST_UPDATED: 2026-11-06 22:36 (UTC+7) by geom-1**
 
 ---
 
@@ -452,6 +452,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added "Planform & span transitions" panel (`#layer2-planform`): Linear taper / Smooth cosine toggle, mid-span center and plateau-width sliders, live Root/Mid/Tip zone bar with metre ranges. Frontend-only: Smooth cosine bakes a chord `formula` curve via `buildCosinePlateauExpr` (state.ts) using only `cos`, `abs`, `pi` (supported by Rust curve.rs and TS evalFormulaPreview); mid plateau = mean(root, tip). No blade-model change. Cosine mode detected by `cos(pi` in chord formula expr. New test in types.test.mjs.
   refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs
 
+- **F-geom1-045** | 2026-11-06 22:36 | geom-1 | T-105
+  Gotcha: chord widths did not match controls because the web default design (`web/src/designs/naca4412-linear.json`) carried a Layer-3 station override at span 1.0 (chord 32 mm, twist 2 deg) that pins the tip station over every Layer 1/2 chord control (measured via wasm: tip chord extent stayed 31.98 mm for tip 35 or 70 mm; all other stations matched exactly). Removed the override from the web default only (fixtures/ untouched, tests depend on it) and added a planform-panel warning with Clear overrides when any station override pins chord.
+  refs: web/src/designs/naca4412-linear.json, web/src/main.ts, web/index.html
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -838,3 +842,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 ```
 [RE-ACK] 2026-11-06T22:24:00+07:00 agent=geom-1 mem=v73 last_entry=F-geom1-043 task=T-105 note="lead requested Planform & Span Transitions panel (Linear Taper / Smooth Cosine, mid-span center, plateau width, Root/Mid/Tip zone bar); implementing frontend-only by emitting a chord formula expr (no blade-model change)"
 [END] 2026-11-06T22:30+07:00 agent=geom-1 mem=v74 note="added Planform & span transitions panel (Linear taper / Smooth cosine, center + plateau sliders, Root/Mid/Tip zone bar) via chord formula; 10 Node tests + tsc + vite build clean; F-geom1-044 recorded"
+[RE-ACK] 2026-11-06T22:31:00+07:00 agent=geom-1 mem=v74 last_entry=F-geom1-044 task=T-105 note="lead reported chord width not matching value; root-caused to pinned tip station override"
+[END] 2026-11-06T22:37+07:00 agent=geom-1 mem=v75 note="fixed chord width mismatch: removed pinned tip override from web default design, added override warning with Clear in planform panel; tsc + 10 tests + build clean; F-geom1-045 recorded"

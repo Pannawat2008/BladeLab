@@ -35,7 +35,8 @@ import {
   clearAllOverrides,
   clearStationOverride,
   cloneDesign,
-  evalChordCurve,  compareABSimulation,
+  compareABSimulation,
+  evalChordCurve,
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
@@ -185,6 +186,9 @@ const planformBadge = document.getElementById("planform-badge")!;
 const planformCard = document.querySelector(".planform-card") as HTMLElement;
 const planformZoneBar = document.getElementById("planform-zone-bar")!;
 const planformZoneRanges = document.getElementById("planform-zone-ranges")!;
+const planformPin = document.getElementById("planform-pin")!;
+const planformPinText = document.getElementById("planform-pin-text")!;
+const btnPlanformUnpin = document.getElementById("btn-planform-unpin") as HTMLButtonElement;
 const btnModeLinear = document.getElementById("mode-linear") as HTMLButtonElement;
 const btnModeSchmitz = document.getElementById("mode-schmitz") as HTMLButtonElement;
 const btnModeBezier = document.getElementById("mode-bezier") as HTMLButtonElement;
@@ -939,6 +943,13 @@ function renderPlanformPanel(design: Design) {
   const m = (frac: number) => ((frac * bladeLenMm) / 1000).toFixed(2);
   planformZoneRanges.textContent =
     `Root 0 – ${m(rootEnd)} m | Mid ${m(rootEnd)} – ${m(tipStart)} m | Tip ${m(tipStart)} – ${m(1)} m`;
+
+  const pinned = design.overrides.filter((ov) => ov.chord_mm !== null && ov.chord_mm !== undefined);
+  planformPin.hidden = pinned.length === 0;
+  if (pinned.length > 0) {
+    const where = pinned.map((ov) => `${Math.round(ov.span_ratio * 100)}%`).join(", ");
+    planformPinText.textContent = `Station override pins chord at ${where} of span`;
+  }
 }
 
 function syncControlsFromDesign(design: Design) {
@@ -1681,6 +1692,10 @@ btnPlanformLinear.addEventListener("click", () => {
   const next = cloneDesign(workingDesign);
   next.distributions.chord_mm = { type: "linear", root, tip };
   commitDesign(preserveLockedStations(workingDesign, next, lockedSpanRatios));
+});
+
+btnPlanformUnpin.addEventListener("click", () => {
+  commitDesign(clearAllOverrides(workingDesign));
 });
 
 btnPlanformCosine.addEventListener("click", () => {

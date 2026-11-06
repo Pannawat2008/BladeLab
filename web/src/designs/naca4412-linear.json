@@ -41,14 +41,7 @@
       }
     }
   ],
-  "overrides": [
-    {
-      "span_ratio": 1.0,
-      "chord_mm": 32.0,
-      "twist_deg": 2.0,
-      "airfoil": null
-    }
-  ],
+  "overrides": [],
   "hub": {
     "diameter_mm": 120.0,
     "bore_diameter_mm": 12.0,
