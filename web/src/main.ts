@@ -937,9 +937,13 @@ function syncControlsFromDesign(design: Design) {
 
   const mode = activeDistributionMode(design);
   btnModeLinear.classList.toggle("active", mode === "linear");
+  btnModeLinear.setAttribute("aria-selected", String(mode === "linear"));
   btnModeSchmitz.classList.toggle("active", mode === "schmitz");
+  btnModeSchmitz.setAttribute("aria-selected", String(mode === "schmitz"));
   btnModeBezier.classList.toggle("active", mode === "bezier");
+  btnModeBezier.setAttribute("aria-selected", String(mode === "bezier"));
   btnModeFormula.classList.toggle("active", mode === "formula");
+  btnModeFormula.setAttribute("aria-selected", String(mode === "formula"));
 
   controlsLinear.style.display = mode === "linear" ? "block" : "none";
   controlsSchmitz.style.display = mode === "schmitz" ? "block" : "none";
@@ -970,7 +974,9 @@ function syncControlsFromDesign(design: Design) {
   }
 
   btnBezierTargetChord.classList.toggle("active", bezierTarget === "chord_mm");
+  btnBezierTargetChord.setAttribute("aria-selected", String(bezierTarget === "chord_mm"));
   btnBezierTargetTwist.classList.toggle("active", bezierTarget === "twist_deg");
+  btnBezierTargetTwist.setAttribute("aria-selected", String(bezierTarget === "twist_deg"));
   renderBezierEditor(design);
 
   const counts = history.counts();
@@ -1227,7 +1233,9 @@ function commitDesign(next: Design) {
 btnViewSingle.addEventListener("click", () => {
   viewMode = "single";
   btnViewSingle.classList.add("active");
+  btnViewSingle.setAttribute("aria-pressed", "true");
   btnViewRotor.classList.remove("active");
+  btnViewRotor.setAttribute("aria-pressed", "false");
   controls.target.set(30, 0, workingDesign.rotor.radius_mm * 0.55);
   rebuild3D(workingDesign);
 });
@@ -1235,7 +1243,9 @@ btnViewSingle.addEventListener("click", () => {
 btnViewRotor.addEventListener("click", () => {
   viewMode = "rotor";
   btnViewRotor.classList.add("active");
+  btnViewRotor.setAttribute("aria-pressed", "true");
   btnViewSingle.classList.remove("active");
+  btnViewSingle.setAttribute("aria-pressed", "false");
   controls.target.set(0, 0, 0);
   rebuild3D(workingDesign);
 });
@@ -1243,12 +1253,14 @@ btnViewRotor.addEventListener("click", () => {
 btnViewWireframe.addEventListener("click", () => {
   wireframeMode = !wireframeMode;
   btnViewWireframe.classList.toggle("active", wireframeMode);
+  btnViewWireframe.setAttribute("aria-pressed", String(wireframeMode));
   rebuild3D(workingDesign);
 });
 
 btnViewSpin.addEventListener("click", () => {
   spinRotorMode = !spinRotorMode;
   btnViewSpin.classList.toggle("active", spinRotorMode);
+  btnViewSpin.setAttribute("aria-pressed", String(spinRotorMode));
 });
 
 btnCamIso.addEventListener("click", () => {
@@ -2068,7 +2080,15 @@ sectionNavButtons.forEach((btn) => {
     const toggleBtn = sectionEl.querySelector<HTMLButtonElement>("[data-collapse-section]");
     toggleBtn?.setAttribute("aria-expanded", "true");
     sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
-    sectionNavButtons.forEach((b) => b.classList.toggle("active", b === btn));
+    sectionNavButtons.forEach((b) => {
+      const isTarget = b === btn;
+      b.classList.toggle("active", isTarget);
+      if (isTarget) {
+        b.setAttribute("aria-current", "true");
+      } else {
+        b.removeAttribute("aria-current");
+      }
+    });
   });
 });
 
@@ -2085,7 +2105,13 @@ panelScrollContainer?.addEventListener("scroll", () => {
     }
   }
   sectionNavButtons.forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.scrollTarget === activeId);
+    const isAct = btn.dataset.scrollTarget === activeId;
+    btn.classList.toggle("active", isAct);
+    if (isAct) {
+      btn.setAttribute("aria-current", "true");
+    } else {
+      btn.removeAttribute("aria-current");
+    }
   });
 });
 
@@ -2104,7 +2130,11 @@ mobileNavButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     const targetPane = btn.dataset.mobileTarget || "cad";
     document.body.setAttribute("data-mobile-pane", targetPane);
-    mobileNavButtons.forEach((b) => b.classList.toggle("active", b === btn));
+    mobileNavButtons.forEach((b) => {
+      const isAct = b === btn;
+      b.classList.toggle("active", isAct);
+      b.setAttribute("aria-pressed", String(isAct));
+    });
     syncDockAccessibilityState();
   });
 });

@@ -28,10 +28,10 @@
         --border-strong: rgba(238, 240, 245, 0.14);
         --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
-        /* Three Text Roles from Ink Ramp */
+        /* Three Text Roles from Ink Ramp (WCAG AA >= 5.36:1 across all surfaces) */
         --text-primary: #eef0f5;
         --text-secondary: #a3a9b8;
-        --text-muted: #7a8296;
+        --text-muted: #8b93a7;
         --fg: #eef0f5;
 
         /* One Accent: Clear Sky Blue + Off-White Primary CTA */
@@ -71,18 +71,14 @@
         color: var(--text-primary);
         font: 400 13px/20px var(--font-sans);
         letter-spacing: 0;
+        caret-color: var(--accent);
+        text-underline-offset: 3px;
         -webkit-font-smoothing: antialiased;
       }
 
-      @keyframes dock-enter {
-        from {
-          opacity: 0;
-          transform: translateY(8px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      ::selection {
+        background: rgba(56, 189, 248, 0.28);
+        color: var(--text-primary);
       }
 
       /* Keyboard Focus Visibility */
@@ -133,7 +129,7 @@
         z-index: 1;
       }
 
-      /* Floating Docks on 4px Grid (gap 12px, radius 16px, hairline border, orchestrated entrance) */
+      /* Floating Docks on 4px Grid (gap 12px, radius 16px, hairline border, state-only motion per operate.md) */
       #panel {
         position: fixed;
         top: var(--dock-gap);
@@ -148,10 +144,9 @@
         border-radius: var(--radius-panel);
         overflow: hidden;
         z-index: 10;
-        animation: dock-enter 0.36s var(--ease) 0.04s both;
         transition:
-          transform 0.32s var(--ease),
-          opacity 0.2s var(--ease);
+          transform 0.28s var(--ease),
+          opacity 0.18s var(--ease);
       }
 
       #top-dock {
@@ -169,10 +164,9 @@
         border: 1px solid var(--border-hairline);
         border-radius: var(--radius-panel);
         z-index: 12;
-        animation: dock-enter 0.36s var(--ease) 0s both;
         transition:
-          transform 0.32s var(--ease),
-          opacity 0.2s var(--ease);
+          transform 0.28s var(--ease),
+          opacity 0.18s var(--ease);
       }
 
       #aero-dock {
@@ -189,10 +183,9 @@
         border-radius: var(--radius-panel);
         overflow: hidden;
         z-index: 10;
-        animation: dock-enter 0.36s var(--ease) 0.08s both;
         transition:
-          transform 0.32s var(--ease),
-          opacity 0.2s var(--ease);
+          transform 0.28s var(--ease),
+          opacity 0.18s var(--ease);
       }
 
       /* Desktop Dock Collapse States (transform/opacity only) */
@@ -964,11 +957,11 @@
         border-color: rgba(245, 158, 11, 0.35);
       }
 
-      /* 3D Viewport Technical Title-Block Datum HUD (Canvas-First Grounding) */
+      /* 3D Viewport Technical Title-Block Datum HUD (Centered inside open 3D canvas column) */
       #viewport-datum-hud {
         position: fixed;
         bottom: var(--dock-gap);
-        left: 50%;
+        left: calc(50% + (var(--panel-left-w) - var(--panel-right-w)) / 2);
         transform: translateX(-50%);
         z-index: 6;
         pointer-events: none;
@@ -984,6 +977,21 @@
         color: var(--text-muted);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
+        transition: left 0.28s var(--ease);
+      }
+      body.hide-left-dock:not(.hide-right-dock) #viewport-datum-hud {
+        left: calc((100vw - var(--panel-right-w) - var(--dock-gap)) / 2);
+      }
+      body.hide-right-dock:not(.hide-left-dock) #viewport-datum-hud {
+        left: calc(var(--panel-left-w) + var(--dock-gap) + (100vw - var(--panel-left-w) - var(--dock-gap)) / 2);
+      }
+      body.hide-left-dock.hide-right-dock #viewport-datum-hud {
+        left: 50%;
+      }
+      @media (max-width: 1280px) {
+        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-datum-hud {
+          display: none;
+        }
       }
       #viewport-datum-hud .datum-sep {
         width: 1px;
@@ -1142,10 +1150,10 @@
         </div>
 
         <span class="toolbar-label">View</span>
-        <button id="btn-view-single" type="button">Single Blade</button>
-        <button id="btn-view-rotor" class="active" type="button">Full Rotor (B×)</button>
-        <button id="btn-view-wireframe" type="button">Wireframe</button>
-        <button id="btn-view-spin" type="button">Spin Rotor</button>
+        <button id="btn-view-single" type="button" aria-pressed="false">Single Blade</button>
+        <button id="btn-view-rotor" class="active" type="button" aria-pressed="true">Full Rotor (B×)</button>
+        <button id="btn-view-wireframe" type="button" aria-pressed="false">Wireframe</button>
+        <button id="btn-view-spin" type="button" aria-pressed="false">Spin Rotor</button>
         <span class="toolbar-divider"></span>
         <button id="btn-cam-iso" class="btn-mini" type="button" title="Isometric camera view">Iso</button>
         <button id="btn-cam-top" class="btn-mini" type="button" title="Planform top view">Plan</button>
@@ -1184,7 +1192,7 @@
 
       <!-- Quick Section Jump Tabs -->
       <nav class="section-nav" id="panel-section-nav" aria-label="CAD Section Navigation">
-        <button type="button" class="active" data-scroll-target="layer1-rotor">Rotor</button>
+        <button type="button" class="active" aria-current="true" data-scroll-target="layer1-rotor">Rotor</button>
         <button type="button" data-scroll-target="layer1-distributions">Airfoil</button>
         <button type="button" data-scroll-target="layer-fabrication">Split &amp; Joint</button>
         <button type="button" data-scroll-target="layer3-stations">Stations</button>
@@ -1263,10 +1271,10 @@
             </button>
           </div>
           <div class="mode-tabs" role="tablist" aria-label="Spanwise Distribution Mode">
-            <button id="mode-linear" class="active" type="button">Linear</button>
-            <button id="mode-schmitz" type="button">Schmitz</button>
-            <button id="mode-bezier" type="button">Bézier</button>
-            <button id="mode-formula" type="button">Formula</button>
+            <button id="mode-linear" class="active" type="button" role="tab" aria-selected="true">Linear</button>
+            <button id="mode-schmitz" type="button" role="tab" aria-selected="false">Schmitz</button>
+            <button id="mode-bezier" type="button" role="tab" aria-selected="false">Bézier</button>
+            <button id="mode-formula" type="button" role="tab" aria-selected="false">Formula</button>
           </div>
 
           <div class="bind-row">
@@ -1322,9 +1330,9 @@
           </div>
 
           <div id="controls-bezier" style="display: none">
-            <div class="mode-tabs">
-              <button id="bezier-target-chord" class="active" type="button">Chord (mm)</button>
-              <button id="bezier-target-twist" type="button">Twist (°)</button>
+            <div class="mode-tabs" role="tablist" aria-label="Bézier Curve Target">
+              <button id="bezier-target-chord" class="active" type="button" role="tab" aria-selected="true">Chord (mm)</button>
+              <button id="bezier-target-twist" type="button" role="tab" aria-selected="false">Twist (°)</button>
             </div>
             <svg id="bezier-svg" viewBox="0 0 320 150" role="img" aria-label="Interactive Bezier curve editor"></svg>
             <table class="station-table">
@@ -1729,15 +1737,15 @@
 
     <!-- Responsive Bottom Workspace Switcher (Tablet & Mobile <= 1180px) -->
     <nav id="mobile-workspace-nav" aria-label="Workspace Switcher">
-      <button id="btn-mob-cad" type="button" class="active" data-mobile-target="cad">
+      <button id="btn-mob-cad" type="button" class="active" aria-pressed="true" data-mobile-target="cad">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
         <span>CAD &amp; Joint</span>
       </button>
-      <button id="btn-mob-canvas" type="button" data-mobile-target="canvas">
+      <button id="btn-mob-canvas" type="button" aria-pressed="false" data-mobile-target="canvas">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
         <span>3D Viewport</span>
       </button>
-      <button id="btn-mob-aero" type="button" data-mobile-target="aero">
+      <button id="btn-mob-aero" type="button" aria-pressed="false" data-mobile-target="aero">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2 12 6 7 9.5 9.5 14 4"/></svg>
         <span>BEM &amp; Cloud</span>
       </button>
