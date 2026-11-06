@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 71**
-> **LAST_UPDATED: 2026-11-06 22:07 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 72**
+> **LAST_UPDATED: 2026-11-06 22:11 (UTC+7) by geom-1**
 
 ---
 
@@ -826,4 +826,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T21:49+07:00 agent=geom-1 mem=v69 note="completed 9-pass /unslop across web/index.html, web/src/main.ts, and web/src/state.ts: 4px grid rhythm, Dark Ink neutral ramp (#07080d/#0b0d14/#11141c/#1a1e28) with 8% hairlines and off-white primary CTAs, 16px stroke-1.5 icons, sentence-case zero-tracking type (weights 400/500), flattened hairline sub-rows, quiet mono meta, <kbd> keycaps, nested radii (16->12->8->4), and cubic-bezier(0.22,1,0.36,1) motion; 9 Node tests + tsc + vite build clean; F-geom1-041 recorded"
 [RE-ACK] 2026-11-06T21:55:30+07:00 agent=geom-1 mem=v69 last_entry=F-geom1-041 task=T-105 note="lead invoked /frontend-design; executing two-pass studio design plan, self-critique against AI tells, and implementation"
 [END] 2026-11-06T22:07+07:00 agent=geom-1 mem=v71 note="completed two-pass /frontend-design studio upgrade in web/index.html, web/src/main.ts, and web/src/state.ts: IBM Plex Sans + IBM Plex Mono typography, asymmetric .telemetry-deck with live Betz efficiency meter, 3D Viewport Title-Block Datum HUD (#viewport-datum-hud), L1/L2/FAB/L3 CAD layer tags, zero middle-dot strings, and staggered dock-enter animation; 9 Node tests + tsc + vite build clean; F-geom1-042 recorded"
+[RE-ACK] 2026-11-06T22:11:30+07:00 agent=geom-1 mem=v71 last_entry=F-geom1-042 task=T-105 note="lead invoked /ui-taste; executing Uizze polish/operate/audit/craft pass to fix P0 dock-enter animation-fill-mode:both cascade bug blocking dock collapse, P1 WCAG AA --text-muted contrast + ARIA tablist roles, and craft browser details"
 ```
