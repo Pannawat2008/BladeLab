@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 59**
-> **LAST_UPDATED: 2026-11-06 14:53 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 60**
+> **LAST_UPDATED: 2026-11-06 15:36 (UTC+7) by geom-1**
 
 ---
 
@@ -796,4 +796,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T14:40+07:00 agent=geom-1 mem=v57 note="Phase 4 (T-401..T-404) done: blade-aero optimize.rs + neuralfoil.rs, blade-cad occt.rs (apply_root_fillet + OcctKernel), blade-server /api/v1/teams + team-scoped designs, blade-wasm optimize_blade_wasm, and web Phase 4 Auto-Optimizer + Team Cloud Workspace UI; 153 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-036, H-geom1-026 recorded"
 [RE-ACK] 2026-11-06T14:47:00+07:00 agent=geom-1 mem=v57 last_entry=H-geom1-026 task=T-005 note="lead reported: switching to other airfoil profiles (SG6043/SD7062/E387) triggers 'could not triangulate the cap polygon of section 0'; fixing cap-with-holes triangulation and .dat trailing-edge contour"
 [END] 2026-11-06T14:53+07:00 agent=geom-1 mem=v59 note="fixed section 0 cap triangulation on SG6043/SD7062/E387 in crates/blade-mesh/src/tessellate.rs (collinear .dat facet pass + keyhole-bridge ear validation); verified plain, spar-hole, round-pin, and rectangular-key meshes across all 3 library airfoils; rebuilt wasm; L-geom1-016 recorded"
+[RE-ACK] 2026-11-06T15:36:00+07:00 agent=geom-1 mem=v59 last_entry=L-geom1-016 task=T-005 note="lead requested: Interlocking Joint for split blade fabrication; adding interlocking joint geometries (Dovetail/Butterfly, Cruciform Cross-Lock, and Tapered Self-Centering Lock) to blade-mesh, blade-wasm, and web UI"
 ```
