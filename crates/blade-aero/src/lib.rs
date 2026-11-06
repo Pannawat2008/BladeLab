@@ -8,6 +8,7 @@
 
 pub mod bem;
 pub mod error;
+pub mod generator;
 pub mod polar;
 pub mod viterna;
 
@@ -17,5 +18,9 @@ pub use bem::{
     DEFAULT_KINEMATIC_VISCOSITY_M2_S, GLAUERT_CRITICAL_A,
 };
 pub use error::AeroError;
+pub use generator::{
+    eval_generator_at_rpm, match_generator, sweep_generator_load, GeneratorMatchResult,
+    GeneratorSpec, GeneratorState,
+};
 pub use polar::{PolarSet, PolarSweepSpec, PolarTable, PolarTableSpec, BUILTIN_POLAR_NAMES};
 pub use viterna::{viterna_cd_max, wrap_alpha_deg, PolarEval, PolarPoint, ViternaSweep};

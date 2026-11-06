@@ -31,4 +31,7 @@ pub enum AeroError {
 
     #[error("invalid operating point: {0}")]
     InvalidOperatingPoint(String),
+
+    #[error("invalid generator specification: {0}")]
+    InvalidGeneratorSpec(String),
 }
