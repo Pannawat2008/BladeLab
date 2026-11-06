@@ -1956,7 +1956,105 @@ btnReset.addEventListener("click", () => {
   commitDesign(initialDesign);
 });
 
+// ---- Responsive Workspace Switcher, Dock Toggles & Section Navigation ----
+const btnToggleLeft = document.getElementById("btn-toggle-left") as HTMLButtonElement | null;
+const btnToggleRight = document.getElementById("btn-toggle-right") as HTMLButtonElement | null;
+const btnZen3d = document.getElementById("btn-zen-3d") as HTMLButtonElement | null;
+const panelScrollContainer = document.getElementById("panel-scroll-container");
+const sectionNavButtons = document.querySelectorAll<HTMLButtonElement>(
+  "#panel-section-nav button[data-scroll-target]",
+);
+const mobileNavButtons = document.querySelectorAll<HTMLButtonElement>(
+  "#mobile-workspace-nav button[data-mobile-target]",
+);
+
+function syncDockToggleButtons() {
+  const leftHidden = document.body.classList.contains("hide-left-dock");
+  const rightHidden = document.body.classList.contains("hide-right-dock");
+  btnToggleLeft?.classList.toggle("active", !leftHidden);
+  btnToggleRight?.classList.toggle("active", !rightHidden);
+  btnZen3d?.classList.toggle("active", leftHidden && rightHidden);
+}
+
+btnToggleLeft?.addEventListener("click", () => {
+  document.body.classList.toggle("hide-left-dock");
+  syncDockToggleButtons();
+});
+
+btnToggleRight?.addEventListener("click", () => {
+  document.body.classList.toggle("hide-right-dock");
+  syncDockToggleButtons();
+});
+
+btnZen3d?.addEventListener("click", () => {
+  const bothHidden =
+    document.body.classList.contains("hide-left-dock") &&
+    document.body.classList.contains("hide-right-dock");
+  if (bothHidden) {
+    document.body.classList.remove("hide-left-dock", "hide-right-dock");
+  } else {
+    document.body.classList.add("hide-left-dock", "hide-right-dock");
+  }
+  syncDockToggleButtons();
+});
+
+// Quick Section Jump Pills inside Left CAD Dock
+sectionNavButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const targetId = btn.dataset.scrollTarget;
+    if (!targetId) return;
+    const sectionEl = document.getElementById(targetId);
+    if (!sectionEl) return;
+    sectionEl.classList.remove("collapsed");
+    sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    sectionNavButtons.forEach((b) => b.classList.toggle("active", b === btn));
+  });
+});
+
+// Highlight active section pill while scrolling the left dock
+panelScrollContainer?.addEventListener("scroll", () => {
+  const containerTop = panelScrollContainer.getBoundingClientRect().top;
+  let activeId = "layer1-rotor";
+  for (const id of ["layer1-rotor", "layer1-distributions", "layer-fabrication", "layer3-stations"]) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const offset = el.getBoundingClientRect().top - containerTop;
+    if (offset <= 80) {
+      activeId = id;
+    }
+  }
+  sectionNavButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.scrollTarget === activeId);
+  });
+});
+
+// Collapsible section headers (ignoring clicks on buttons inside headers)
+document.querySelectorAll<HTMLElement>("[data-collapse-section]").forEach((headerEl) => {
+  headerEl.addEventListener("click", (ev) => {
+    const target = ev.target as HTMLElement | null;
+    if (target && target.closest("button, input, select")) {
+      return;
+    }
+    const sec = headerEl.closest("section");
+    if (sec) {
+      sec.classList.toggle("collapsed");
+    }
+  });
+});
+
+// Mobile & Tablet Workspace Switcher (<= 1180px)
+mobileNavButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const targetPane = btn.dataset.mobileTarget || "cad";
+    document.body.setAttribute("data-mobile-pane", targetPane);
+    mobileNavButtons.forEach((b) => b.classList.toggle("active", b === btn));
+  });
+});
+
 addEventListener("keydown", (event) => {
+  const tag = ( document.activeElement?.tagName || "" ).toLowerCase();
+  const isTyping = tag === "input" || tag === "textarea" || tag === "select";
+
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
     if (event.shiftKey) {
       event.preventDefault();
@@ -1968,6 +2066,14 @@ addEventListener("keydown", (event) => {
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
     event.preventDefault();
     performRedo();
+  } else if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (event.key === "[") {
+      document.body.classList.toggle("hide-left-dock");
+      syncDockToggleButtons();
+    } else if (event.key === "]") {
+      document.body.classList.toggle("hide-right-dock");
+      syncDockToggleButtons();
+    }
   }
 });
 

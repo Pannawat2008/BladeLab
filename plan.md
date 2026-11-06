@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 64**
-> **LAST_UPDATED: 2026-11-06 17:41 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 65**
+> **LAST_UPDATED: 2026-11-06 17:47 (UTC+7) by geom-1**
 
 ---
 
@@ -432,6 +432,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-038** | 2026-11-06 16:52 | geom-1 | T-005
   Fixed the 3D model preview leveling and surface/edge cleanliness issues identified via `/grill-me`: (1) `crates/blade-mesh/src/fabrication.rs` (`SparTubeAxis`, `spar_tube_axis_points`, `MIN_SEGMENT_STATIONS = 14`) plans a single straight, uniform-radius cylindrical bore across the full hole depth (preferring a vertical `+z` axis when it fits safely inside all stations, or a straight 3D line from root core to hole-end core) so all split segments share identical coaxial bore rings at every split plane; (2) `crates/blade-wasm` exposes `MeshData::tube_axis` (`[x0, y0, z0, x1, y1, z1, radius]`) so the 3D green preview rod in `web/src/main.ts` is positioned and quaternion-aligned coaxially inside the bore; (3) `web/src/main.ts` (`buildCleanBladeGeometry`) computes **32° crease-angle vertex normals** and subtle CAD feature-edge lines (`THREE.EdgesGeometry(bladeGeo, 32)`) so flat root/tip caps, split faces, and interlocking joints are 100% flat and crisp while the airfoil skin remains silky-smooth; and (4) centers the blade pitch axis on `X = 0` in both Single Blade and Full Rotor modes and vertically centers the hub cylinder at `rootCoreY`.
   refs: crates/blade-mesh/src/{fabrication,lib}.rs, crates/blade-wasm/src/{mesh,lib}.rs, web/src/{main,vite-env.d}.ts | supersedes: –
+- **F-geom1-039** | 2026-11-06 17:47 | geom-1 | T-105
+  Upgraded `web/index.html` and `web/src/main.ts` with a responsive, precision-CAD & wind-tunnel telemetry aesthetic (`frontend-design` + `ui-taste` skills): (1) refined glassmorphic floating docks (`backdrop-filter: blur(16px) saturate(140%)`), specular top hairlines, color-coded KPI telemetry cards, custom range sliders, segmented mode tabs, and tabular monospace numeric inputs; (2) added desktop dock toggles (`#btn-toggle-left`, `#btn-toggle-right`, `#btn-zen-3d`, plus `[` / `]` keyboard shortcuts) so users can collapse either dock or enter full-screen 3D mode; (3) added a quick-jump section navigation bar (`#panel-section-nav`: `Rotor` · `Airfoil` · `Split & Joint` · `Stations`) with scroll-spy highlighting and collapsible `<section>` headers (`data-collapse-section`); and (4) added responsive breakpoints (`<= 1440px`, `<= 1180px`, `<= 720px`) with a pill-style bottom Workspace Switcher (`#mobile-workspace-nav`: `CAD & Joint` | `3D Viewport` | `BEM & Cloud`) so docks never collide on laptop, tablet, or mobile screens.
+  refs: web/index.html, web/src/main.ts | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -807,4 +810,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T16:42:30+07:00 agent=geom-1 mem=v61 last_entry=F-geom1-037 task=T-005 note="lead reported 3D model preview not level / not clean; aligned via /grill-me on: (1) straight coaxial CF spar tube bore & rod along span, (2) 32-deg crease-angle normals for crisp flat caps/split faces/pins + smooth airfoil skin, (3) centered hub/blade mid-plane & straight Z pitch-axis alignment, and (4) smooth cubic Catmull-Rom .dat resampling + denser spanwise loft tessellation"
 [END] 2026-11-06T16:52+07:00 agent=geom-1 mem=v63 note="fixed 3D model preview leveling & cleanliness: coaxial straight SparTubeAxis + MIN_SEGMENT_STATIONS=14 in crates/blade-mesh/src/fabrication.rs, MeshData::tube_axis in blade-wasm, and 32-deg crease-angle normals + CAD feature edges + coaxial 3D rod + centered hub/pitch-axis in web/src/main.ts; F-geom1-038 recorded"
 [RE-ACK] 2026-11-06T17:41:30+07:00 agent=geom-1 mem=v63 last_entry=F-geom1-038 task=T-105 note="lead requested making the web UI appealing and responsive; applying frontend-design and ui-taste skills across web/index.html and web/src/main.ts"
+[END] 2026-11-06T17:47+07:00 agent=geom-1 mem=v65 note="upgraded web/index.html and web/src/main.ts for appealing CAD/telemetry styling and full responsiveness: glassmorphic docks, color-coded KPI cards, custom range sliders, desktop dock toggles (#btn-toggle-left, #btn-toggle-right, #btn-zen-3d + [ / ] shortcuts), quick-jump section nav pills with scroll-spy, collapsible section headers, and <=1180px / <=720px mobile/tablet workspace switcher (#mobile-workspace-nav); 9 Node tests + tsc + vite build clean; F-geom1-039 recorded"
 ```
