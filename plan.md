@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 69**
-> **LAST_UPDATED: 2026-11-06 21:49 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 70**
+> **LAST_UPDATED: 2026-11-06 21:55 (UTC+7) by geom-1**
 
 ---
 
@@ -821,4 +821,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T18:28+07:00 agent=geom-1 mem=v67 note="completed /ui-taste 5-dimension web audit & fixes in web/index.html and web/src/main.ts: ResizeObserver --top-dock-h prevents toolbar wrap overlap, inert/aria-hidden prevents hidden dock tab traps, semantic button[data-collapse-section] + focus-visible, pointercancel/lostpointercapture + touch-action:none on scrubbers, removed WebGL-taxing backdrop-filter blur, and passed all 9 Anti-Slop pre-flight checks (1 accent, 1 grey family, 4-step radius lock, inline SVG icons, unified labels); F-geom1-040 recorded"
 [RE-ACK] 2026-11-06T21:41:50+07:00 agent=geom-1 mem=v67 last_entry=F-geom1-040 task=T-105 note="lead invoked /unslop; executing unslop audit (references/signs.md + references/tokens.md) and presenting 5-line Direction for confirmation"
 [END] 2026-11-06T21:49+07:00 agent=geom-1 mem=v69 note="completed 9-pass /unslop across web/index.html, web/src/main.ts, and web/src/state.ts: 4px grid rhythm, Dark Ink neutral ramp (#07080d/#0b0d14/#11141c/#1a1e28) with 8% hairlines and off-white primary CTAs, 16px stroke-1.5 icons, sentence-case zero-tracking type (weights 400/500), flattened hairline sub-rows, quiet mono meta, <kbd> keycaps, nested radii (16->12->8->4), and cubic-bezier(0.22,1,0.36,1) motion; 9 Node tests + tsc + vite build clean; F-geom1-041 recorded"
+[RE-ACK] 2026-11-06T21:55:30+07:00 agent=geom-1 mem=v69 last_entry=F-geom1-041 task=T-105 note="lead invoked /frontend-design; executing two-pass studio design plan, self-critique against AI tells, and implementation"
 ```
