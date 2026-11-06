@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 37**
-> **LAST_UPDATED: 2026-11-06 09:20 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 38**
+> **LAST_UPDATED: 2026-11-06 09:23 (UTC+7) by geom-1**
 
 ---
 
@@ -232,7 +232,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 3 — Simulation & Testing
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-301 | Precomputed polars + Viterna extrapolation | aero | | todo | | T-002 | Usable across full α ±180° range |
+| T-301 | Precomputed polars + Viterna extrapolation | aero | geom-1 | in-progress | 2026-11-06 09:23 | T-002 | Usable across full α ±180° range |
 | T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | | todo | | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
 | T-303 | Generator matching (Kv, internal resistance, load curve) | aero | | todo | | T-302 | Accurately predicts voltage and output power |
 | T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | | todo | | T-302 | Successfully plots experimental data against simulation curves |
@@ -479,6 +479,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-021** | 2026-11-06 01:28 | geom-1 | T-205 | **Accepted**
   The lead's "do all phase2" instruction in-session on 2026-11-06 approves the **T-205** takeover (`web` role: `web/`). Scope: (1) interactive Layer-2 Curve Editor (`Bezier` control-point SVG curve editor + `Formula` expression editor with `x = r/R`) for `chord_mm` and `twist_deg`; (2) numeric value scrubbing (`applyScrubDelta` with `Shift` 10× coarse and `Alt` 0.1× fine modifiers + pointer-drag scrubbing on parameter labels); (3) per-station locking (`lockedStations` preserving locked station chord/twist as Layer-3 overrides when Layer-1/2 curves change) and root-to-tip taper ratio binding (`taperRatio = tip / root`). No §8 signatures are modified.
   refs: plan.md §7 T-205, §3, §6.2 | supersedes: –
+- **D-geom1-022** | 2026-11-06 09:23 | geom-1 | T-301 | **Accepted**
+  The lead's "next" instruction in-session on 2026-11-06 approves the **T-301** takeover (`aero` role: `crates/blade-aero/`, `data/polars/`, and root `Cargo.toml` workspace membership). Scope: (1) precomputed low-Reynolds polar datasets (`NACA 4412`, `NACA 0012`, `NACA 2415`, `NACA 6409`, `SG6043`, `SD7062`, `E387` across `Re ∈ [20k, 50k, 100k, 200k]`) embedded via `include_str!` so `blade-aero` stays I/O-free and `wasm32`-clean; (2) `PolarTable` and `PolarSet` with bilinear `(α, Re)` interpolation inside the attached/stall polar table and **Viterna–Corrigan (1982)** post-stall extrapolation across `α ∈ [-180°, +180°]` (with smooth flat-plate blend and aspect-ratio parameter `AR` giving `C_{d,\max} = 1.11 + 0.018·AR`); (3) unit and `proptest` verification proving continuity, boundedness, finite non-NaN evaluation, and physical post-stall sign/drag behavior across the full `±180°` angle-of-attack range.
+  refs: plan.md §7 T-301, §8, D-lead1-006 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -703,4 +706,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T01:27+07:00 agent=geom-1 mem=v35 note="T-204 done: crates/blade-server/migrations/0001_designs.sql + DesignStore + /api/v1/designs CRUD and version history endpoints; 120 Rust tests + 4 Node tests + fmt/clippy clean; F-geom1-026, H-geom1-020 recorded"
 [RE-ACK] 2026-11-06T01:28:00+07:00 agent=geom-1 mem=v35 last_entry=H-geom1-020 task=T-205 note="lead: 'do all phase2' -> claiming T-205 (UI: Curve editor, value scrubbing, locking & binding) under D-geom1-021"
 [END] 2026-11-06T09:20+07:00 agent=geom-1 mem=v37 note="T-205 done (closes Phase 2): web/src/state.ts + web/index.html + web/src/main.ts (interactive Bezier SVG curve editor, Formula editor, Shift/Alt value scrubbing, station locking, root-tip taper binding); 120 Rust tests + 6 Node tests + tsc + vite build clean; F-geom1-027, H-geom1-021 recorded"
+[RE-ACK] 2026-11-06T09:23:00+07:00 agent=geom-1 mem=v37 last_entry=H-geom1-021 task=T-301 note="lead: 'next' -> claiming T-301 (Precomputed polars + Viterna extrapolation across alpha -180..+180 deg) under D-geom1-022"
 ```
