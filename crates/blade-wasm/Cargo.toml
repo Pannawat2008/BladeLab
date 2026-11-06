@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 blade-model = { path = "../blade-model" }
 blade-geom = { path = "../blade-geom" }
 blade-mesh = { path = "../blade-mesh" }
+blade-aero = { path = "../blade-aero" }
 wasm-bindgen.workspace = true
 serde.workspace = true
 serde_json.workspace = true

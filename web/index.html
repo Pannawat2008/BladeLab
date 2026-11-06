@@ -173,7 +173,8 @@
         padding: 2px 5px;
         font-size: 11.5px;
       }
-      #bezier-svg {
+      #bezier-svg,
+      #cp-tsr-svg {
         width: 100%;
         height: 150px;
         background: #14171e;
@@ -182,6 +183,48 @@
         display: block;
         margin-bottom: 8px;
         touch-action: none;
+      }
+      .aero-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 10.5px;
+        color: #9ba5b7;
+        margin-bottom: 6px;
+      }
+      .aero-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .swatch {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .aero-subbox {
+        margin-top: 8px;
+        padding: 6px 8px;
+        background: rgba(25, 30, 39, 0.7);
+        border: 1px solid #262c38;
+        border-radius: 6px;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .field textarea {
+        width: 100%;
+        background: #161920;
+        color: #e8eaed;
+        border: 1px solid #2e3440;
+        border-radius: 5px;
+        padding: 5px 7px;
+        font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        resize: vertical;
+      }
+      .field textarea:focus {
+        outline: none;
+        border-color: #4f8bd6;
       }
       .lock-btn {
         padding: 1px 5px;
@@ -437,6 +480,55 @@
             </thead>
             <tbody id="station-table-body"></tbody>
           </table>
+        </section>
+
+        <!-- Phase 3: Aerodynamics, A/B Comparison, Generator & Test Data Logging -->
+        <section id="layer-aero">
+          <div class="section-title">
+            <span>Phase 3 · BEM &amp; Test Bench</span>
+            <span id="aero-summary">Cp=– · P=– W</span>
+          </div>
+          <div class="aero-legend">
+            <span><i class="swatch" style="background: #5b9bf0"></i>Design B</span>
+            <span><i class="swatch" style="background: #9ec5ff"></i>Baseline A (dashed)</span>
+            <span><i class="swatch" style="background: #7bd88f"></i>Exp Data</span>
+            <span><i class="swatch" style="background: #f5a623"></i>Betz 0.593</span>
+          </div>
+          <svg id="cp-tsr-svg" viewBox="0 0 320 155"></svg>
+
+          <div class="bind-row">
+            <div class="toolbar">
+              <button id="btn-snapshot-a" class="btn-mini" type="button">Snapshot Baseline A</button>
+              <button id="btn-clear-a" class="btn-mini" type="button" disabled>Clear A</button>
+            </div>
+            <span id="ab-delta-summary" style="font-size: 11px; color: #9ec5ff">No Baseline A</span>
+          </div>
+
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
+              <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
+            </div>
+            <div class="field">
+              <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int">R_int (Ω)</label>
+              <input id="gen-r-int" type="number" min="0.05" max="50" step="0.05" value="0.8" />
+            </div>
+          </div>
+          <div class="field" style="margin-top: 6px">
+            <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R_load (Ω)</label>
+            <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
+          </div>
+          <div id="gen-summary" class="aero-subbox">Gen: –</div>
+
+          <div class="field" style="margin-top: 8px">
+            <label for="exp-data-input">Experimental Data Log (tsr, cp or rpm=.., power_w=..)</label>
+            <textarea
+              id="exp-data-input"
+              rows="3"
+              placeholder="# Paste bench or wind-tunnel rows:&#10;3.5, 0.34&#10;4.5, 0.42&#10;rpm=570, power_w=195"
+            ></textarea>
+          </div>
+          <div id="exp-fit-summary" class="aero-subbox">Exp log: 0 pts</div>
         </section>
       </div>
 

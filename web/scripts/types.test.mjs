@@ -15,9 +15,14 @@ import {
   applyScrubDelta,
   clearAllOverrides,
   clearStationOverride,
+  compareABSimulation,
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
+  evaluateExperimentalFit,
+  interpolateSweepCp,
+  parseExperimentalDataLog,
+  renderCpTsrSvgMarkup,
   resolveStationsPreview,
   setStationOverride,
   updateBezierControlPoint,
@@ -256,4 +261,74 @@ test("value scrubbing, station locking, and taper binding conform to UI interact
   assert.ok(Math.abs(boundRows[0].effective_chord_mm - 80.0) < 1e-6);
   assert.ok(Math.abs(boundRows[10].effective_chord_mm - 36.0) < 1e-6);
   assert.ok(Math.abs(boundRows[5].effective_chord_mm - lockedChord) < 1e-6);
+});
+
+test("Cp-TSR chart, A/B comparison, and experimental test data logging plot against simulation curves (T-304)", () => {
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  assert.ok(fs.existsSync(gluePath), "blade_wasm.js node glue must exist");
+  const require = createRequire(import.meta.url);
+  const { simulate_aero } = require(gluePath);
+
+  // 1. Simulate Baseline A (Linear NACA 4412) and Design B (Schmitz optimal)
+  const optsJson = JSON.stringify({
+    tsr_min: 1.5,
+    tsr_max: 9.0,
+    tsr_steps: 16,
+    generator_kv: 35,
+    generator_r_int: 0.8,
+    generator_r_load: 5.0,
+  });
+  const bundleA = JSON.parse(simulate_aero(JSON.stringify(initialDesign), optsJson));
+  const schmitzDesign = applySchmitzLayer1(clearAllOverrides(initialDesign), 1.0, 6.0);
+  const bundleB = JSON.parse(simulate_aero(JSON.stringify(schmitzDesign), optsJson));
+
+  assert.ok(bundleA.sweep.length >= 16);
+  assert.ok(bundleB.sweep.length >= 16);
+  assert.ok(bundleB.generator_match && bundleB.generator_match.tip_speed_ratio > 0);
+  assert.ok(bundleB.generator_match.generator.terminal_voltage_v > 0);
+  assert.ok(bundleB.generator_match.generator.electrical_power_w > 0);
+
+  // 2. A/B comparison shows positive Cp and power gain for Schmitz over Linear
+  const ab = compareABSimulation(bundleA, bundleB);
+  assert.ok(
+    ab.delta_design_cp > 0.01,
+    `expected Schmitz Design B to exceed Linear Baseline A Cp, got delta=${ab.delta_design_cp}`,
+  );
+  assert.ok(ab.delta_power_w > 3.0);
+
+  // 3. Parse experimental test data log supporting both (tsr, cp) and rpm=.., power_w=.. rows
+  const simCpAt45 = interpolateSweepCp(bundleB.sweep, 4.5);
+  const rawLog = [
+    "# Wind tunnel & bench log",
+    `3.0, ${(interpolateSweepCp(bundleB.sweep, 3.0) - 0.01).toFixed(4)}`,
+    `4.5, ${(simCpAt45 + 0.008).toFixed(4)}`,
+    `rpm=572.96, power_w=${(bundleB.design_point.power_w - 3.5).toFixed(1)}`,
+  ].join("\n");
+
+  const expPoints = parseExperimentalDataLog(
+    rawLog,
+    schmitzDesign.rotor.radius_mm,
+    schmitzDesign.rotor.wind_speed_mps,
+  );
+  assert.equal(expPoints.length, 3);
+  assert.ok(Math.abs(expPoints[2].tsr - 4.5) < 0.01);
+  assert.ok(expPoints[2].cp > 0.35 && expPoints[2].cp < 0.593);
+
+  // 4. Residual fit statistics against Design B simulation curve
+  const fit = evaluateExperimentalFit(bundleB.sweep, expPoints);
+  assert.equal(fit.count, 3);
+  assert.ok(fit.rmse_cp < 0.05, `expected tight fit RMSE < 0.05, got ${fit.rmse_cp}`);
+  assert.ok(fit.mae_cp <= fit.rmse_cp + 1e-9);
+
+  // 5. Render Cp-TSR SVG markup with Baseline A, Design B, and Experimental points
+  const svgMarkup = renderCpTsrSvgMarkup(bundleB.sweep, {
+    baselineASweep: bundleA.sweep,
+    experimentalPoints: expPoints,
+    designTsr: schmitzDesign.rotor.design_tsr,
+  });
+  assert.ok(svgMarkup.includes('class="betz-limit"'));
+  assert.ok(svgMarkup.includes('class="curve-a"'));
+  assert.ok(svgMarkup.includes('class="curve-b"'));
+  const expCircleCount = (svgMarkup.match(/class="exp-point"/g) || []).length;
+  assert.equal(expCircleCount, 3);
 });

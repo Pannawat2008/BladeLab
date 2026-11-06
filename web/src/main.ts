@@ -9,9 +9,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
-import init, { build_mesh } from "../pkg/blade_wasm.js";
+import init, { build_mesh, simulate_aero } from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
 import {
+  type AeroSimulationBundle,
   applyBezierCurve,
   applyBoundRootChord,
   applyFormulaCurve,
@@ -21,12 +22,16 @@ import {
   clearAllOverrides,
   clearStationOverride,
   cloneDesign,
+  compareABSimulation,
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
   evalBezierPoints,
+  evaluateExperimentalFit,
+  parseExperimentalDataLog,
   preserveLockedStations,
   RATIO_EPS,
+  renderCpTsrSvgMarkup,
   resolveStationsPreview,
   setStationOverride,
   updateBezierControlPoint,
@@ -113,8 +118,22 @@ const inputFormulaTwist = document.getElementById("formula-twist") as HTMLInputE
 const stationTableBody = document.getElementById("station-table-body")!;
 const errorBanner = document.getElementById("error-banner")!;
 
+const aeroSummary = document.getElementById("aero-summary")!;
+const cpTsrSvg = document.getElementById("cp-tsr-svg") as unknown as SVGSVGElement;
+const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
+const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
+const abDeltaSummary = document.getElementById("ab-delta-summary")!;
+const inputGenKv = document.getElementById("gen-kv") as HTMLInputElement;
+const inputGenRInt = document.getElementById("gen-r-int") as HTMLInputElement;
+const inputGenRLoad = document.getElementById("gen-r-load") as HTMLInputElement;
+const genSummary = document.getElementById("gen-summary")!;
+const inputExpData = document.getElementById("exp-data-input") as HTMLTextAreaElement;
+const expFitSummary = document.getElementById("exp-fit-summary")!;
+
 let bezierTarget: "chord_mm" | "twist_deg" = "chord_mm";
 const lockedSpanRatios: number[] = [];
+let baselineBundleA: AeroSimulationBundle | null = null;
+let latestBundleB: AeroSimulationBundle | null = null;
 
 function isStationLocked(spanRatio: number): boolean {
   return lockedSpanRatios.some((r) => Math.abs(r - spanRatio) <= RATIO_EPS);
@@ -165,9 +184,85 @@ function rebuild3D(design: Design) {
     scene.add(mesh);
 
     updateStats(elapsed, data);
+    updateAeroPanel(design);
   } catch (err) {
     errorBanner.style.display = "block";
     errorBanner.textContent = String(err);
+  }
+}
+
+function updateAeroPanel(design: Design) {
+  try {
+    const kv = Number.parseFloat(inputGenKv.value) || 35;
+    const rInt = Number.parseFloat(inputGenRInt.value) || 0.8;
+    const rLoad = Number.parseFloat(inputGenRLoad.value) || 5.0;
+    const rawJson = simulate_aero(
+      JSON.stringify(design),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: kv,
+        generator_r_int: rInt,
+        generator_r_load: rLoad,
+      }),
+    );
+    const bundle = JSON.parse(rawJson) as AeroSimulationBundle;
+    latestBundleB = bundle;
+
+    aeroSummary.textContent = `Cp=${bundle.design_point.cp.toFixed(3)} (pk ${bundle.peak_cp.toFixed(
+      3,
+    )} @ λ=${bundle.peak_tsr.toFixed(1)}) · P=${bundle.design_point.power_w.toFixed(0)} W`;
+
+    if (bundle.generator_match) {
+      const gm = bundle.generator_match;
+      const st = gm.generator;
+      genSummary.textContent = `Eq: ${st.rotor_rpm.toFixed(0)} RPM (λ=${gm.tip_speed_ratio.toFixed(
+        2,
+      )}) · V_load=${st.terminal_voltage_v.toFixed(1)} V · I=${st.current_a.toFixed(
+        2,
+      )} A · P_elec=${st.electrical_power_w.toFixed(1)} W (η=${(st.efficiency * 100).toFixed(
+        0,
+      )}%)`;
+    } else {
+      genSummary.textContent = "Gen: uncoupled";
+    }
+
+    const expPoints = parseExperimentalDataLog(
+      inputExpData.value,
+      design.rotor.radius_mm,
+      design.rotor.wind_speed_mps,
+    );
+    const fit = evaluateExperimentalFit(bundle.sweep, expPoints);
+    if (fit.count > 0) {
+      expFitSummary.textContent = `Exp log: ${fit.count} pts · RMSE ΔCp=${fit.rmse_cp.toFixed(
+        4,
+      )} · MAE=${fit.mae_cp.toFixed(4)}`;
+    } else {
+      expFitSummary.textContent = "Exp log: 0 pts (enter 'tsr, cp' or 'rpm=.., power_w=..')";
+    }
+
+    if (baselineBundleA) {
+      const ab = compareABSimulation(baselineBundleA, bundle);
+      const signCp = ab.delta_design_cp >= 0 ? "+" : "";
+      const signPk = ab.delta_peak_cp >= 0 ? "+" : "";
+      const signPw = ab.delta_power_w >= 0 ? "+" : "";
+      abDeltaSummary.textContent = `B−A: ΔCp=${signCp}${ab.delta_design_cp.toFixed(
+        3,
+      )} (pk ${signPk}${ab.delta_peak_cp.toFixed(3)}) · ΔP=${signPw}${ab.delta_power_w.toFixed(
+        1,
+      )} W`;
+    } else {
+      abDeltaSummary.textContent = "No Baseline A";
+    }
+
+    cpTsrSvg.innerHTML = renderCpTsrSvgMarkup(bundle.sweep, {
+      baselineASweep: baselineBundleA ? baselineBundleA.sweep : null,
+      experimentalPoints: expPoints,
+      designTsr: design.rotor.design_tsr,
+    });
+  } catch (err) {
+    aeroSummary.textContent = `Aero error: ${String(err)}`;
   }
 }
 
@@ -690,6 +785,29 @@ document.querySelectorAll<HTMLElement>("[data-scrub-for]").forEach((labelEl) => 
 // ---- Layer 3 Clear All Overrides ----
 btnClearOverrides.addEventListener("click", () => {
   commitDesign(clearAllOverrides(workingDesign));
+});
+
+// ---- Phase 3 Aero / A-B / Generator / Test Data Listeners ----
+btnSnapshotA.addEventListener("click", () => {
+  if (latestBundleB) {
+    baselineBundleA = JSON.parse(JSON.stringify(latestBundleB)) as AeroSimulationBundle;
+    btnClearA.disabled = false;
+    updateAeroPanel(workingDesign);
+  }
+});
+
+btnClearA.addEventListener("click", () => {
+  baselineBundleA = null;
+  btnClearA.disabled = true;
+  updateAeroPanel(workingDesign);
+});
+
+[inputGenKv, inputGenRInt, inputGenRLoad].forEach((el) => {
+  el.addEventListener("change", () => updateAeroPanel(workingDesign));
+});
+
+inputExpData.addEventListener("input", () => {
+  updateAeroPanel(workingDesign);
 });
 
 // ---- Undo / Redo / Reset ----

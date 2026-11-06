@@ -628,3 +628,280 @@ export class DesignHistory {
     return this.current();
   }
 }
+
+// ============================================================================
+// Phase 3 (T-304): Cp–TSR Charts, A/B Comparison, and Experimental Data Logging
+// ============================================================================
+
+export interface TsrSweepPoint {
+  tsr: number;
+  rpm: number;
+  cp: number;
+  ct: number;
+  cq: number;
+  power_w: number;
+  torque_nm: number;
+  thrust_n: number;
+}
+
+export interface GeneratorMatchSummary {
+  tip_speed_ratio: number;
+  net_cp_electrical: number;
+  generator: {
+    rotor_rpm: number;
+    terminal_voltage_v: number;
+    current_a: number;
+    electrical_power_w: number;
+    efficiency: number;
+  };
+}
+
+export interface AeroSimulationBundle {
+  design_point: {
+    rpm: number;
+    cp: number;
+    ct: number;
+    cq: number;
+    power_w: number;
+    thrust_n: number;
+    torque_nm: number;
+  };
+  sweep: TsrSweepPoint[];
+  peak_cp: number;
+  peak_tsr: number;
+  peak_power_w: number;
+  generator_match?: GeneratorMatchSummary | null;
+}
+
+export interface ExperimentalDataPoint {
+  tsr: number;
+  cp: number;
+  rpm?: number | null;
+  power_w?: number | null;
+  label?: string | null;
+}
+
+export interface ABComparisonMetrics {
+  delta_design_cp: number;
+  delta_peak_cp: number;
+  delta_peak_tsr: number;
+  delta_power_w: number;
+}
+
+export interface ExperimentalResidualRow {
+  tsr: number;
+  measured_cp: number;
+  simulated_cp: number;
+  error_cp: number;
+}
+
+export interface ExperimentalFitStats {
+  count: number;
+  rmse_cp: number;
+  mae_cp: number;
+  residuals: ExperimentalResidualRow[];
+}
+
+/**
+ * Linearly interpolates `cp` from a sorted `TsrSweepPoint[]` curve at `tsr`.
+ */
+export function interpolateSweepCp(
+  sweep: readonly TsrSweepPoint[],
+  tsr: number,
+): number {
+  if (sweep.length === 0) return 0;
+  if (sweep.length === 1 || tsr <= sweep[0]!.tsr) return sweep[0]!.cp;
+  const last = sweep[sweep.length - 1]!;
+  if (tsr >= last.tsr) return last.cp;
+
+  for (let i = 0; i < sweep.length - 1; i++) {
+    const p0 = sweep[i]!;
+    const p1 = sweep[i + 1]!;
+    if (tsr >= p0.tsr && tsr <= p1.tsr) {
+      const span = Math.max(1e-9, p1.tsr - p0.tsr);
+      const t = (tsr - p0.tsr) / span;
+      return p0.cp + t * (p1.cp - p0.cp);
+    }
+  }
+  return last.cp;
+}
+
+/**
+ * Computes A/B comparison deltas (`B - A`) between a snapshotted Baseline A
+ * simulation bundle and the current Design B simulation bundle.
+ */
+export function compareABSimulation(
+  baselineA: AeroSimulationBundle,
+  currentB: AeroSimulationBundle,
+): ABComparisonMetrics {
+  return {
+    delta_design_cp: currentB.design_point.cp - baselineA.design_point.cp,
+    delta_peak_cp: currentB.peak_cp - baselineA.peak_cp,
+    delta_peak_tsr: currentB.peak_tsr - baselineA.peak_tsr,
+    delta_power_w: currentB.design_point.power_w - baselineA.design_point.power_w,
+  };
+}
+
+/**
+ * Parses CSV or whitespace-separated experimental wind-tunnel / field test logs.
+ * Supports:
+ * - `tsr, cp` (e.g. `4.5, 0.42`)
+ * - `tsr, cp, rpm, power_w`
+ * - `rpm=<val>, power_w=<val>` (converts RPM & Watts to dimensionless TSR & Cp
+ *   using `rotorRadiusMm`, `windSpeedMps`, and `airDensityKgM3`).
+ */
+export function parseExperimentalDataLog(
+  text: string,
+  rotorRadiusMm = 600,
+  windSpeedMps = 8.0,
+  airDensityKgM3 = 1.225,
+): ExperimentalDataPoint[] {
+  const points: ExperimentalDataPoint[] = [];
+  const rM = Math.max(1e-3, rotorRadiusMm * 1e-3);
+  const vInf = Math.max(1e-3, windSpeedMps);
+  const pWind = 0.5 * airDensityKgM3 * Math.PI * rM * rM * vInf * vInf * vInf;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    // Key-value format: rpm=570, power_w=195
+    if (line.toLowerCase().includes("rpm=")) {
+      const rpmMatch = /rpm\s*=\s*([+-]?\d+(?:\.\d+)?)/i.exec(line);
+      const pMatch = /power_w\s*=\s*([+-]?\d+(?:\.\d+)?)/i.exec(line);
+      if (rpmMatch && pMatch) {
+        const rpm = Number.parseFloat(rpmMatch[1]!);
+        const powerW = Number.parseFloat(pMatch[1]!);
+        if (Number.isFinite(rpm) && Number.isFinite(powerW) && rpm >= 0) {
+          const omega = (rpm * 2 * Math.PI) / 60;
+          const tsr = (omega * rM) / vInf;
+          const cp = pWind > 0 ? powerW / pWind : 0;
+          points.push({ tsr, cp, rpm, power_w: powerW });
+        }
+      }
+      continue;
+    }
+
+    const parts = line.split(/[,\s;]+/).filter(Boolean);
+    if (parts.length < 2) continue;
+    const c0 = Number.parseFloat(parts[0]!);
+    const c1 = Number.parseFloat(parts[1]!);
+    if (!Number.isFinite(c0) || !Number.isFinite(c1)) continue;
+
+    const rpm = parts.length >= 3 ? Number.parseFloat(parts[2]!) : null;
+    const powerW = parts.length >= 4 ? Number.parseFloat(parts[3]!) : null;
+    points.push({
+      tsr: c0,
+      cp: c1,
+      rpm: rpm !== null && Number.isFinite(rpm) ? rpm : null,
+      power_w: powerW !== null && Number.isFinite(powerW) ? powerW : null,
+    });
+  }
+
+  return points;
+}
+
+/**
+ * Evaluates residuals, MAE, and RMSE between experimental test points and a
+ * simulated BEM `TsrSweepPoint[]` curve.
+ */
+export function evaluateExperimentalFit(
+  sweep: readonly TsrSweepPoint[],
+  points: readonly ExperimentalDataPoint[],
+): ExperimentalFitStats {
+  if (points.length === 0 || sweep.length === 0) {
+    return { count: 0, rmse_cp: 0, mae_cp: 0, residuals: [] };
+  }
+  const residuals: ExperimentalResidualRow[] = [];
+  let sumSq = 0;
+  let sumAbs = 0;
+
+  for (const pt of points) {
+    const simCp = interpolateSweepCp(sweep, pt.tsr);
+    const err = pt.cp - simCp;
+    sumSq += err * err;
+    sumAbs += Math.abs(err);
+    residuals.push({
+      tsr: pt.tsr,
+      measured_cp: pt.cp,
+      simulated_cp: simCp,
+      error_cp: err,
+    });
+  }
+
+  return {
+    count: points.length,
+    rmse_cp: Math.sqrt(sumSq / points.length),
+    mae_cp: sumAbs / points.length,
+    residuals,
+  };
+}
+
+/**
+ * Generates the SVG markup for the $C_p$–TSR performance chart, plotting:
+ * - Betz limit ($C_p = 16/27 \approx 0.593$) dashed reference line
+ * - Optional Baseline A $C_p(\lambda)$ curve (`class="curve-a"`)
+ * - Active Design B $C_p(\lambda)$ curve (`class="curve-b"`)
+ * - Experimental test data scatter points (`class="exp-point"`)
+ */
+export function renderCpTsrSvgMarkup(
+  currentSweep: readonly TsrSweepPoint[],
+  options: {
+    baselineASweep?: readonly TsrSweepPoint[] | null;
+    experimentalPoints?: readonly ExperimentalDataPoint[];
+    designTsr?: number;
+  } = {},
+): string {
+  const w = 320;
+  const h = 155;
+  const padX = 28;
+  const padY = 18;
+  const xMin = 1.0;
+  const xMax = 9.5;
+  const yMin = 0.0;
+  const yMax = 0.65;
+
+  const toX = (tsr: number) =>
+    padX + ((Math.min(xMax, Math.max(xMin, tsr)) - xMin) / (xMax - xMin)) * (w - 2 * padX);
+  const toY = (cp: number) =>
+    h - padY - ((Math.min(yMax, Math.max(yMin, cp)) - yMin) / (yMax - yMin)) * (h - 2 * padY);
+
+  const buildPath = (sweep: readonly TsrSweepPoint[]): string =>
+    sweep
+      .map((pt, i) => `${i === 0 ? "M" : "L"}${toX(pt.tsr).toFixed(1)},${toY(pt.cp).toFixed(1)}`)
+      .join(" ");
+
+  const betzY = toY(16.0 / 27.0).toFixed(1);
+  const parts: string[] = [
+    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="#d85858" stroke-width="1" stroke-dasharray="4 3" />`,
+  ];
+
+  if (options.designTsr !== undefined && Number.isFinite(options.designTsr)) {
+    const dx = toX(options.designTsr).toFixed(1);
+    parts.push(
+      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="#384152" stroke-width="1" stroke-dasharray="2 2" />`,
+    );
+  }
+
+  if (options.baselineASweep && options.baselineASweep.length > 0) {
+    parts.push(
+      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="#a0aec0" stroke-width="1.75" stroke-dasharray="4 3" />`,
+    );
+  }
+
+  if (currentSweep.length > 0) {
+    parts.push(
+      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="#7bd88f" stroke-width="2.2" />`,
+    );
+  }
+
+  for (const exp of options.experimentalPoints ?? []) {
+    const cx = toX(exp.tsr).toFixed(1);
+    const cy = toY(exp.cp).toFixed(1);
+    parts.push(
+      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="4" fill="#f5a623" stroke="#111318" stroke-width="1.2" />`,
+    );
+  }
+
+  return parts.join("\n");
+}

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 44**
-> **LAST_UPDATED: 2026-11-06 09:54 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 45**
+> **LAST_UPDATED: 2026-11-06 10:04 (UTC+7) by geom-1**
 
 ---
 
@@ -235,7 +235,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-301 | Precomputed polars + Viterna extrapolation | aero | geom-1 | done | 2026-11-06 09:29 | T-002 | Usable across full α ±180° range |
 | T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | geom-1 | done | 2026-11-06 09:45 | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
 | T-303 | Generator matching (Kv, internal resistance, load curve) | aero | geom-1 | done | 2026-11-06 09:53 | T-302 | Accurately predicts voltage and output power |
-| T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | geom-1 | in-progress | 2026-11-06 09:54 | T-302 | Successfully plots experimental data against simulation curves |
+| T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | geom-1 | done | 2026-11-06 10:04 | T-302 | Successfully plots experimental data against simulation curves |
 
 Lead will populate Phase 4 (optimizers, NeuralFoil, OCCT, team accounts) upon completion of Phase 3.
 
@@ -402,6 +402,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-030** | 2026-11-06 09:53 | geom-1 | T-303
   `crates/blade-aero/src/generator.rs` (`GeneratorSpec`, `GeneratorState`, `GeneratorMatchResult`, `eval_generator_at_rpm`, `match_generator`, `sweep_generator_load`) couples a permanent-magnet / brushless generator ($K_v$ in RPM/V, $K_t = 60/(2\pi K_v)$, internal resistance $R_{\text{int}}$, no-load current $I_0$, gear ratio $G$) to the BEM rotor solver. `match_generator` solves $Q_{\text{aero}}(\lambda^*) = Q_{\text{gen}}(\lambda^*, R_{\text{load}})$ via Brent root-finding (`tol = 1e-7`) to predict equilibrium RPM, TSR, back-EMF $V_{\text{emf}}$, terminal load voltage $V_{\text{load}} = V_{\text{emf}} \cdot \frac{R_{\text{load}}}{R_{\text{int}} + R_{\text{load}}}$, load current $I$, electrical output power $P_{\text{elec}} = V_{\text{load}} I$, copper loss $I^2 R_{\text{int}}$, generator efficiency $\eta_{\text{gen}}$, and net electrical power coefficient $C_{p,\text{elec}} = C_p \cdot \eta_{\text{gen}}$.
   refs: crates/blade-aero/src/generator.rs, crates/blade-aero/tests/generator_matching.rs | supersedes: –
+- **F-geom1-031** | 2026-11-06 10:04 | geom-1 | T-304
+  `crates/blade-wasm/src/lib.rs` exposes `simulate_aero(design_json, options_json)` (`run_aero_simulation` returning `AeroSimulationBundle` with `design_point`, `sweep`, `peak_cp`, `peak_tsr`, `peak_power_w`, and optional `generator_match`). `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` deliver the Phase-3 BEM & Test Bench UI (`#layer-aero`): (1) live SVG $C_p$–TSR chart (`#cp-tsr-svg`, `renderCpTsrSvgMarkup`) plotting the Betz limit ($16/27 \approx 0.593$), active Design B curve (`class="curve-b"`), optional Baseline A curve (`class="curve-a"`), and experimental scatter points (`class="exp-point"`); (2) A/B Design Comparison (`#btn-snapshot-a`, `#btn-clear-a`, `compareABSimulation`) reporting $\Delta C_p$, $\Delta C_{p,\text{peak}}$, and $\Delta P$; (3) Generator Matching controls (`#gen-kv`, `#gen-r-int`, `#gen-r-load`); and (4) Experimental Test Data Logger (`#exp-data-input`, `parseExperimentalDataLog`, `evaluateExperimentalFit`) parsing both `tsr, cp` and `rpm=.., power_w=..` rows and computing RMSE/MAE fit metrics against the simulated curve.
+  refs: crates/blade-wasm/src/lib.rs, web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -684,6 +687,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-303 is `done`. `crates/blade-aero/src/generator.rs` implements `GeneratorSpec`, `GeneratorState`, `GeneratorMatchResult`, `eval_generator_at_rpm`, `match_generator`, and `sweep_generator_load`, verified by 3 unit tests + 2 `proptest` suites in `crates/blade-aero/tests/generator_matching.rs`. Workspace total is **137 Rust tests + 6 Node tests**, all green.
   **Next:** **T-304** (`UI: Cp–TSR charts, A/B comparison, test data logging`), the final task in **Phase 3 — Simulation & Testing**!
   **Cautions:** When scanning TSR for rotor–generator torque equilibrium, `match_generator` selects the highest-TSR sign-change bracket so the solver converges to the stable high-speed operating branch rather than the unstable low-speed stall branch.
+- **H-geom1-025** | 2026-11-06 10:04 | geom-1 | T-304 | Recipient: lead, web, aero, qa
+  **Progress:** T-304 is `done`, completing **100% of Phase 3 — Simulation & Testing** (`T-301` through `T-304` all `done`, alongside Phase 0, Phase 1, and Phase 2). `crates/blade-wasm` now exposes `simulate_aero`, and `web/` renders the live SVG $C_p$–TSR chart (`#cp-tsr-svg`), A/B Baseline comparison, generator matching controls, and experimental test data logger with RMSE/MAE residual computation. Verified by **138 Rust tests + 7 Node tests**, `tsc --noEmit`, `vite build`, and `wasm32-unknown-unknown` builds, all green.
+  **Next:** All roadmap tasks through Phase 3 (`T-001`..`T-304`) are complete! Ready for the lead to populate **Phase 4** (optimizers, NeuralFoil, OCCT, team accounts) per `plan.md` §7.
+  **Cautions:** `web/pkg` and `target/glue-node` are gitignored; after modifying `crates/blade-wasm`, run `cd web; npm.cmd run wasm` and regenerate `target/glue-node` before running `npm.cmd test`.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -743,4 +750,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T09:50:00+07:00 agent=geom-1 mem=v41 last_entry=H-geom1-023 task=T-303 note="lead: 'lets do next' -> claiming T-303 (Generator matching: Kv, internal resistance, load curve) under D-geom1-024"
 [END] 2026-11-06T09:53+07:00 agent=geom-1 mem=v43 note="T-303 done: crates/blade-aero/src/generator.rs (GeneratorSpec, eval_generator_at_rpm, match_generator, sweep_generator_load); accurately predicts equilibrium RPM, voltage, current, and electrical power across load curves; 137 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; F-geom1-030, H-geom1-024 recorded"
 [RE-ACK] 2026-11-06T09:54:00+07:00 agent=geom-1 mem=v43 last_entry=H-geom1-024 task=T-304 note="lead: 'lets do next' -> claiming T-304 (UI: Cp-TSR charts, A/B comparison, test data logging) under D-geom1-025"
+[END] 2026-11-06T10:04+07:00 agent=geom-1 mem=v45 note="T-304 done (closes Phase 3): blade-wasm simulate_aero + web/ Cp-TSR SVG chart, A/B comparison, generator controls, and experimental test data logger with RMSE/MAE fit; 138 Rust tests + 7 Node tests + tsc + vite build clean; F-geom1-031, H-geom1-025 recorded"
 ```

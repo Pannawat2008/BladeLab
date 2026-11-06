@@ -227,6 +227,7 @@ dependencies = [
 name = "blade-wasm"
 version = "0.1.0"
 dependencies = [
+ "blade-aero",
  "blade-geom",
  "blade-mesh",
  "blade-model",
