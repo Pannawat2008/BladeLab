@@ -4,10 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>BladeLab — Rotor CAD &amp; BEM Telemetry Workbench</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
         color-scheme: dark;
-        /* Pass 2 (Color): Unslop Dark Ink Neutral Ramp (references/tokens.md) */
+        /* Deliberate Aerospace & Wind-Tunnel Typography (frontend-design Pass 1) */
+        --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+        /* Dark Ink Neutral Ramp (6 Named Palette Hexes) */
         --bg-canvas: #0b0d14;
         --bg-deep: #07080d;
         --bg-panel: #0b0d14;
@@ -18,28 +28,28 @@
         --border-strong: rgba(238, 240, 245, 0.14);
         --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
-        /* Three Text Roles from Ink Ramp (Pass 2 & Pass 5) */
+        /* Three Text Roles from Ink Ramp */
         --text-primary: #eef0f5;
         --text-secondary: #a3a9b8;
         --text-muted: #7a8296;
         --fg: #eef0f5;
 
-        /* One Accent: Clear Sky Blue + Off-White Primary CTA (Pass 2) */
+        /* One Accent: Clear Sky Blue + Off-White Primary CTA */
         --accent: #38bdf8;
         --accent-dim: rgba(56, 189, 248, 0.12);
 
-        /* Toned Semantic Colors (references/tokens.md) */
+        /* Toned Semantic Colors */
         --datum: #f59e0b;
         --status-ok: #4cc38a;
         --status-err: #e5484d;
 
-        /* Pass 7 (Details): Nested Radius Scale (Outer 16 -> Card 12 -> Control 8 -> Keycap 4) */
+        /* Nested Radius Scale (Outer 16 -> Card 12 -> Control 8 -> Keycap 4) */
         --radius-panel: 16px;
         --radius-card: 12px;
         --radius-control: 8px;
         --radius-tag: 4px;
 
-        /* Pass 9 (Motion): Single Easing Curve */
+        /* Single Easing Curve */
         --ease: cubic-bezier(0.22, 1, 0.36, 1);
 
         --panel-left-w: 400px;
@@ -59,9 +69,20 @@
         overflow: hidden;
         background: var(--bg-canvas);
         color: var(--text-primary);
-        font: 400 13px/20px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font: 400 13px/20px var(--font-sans);
         letter-spacing: 0;
         -webkit-font-smoothing: antialiased;
+      }
+
+      @keyframes dock-enter {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
       /* Keyboard Focus Visibility */
@@ -112,7 +133,7 @@
         z-index: 1;
       }
 
-      /* Pass 1 & 6: Floating Docks on 4px Grid (gap 12px, radius 16px, hairline border, no heavy shadow) */
+      /* Floating Docks on 4px Grid (gap 12px, radius 16px, hairline border, orchestrated entrance) */
       #panel {
         position: fixed;
         top: var(--dock-gap);
@@ -127,6 +148,7 @@
         border-radius: var(--radius-panel);
         overflow: hidden;
         z-index: 10;
+        animation: dock-enter 0.36s var(--ease) 0.04s both;
         transition:
           transform 0.32s var(--ease),
           opacity 0.2s var(--ease);
@@ -147,6 +169,7 @@
         border: 1px solid var(--border-hairline);
         border-radius: var(--radius-panel);
         z-index: 12;
+        animation: dock-enter 0.36s var(--ease) 0s both;
         transition:
           transform 0.32s var(--ease),
           opacity 0.2s var(--ease);
@@ -166,12 +189,13 @@
         border-radius: var(--radius-panel);
         overflow: hidden;
         z-index: 10;
+        animation: dock-enter 0.36s var(--ease) 0.08s both;
         transition:
           transform 0.32s var(--ease),
           opacity 0.2s var(--ease);
       }
 
-      /* Desktop Dock Collapse States (transform/opacity only — Pass 9) */
+      /* Desktop Dock Collapse States (transform/opacity only) */
       body.hide-left-dock #panel {
         transform: translateX(calc(-100% - 24px));
         opacity: 0;
@@ -223,8 +247,14 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .brand-sub {
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-muted);
+        padding-left: 8px;
+        border-left: 1px solid var(--border-hairline);
+      }
 
-      /* Pass 3 (Icons): Uniform 16px × 16px, stroke 1.5, muted/secondary text color */
+      /* Uniform 16px × 16px, stroke 1.5, muted/secondary text color */
       .ui-icon {
         width: 16px;
         height: 16px;
@@ -241,21 +271,26 @@
         color: currentColor;
       }
 
-      /* Pass 7 (Details): Keyboard Shortcut Keycaps */
-      kbd {
+      /* Keyboard Shortcut Keycaps & Architectural Layer Index Tags */
+      kbd,
+      .layer-tag {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         height: 16px;
         padding: 0 4px;
-        font: 400 11px/16px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font: 400 11px/16px var(--font-mono);
         color: var(--text-muted);
         background: var(--bg-deep);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-tag);
+        flex-shrink: 0;
+      }
+      .layer-tag {
+        color: var(--text-secondary);
       }
 
-      /* Quick Section Jump Bar inside #panel (Pass 1: 32px rows, 4px gap) */
+      /* Quick Section Jump Bar inside #panel (32px rows, 4px gap) */
       .section-nav {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -293,7 +328,7 @@
         flex-wrap: wrap;
         gap: 4px;
       }
-      /* Pass 5 (Type): Sentence case, zero uppercase tracking */
+      /* Sentence case, zero uppercase tracking */
       .toolbar-label {
         font-size: 12px;
         line-height: 16px;
@@ -309,7 +344,7 @@
         margin: 0 4px;
       }
 
-      /* Pass 1, 2 & 9: Buttons (32px height, 8px radius, surface step + top highlight, off-white primary CTA) */
+      /* Buttons (32px height, 8px radius, surface step + top highlight, off-white primary CTA) */
       button {
         display: inline-flex;
         align-items: center;
@@ -347,7 +382,7 @@
         color: var(--text-primary);
         box-shadow: var(--top-highlight);
       }
-      /* Pass 2: Off-white primary action with dark ink text */
+      /* Off-white primary action with dark ink text */
       button.btn-primary {
         background: var(--text-primary);
         border-color: var(--text-primary);
@@ -377,7 +412,7 @@
         scroll-behavior: smooth;
       }
 
-      /* Pass 1 & 7: Section Cards (16px dock - 4px = 12px card radius, 16px internal padding, 12px gap) */
+      /* Section Cards (16px dock - 4px = 12px card radius, 16px internal padding, 12px gap) */
       section {
         margin-bottom: 12px;
         padding: 16px;
@@ -443,9 +478,9 @@
         display: none !important;
       }
 
-      /* Pass 7 (Details): Quiet Mono Meta (no glowing pill border/fill) */
+      /* Quiet Mono Meta */
       .section-meta {
-        font: 400 12px/16px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font: 400 12px/16px var(--font-mono);
         color: var(--text-muted);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
@@ -457,24 +492,77 @@
         gap: 8px 12px;
       }
 
-      /* Pass 5 & 7: Stat Cards (Sentence-case labels, weight 500 tabular figures, quiet hairline) */
-      .kpi-grid {
+      /* Asymmetric Wind-Tunnel Telemetry Deck (replaces generic 4-equal-card grid — frontend-design Pass 1) */
+      .telemetry-deck {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: 1.15fr 1fr;
         gap: 8px;
         margin-bottom: 12px;
       }
-      .kpi-card {
+      .telemetry-lead {
         background: var(--bg-deep);
-        border: 1px solid var(--border-hairline);
+        border: 1px solid var(--border-strong);
         border-radius: var(--radius-control);
-        padding: 8px 12px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .telemetry-lead-top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .telemetry-lead-val {
+        font: 500 24px/28px var(--font-mono);
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      .betz-meter {
         display: flex;
         flex-direction: column;
         gap: 4px;
       }
-      .kpi-card:first-child {
-        border-color: rgba(56, 189, 248, 0.32);
+      .betz-meter-meta {
+        display: flex;
+        justify-content: space-between;
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .betz-meter-track {
+        height: 4px;
+        background: var(--bg-raised);
+        border-radius: var(--radius-tag);
+        overflow: hidden;
+      }
+      .betz-meter-fill {
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        transition: width 0.2s var(--ease);
+      }
+      .telemetry-strip {
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        padding: 4px 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .telemetry-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        height: 28px;
+        border-bottom: 1px solid var(--border-hairline);
+      }
+      .telemetry-row:last-child {
+        border-bottom: none;
       }
       .kpi-label {
         font-size: 12px;
@@ -484,15 +572,12 @@
         color: var(--text-muted);
       }
       .kpi-val {
-        font-size: 16px;
-        line-height: 20px;
+        font-size: 12px;
+        line-height: 16px;
         font-weight: 500;
         color: var(--text-primary);
-        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--font-mono);
         font-variant-numeric: tabular-nums;
-      }
-      .kpi-card:first-child .kpi-val {
-        color: var(--accent);
       }
 
       /* Form Fields & Scrubbable Labels (Pass 1: 4px gap, 32px input height, 8px radius) */
@@ -539,7 +624,7 @@
         padding: 0 8px;
         font-size: 12px;
         line-height: 16px;
-        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, sans-serif;
+        font-family: var(--font-mono);
         font-variant-numeric: tabular-nums;
         transition: border-color 0.14s var(--ease);
       }
@@ -561,7 +646,7 @@
         border-color: var(--accent);
       }
 
-      /* Pass 7: Flattened Control Rows (no nested boxes inside cards — clean hairline dividers) */
+      /* Flattened Control Rows (no nested boxes inside cards — clean hairline dividers) */
       .bind-row {
         display: flex;
         align-items: center;
@@ -598,10 +683,10 @@
         border-radius: var(--radius-control);
         padding: 0 8px;
         font-size: 12px;
-        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-family: var(--font-mono);
       }
 
-      /* Pass 1 & 7: Interactive Vector Plots (heights on 4px grid: 160px and 96px) */
+      /* Interactive Vector Plots (heights on 4px grid: 160px and 96px) */
       #bezier-svg,
       #cp-tsr-svg {
         width: 100%;
@@ -663,7 +748,7 @@
         border: 1px solid var(--border-hairline);
         border-radius: var(--radius-control);
         padding: 8px;
-        font: 400 12px/16px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font: 400 12px/16px var(--font-mono);
         resize: vertical;
       }
       .field textarea:focus {
@@ -698,7 +783,7 @@
         color: var(--text-secondary);
       }
       .row label span {
-        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-family: var(--font-mono);
         font-size: 12px;
         color: var(--text-primary);
         font-weight: 500;
@@ -769,7 +854,7 @@
         box-shadow: var(--top-highlight);
       }
 
-      /* Pass 1 & 5: Station Table (Right-aligned numeric columns, uniform 32px rows) */
+      /* Station Table (Right-aligned numeric columns, uniform 32px rows) */
       .table-wrap {
         width: 100%;
         overflow-x: auto;
@@ -777,12 +862,12 @@
       table.station-table {
         width: 100%;
         border-collapse: collapse;
-        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
+        font: 400 12px/16px var(--font-mono);
         font-variant-numeric: tabular-nums;
       }
       table.station-table th {
         text-align: right;
-        font: 400 12px/16px "Inter", system-ui, sans-serif;
+        font: 400 12px/16px var(--font-sans);
         color: var(--text-muted);
         padding: 8px 4px;
         border-bottom: 1px solid var(--border-hairline);
@@ -823,9 +908,9 @@
         font-weight: 500;
       }
 
-      /* Pass 7: Quiet Mono Status Readouts */
+      /* Quiet Mono Status Readouts */
       #export-status {
-        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
+        font: 400 12px/16px var(--font-mono);
         color: var(--status-ok);
         padding: 0 4px;
         font-variant-numeric: tabular-nums;
@@ -848,7 +933,7 @@
         padding: 8px 16px;
         border-top: 1px solid var(--border-hairline);
         background: var(--bg-deep);
-        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
+        font: 400 12px/16px var(--font-mono);
         font-variant-numeric: tabular-nums;
         display: flex;
         justify-content: space-between;
@@ -867,7 +952,7 @@
       .fit-badge {
         margin-top: 8px;
         padding: 8px;
-        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
+        font: 400 12px/16px var(--font-mono);
         color: var(--text-muted);
         background: var(--bg-deep);
         border: 1px solid var(--border-hairline);
@@ -877,6 +962,36 @@
         color: var(--datum);
         background: rgba(245, 158, 11, 0.1);
         border-color: rgba(245, 158, 11, 0.35);
+      }
+
+      /* 3D Viewport Technical Title-Block Datum HUD (Canvas-First Grounding) */
+      #viewport-datum-hud {
+        position: fixed;
+        bottom: var(--dock-gap);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 6;
+        pointer-events: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        height: 28px;
+        padding: 0 12px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      #viewport-datum-hud .datum-sep {
+        width: 1px;
+        height: 12px;
+        background: var(--border-hairline);
+      }
+      #viewport-datum-hud .datum-key {
+        color: var(--text-secondary);
       }
 
       /* Mobile & Tablet Bottom Workspace Switcher (nested radius: 12px outer, 8px buttons) */
@@ -932,6 +1047,9 @@
           bottom: 60px;
           width: min(420px, calc(100vw - 16px));
         }
+        #viewport-datum-hud {
+          display: none;
+        }
         #mobile-workspace-nav {
           display: inline-flex;
         }
@@ -980,8 +1098,8 @@
           max-width: none;
           bottom: 56px;
         }
-        .kpi-grid {
-          grid-template-columns: repeat(2, 1fr);
+        .telemetry-deck {
+          grid-template-columns: 1fr;
         }
         .grid-2 {
           grid-template-columns: 1fr 1fr;
@@ -992,6 +1110,15 @@
   </head>
   <body data-mobile-pane="cad">
     <div id="app"></div>
+
+    <!-- 3D Viewport Technical Title-Block Datum Bar -->
+    <div id="viewport-datum-hud" aria-hidden="true">
+      <span><span class="datum-key">DATUM</span> X-CHORD / Y-THICK / Z-SPAN</span>
+      <span class="datum-sep"></span>
+      <span id="hud-rotor-spec">R 600 mm  L 540 mm  B 3</span>
+      <span class="datum-sep"></span>
+      <span>UNIT mm / ISO-10303</span>
+    </div>
 
     <!-- Top-Right 3D Viewport Mode & CAD Export Bar -->
     <header id="top-dock" role="banner" aria-label="Viewport and CAD Export Toolbar">
@@ -1045,7 +1172,8 @@
       <div class="panel-header">
         <div class="brand-title">
           <span class="brand-dot" aria-hidden="true"></span>
-          <h1>BladeLab · Rotor CAD &amp; Fabrication</h1>
+          <h1>BladeLab</h1>
+          <span class="brand-sub">Rotor CAD &amp; Fab</span>
         </div>
         <div class="toolbar">
           <button id="btn-undo" class="btn-mini" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
@@ -1068,9 +1196,10 @@
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
               <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L1</span>
               <span>Rotor Geometry</span>
             </button>
-            <span id="rotor-summary" class="section-meta">R=600 mm · L=540 mm · B=3</span>
+            <span id="rotor-summary" class="section-meta">R 600  L 540  B 3</span>
           </div>
           <div class="grid-2">
             <div class="field">
@@ -1129,6 +1258,7 @@
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
               <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L2</span>
               <span>Chord, Twist &amp; Airfoil</span>
             </button>
           </div>
@@ -1249,9 +1379,10 @@
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
               <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">FAB</span>
               <span>Carbon Tube &amp; Split Joints</span>
             </button>
-            <span id="fab-summary" class="section-meta">Solid · 1 Part</span>
+            <span id="fab-summary" class="section-meta">Solid / 1 Part</span>
           </div>
 
           <div>
@@ -1423,6 +1554,7 @@
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
               <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L3</span>
               <span>Spanwise Station Overrides</span>
             </button>
             <button id="btn-clear-overrides" class="btn-mini" type="button">Clear Overrides</button>
@@ -1460,29 +1592,43 @@
       <div class="panel-header">
         <div class="brand-title">
           <span class="brand-dot" aria-hidden="true"></span>
-          <h2>BEM Telemetry &amp; Wind-Tunnel Bench</h2>
+          <h2>BEM Telemetry</h2>
+          <span class="brand-sub">Wind-Tunnel Bench</span>
         </div>
-        <span id="aero-summary" class="section-meta">Cp=– · P=– W</span>
+        <span id="aero-summary" class="section-meta">Cp –  P – W</span>
       </div>
 
       <div class="panel-scroll">
         <section id="layer-aero">
-          <div class="kpi-grid">
-            <div class="kpi-card">
-              <span class="kpi-label">Design Cp</span>
-              <span id="kpi-cp" class="kpi-val">–</span>
+          <div class="telemetry-deck">
+            <div class="telemetry-lead">
+              <div class="telemetry-lead-top">
+                <span class="kpi-label">Design Cp</span>
+                <span id="kpi-cp" class="telemetry-lead-val">–</span>
+              </div>
+              <div class="betz-meter">
+                <div class="betz-meter-meta">
+                  <span>Betz 0.593</span>
+                  <span id="kpi-betz-pct">–% Betz</span>
+                </div>
+                <div class="betz-meter-track">
+                  <div id="kpi-betz-bar" class="betz-meter-fill"></div>
+                </div>
+              </div>
             </div>
-            <div class="kpi-card">
-              <span class="kpi-label">Peak Cp</span>
-              <span id="kpi-peak-cp" class="kpi-val">–</span>
-            </div>
-            <div class="kpi-card">
-              <span class="kpi-label">Mech Power</span>
-              <span id="kpi-power" class="kpi-val">–</span>
-            </div>
-            <div class="kpi-card">
-              <span class="kpi-label">Gen Output</span>
-              <span id="kpi-gen-elec" class="kpi-val">–</span>
+            <div class="telemetry-strip">
+              <div class="telemetry-row">
+                <span class="kpi-label">Peak Cp</span>
+                <span id="kpi-peak-cp" class="kpi-val">–</span>
+              </div>
+              <div class="telemetry-row">
+                <span class="kpi-label">Mech Power</span>
+                <span id="kpi-power" class="kpi-val">–</span>
+              </div>
+              <div class="telemetry-row">
+                <span class="kpi-label">Gen Output</span>
+                <span id="kpi-gen-elec" class="kpi-val">–</span>
+              </div>
             </div>
           </div>
 

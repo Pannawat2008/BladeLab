@@ -1234,7 +1234,7 @@ export function renderAirfoilSectionSvgMarkup(
 
   elements.push(
     `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="3.8" fill="#f59e0b" stroke="#07080d" stroke-width="1.4" />`,
-    `<text x="${padX}" y="14" fill="#7a8296" font-size="10" font-family="ui-monospace, monospace">${label} · Pivot x/c=${design.rotor.pitch_axis_ratio.toFixed(2)}</text>`,
+    `<text x="${padX}" y="14" fill="#7a8296" font-size="10" font-family="'IBM Plex Mono', ui-monospace, monospace">${label}  [x/c ${design.rotor.pitch_axis_ratio.toFixed(2)}]</text>`,
   );
 
   return elements.join("\n");

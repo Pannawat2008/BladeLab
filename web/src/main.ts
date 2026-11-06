@@ -248,9 +248,12 @@ const errorBanner = document.getElementById("error-banner")!;
 
 const aeroSummary = document.getElementById("aero-summary")!;
 const kpiCp = document.getElementById("kpi-cp")!;
+const kpiBetzPct = document.getElementById("kpi-betz-pct");
+const kpiBetzBar = document.getElementById("kpi-betz-bar") as HTMLElement | null;
 const kpiPeakCp = document.getElementById("kpi-peak-cp")!;
 const kpiPower = document.getElementById("kpi-power")!;
 const kpiGenElec = document.getElementById("kpi-gen-elec")!;
+const hudRotorSpec = document.getElementById("hud-rotor-spec");
 const cpTsrSvg = document.getElementById("cp-tsr-svg") as unknown as SVGSVGElement;
 const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
 const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
@@ -397,7 +400,7 @@ function updateAlignmentStatus(design: Design) {
     const label = labelMap[shape] ?? "joints";
     const first = rows[0];
     const dims = first
-      ? ` · height ${first.pin_height_mm.toFixed(1)} mm, socket depth ${first.socket_depth_mm.toFixed(1)} mm`
+      ? ` / height ${first.pin_height_mm.toFixed(1)} mm, socket depth ${first.socket_depth_mm.toFixed(1)} mm`
       : "";
     if (short.length > 0) {
       const where = short.map((r) => `r=${r.span_mm.toFixed(0)} mm`).join(", ");
@@ -447,32 +450,32 @@ function updateFabricationStatus(design: Design) {
   if (holeEnabled) {
     const clampedNote =
       reqDia > maxSafeDiaMm + 0.05 ? ` (clamped to safe Ø${effDia.toFixed(1)} mm)` : "";
-    sparHoleStatus.textContent = `Root thickness: ${rootThickMm.toFixed(
+    sparHoleStatus.textContent = `Root thickness ${rootThickMm.toFixed(
       1,
-    )} mm (max safe Ø${maxSafeDiaMm.toFixed(1)} mm) · Bore: Ø${effDia.toFixed(
+    )} mm (max safe Ø${maxSafeDiaMm.toFixed(1)} mm) / Bore Ø${effDia.toFixed(
       1,
     )} × ${depth.toFixed(0)} mm${clampedNote}`;
   } else {
-    sparHoleStatus.textContent = `Root thickness: ${rootThickMm.toFixed(
+    sparHoleStatus.textContent = `Root thickness ${rootThickMm.toFixed(
       1,
-    )} mm (max safe Ø${maxSafeDiaMm.toFixed(1)} mm) · Base hole off`;
+    )} mm (max safe Ø${maxSafeDiaMm.toFixed(1)} mm) / Base hole off`;
   }
 
   const holeTag = holeEnabled ? `CF Ø${effDia.toFixed(1)}×${depth.toFixed(0)}mm` : "Solid";
   const splitTag = splitParts > 1 ? `${splitParts} Parts` : "1 Part";
   const tagMap: Record<string, string> = {
-    dovetail: " · Dovetail Lock",
-    cruciform: " · Cruciform +",
-    snaplock: " · 3D Snap-Lock",
-    tapered: " · Taper Wedge",
-    key: " · Keys",
-    round: " · Pins",
+    dovetail: " / Dovetail Lock",
+    cruciform: " / Cruciform +",
+    snaplock: " / 3D Snap-Lock",
+    tapered: " / Taper Wedge",
+    key: " / Keys",
+    round: " / Pins",
   };
   const alignTag =
     splitParts > 1 && selectAlignShape.value !== "none"
-      ? (tagMap[selectAlignShape.value] ?? " · Joint")
+      ? (tagMap[selectAlignShape.value] ?? " / Joint")
       : "";
-  fabSummary.textContent = `${holeTag} · ${splitTag}${alignTag}`;
+  fabSummary.textContent = `${holeTag} / ${splitTag}${alignTag}`;
   updateAlignmentStatus(design);
 
   const jointActive = splitParts > 1 && selectAlignShape.value !== "none";
@@ -800,8 +803,16 @@ function updateAeroPanel(design: Design) {
     const bundle = JSON.parse(rawJson) as AeroSimulationBundle;
     latestBundleB = bundle;
 
-    aeroSummary.textContent = `Cp=${bundle.design_point.cp.toFixed(3)} · P=${bundle.design_point.power_w.toFixed(0)} W`;
+    const betzLimit = 16.0 / 27.0;
+    const betzPct = Math.min(100, Math.max(0, (bundle.design_point.cp / betzLimit) * 100));
+    aeroSummary.textContent = `Cp ${bundle.design_point.cp.toFixed(3)}  P ${bundle.design_point.power_w.toFixed(0)} W`;
     kpiCp.textContent = bundle.design_point.cp.toFixed(3);
+    if (kpiBetzPct) {
+      kpiBetzPct.textContent = `${betzPct.toFixed(0)}% Betz`;
+    }
+    if (kpiBetzBar) {
+      kpiBetzBar.style.width = `${betzPct.toFixed(1)}%`;
+    }
     kpiPeakCp.textContent = `${bundle.peak_cp.toFixed(3)} @${bundle.peak_tsr.toFixed(1)}`;
     kpiPower.textContent = `${bundle.design_point.power_w.toFixed(1)} W`;
 
@@ -809,11 +820,11 @@ function updateAeroPanel(design: Design) {
       const gm = bundle.generator_match;
       const st = gm.generator;
       kpiGenElec.textContent = `${st.terminal_voltage_v.toFixed(1)}V / ${st.electrical_power_w.toFixed(0)}W`;
-      genSummary.textContent = `Eq: ${st.rotor_rpm.toFixed(0)} RPM (λ=${gm.tip_speed_ratio.toFixed(
+      genSummary.textContent = `Eq ${st.rotor_rpm.toFixed(0)} RPM (λ=${gm.tip_speed_ratio.toFixed(
         2,
-      )}) · V_load=${st.terminal_voltage_v.toFixed(1)} V · I=${st.current_a.toFixed(
+      )}) / V=${st.terminal_voltage_v.toFixed(1)} V / I=${st.current_a.toFixed(
         2,
-      )} A · P_elec=${st.electrical_power_w.toFixed(1)} W (η=${(st.efficiency * 100).toFixed(
+      )} A / P=${st.electrical_power_w.toFixed(1)} W (η=${(st.efficiency * 100).toFixed(
         0,
       )}%)`;
     } else {
@@ -828,9 +839,9 @@ function updateAeroPanel(design: Design) {
     );
     const fit = evaluateExperimentalFit(bundle.sweep, expPoints);
     if (fit.count > 0) {
-      expFitSummary.textContent = `Exp log: ${fit.count} pts · RMSE ΔCp=${fit.rmse_cp.toFixed(
+      expFitSummary.textContent = `Exp log: ${fit.count} pts / RMSE ΔCp=${fit.rmse_cp.toFixed(
         4,
-      )} · MAE=${fit.mae_cp.toFixed(4)}`;
+      )} / MAE=${fit.mae_cp.toFixed(4)}`;
     } else {
       expFitSummary.textContent = "Exp log: 0 pts (enter 'tsr, cp' or 'rpm=.., power_w=..')";
     }
@@ -842,7 +853,7 @@ function updateAeroPanel(design: Design) {
       const signPw = ab.delta_power_w >= 0 ? "+" : "";
       abDeltaSummary.textContent = `B−A: ΔCp=${signCp}${ab.delta_design_cp.toFixed(
         3,
-      )} (pk ${signPk}${ab.delta_peak_cp.toFixed(3)}) · ΔP=${signPw}${ab.delta_power_w.toFixed(
+      )} (pk ${signPk}${ab.delta_peak_cp.toFixed(3)}) / ΔP=${signPw}${ab.delta_power_w.toFixed(
         1,
       )} W`;
     } else {
@@ -873,9 +884,9 @@ function updateStats(
   ms.className = elapsed < 50 ? "ok" : "slow";
   document.getElementById("tris")!.textContent = String(data.triangle_count);
   document.getElementById("vol")!.textContent = data.volume_mm3.toFixed(0);
-  document.title = `BladeLab · ${data.span_min_mm.toFixed(0)}–${data.span_max_mm.toFixed(
+  document.title = `BladeLab — ${data.span_min_mm.toFixed(0)}–${data.span_max_mm.toFixed(
     0,
-  )} mm · ${elapsed.toFixed(1)} ms`;
+  )} mm [${elapsed.toFixed(1)} ms]`;
 }
 
 // ---- UI synchronization ----
@@ -891,7 +902,10 @@ function syncControlsFromDesign(design: Design) {
   const { rotor, distributions } = design;
 
   const bladeLenMm = Math.max(0, rotor.radius_mm - rotor.hub_radius_mm);
-  rotorSummary.textContent = `R=${rotor.radius_mm} mm · L=${bladeLenMm.toFixed(0)} mm · B=${rotor.blade_count}`;
+  rotorSummary.textContent = `R ${rotor.radius_mm}  L ${bladeLenMm.toFixed(0)}  B ${rotor.blade_count}`;
+  if (hudRotorSpec) {
+    hudRotorSpec.textContent = `R ${rotor.radius_mm} mm  L ${bladeLenMm.toFixed(0)} mm  B ${rotor.blade_count}`;
+  }
   inputRadius.value = String(rotor.radius_mm);
   inputHubRadius.value = String(rotor.hub_radius_mm);
   inputBlades.value = String(rotor.blade_count);
@@ -1801,7 +1815,7 @@ btnAutoOptimize.addEventListener("click", () => {
     };
     commitDesign(parsed.optimized_design);
     const sign = parsed.delta_cp >= 0 ? "+" : "";
-    optStatusEl.textContent = `Optimized in ${parsed.evaluations} evals: Cp ${parsed.initial_cp.toFixed(3)} → ${parsed.optimized_cp.toFixed(3)} (${sign}${parsed.delta_cp.toFixed(3)}) · P ${parsed.optimized_power_w.toFixed(1)} W`;
+    optStatusEl.textContent = `Optimized in ${parsed.evaluations} evals: Cp ${parsed.initial_cp.toFixed(3)} → ${parsed.optimized_cp.toFixed(3)} (${sign}${parsed.delta_cp.toFixed(3)}) / P ${parsed.optimized_power_w.toFixed(1)} W`;
   } catch (err) {
     optStatusEl.textContent = `Optimization error: ${String(err)}`;
   }
@@ -1867,7 +1881,7 @@ async function refreshCloudDesigns() {
 
       const info = document.createElement("span");
       info.style.fontSize = "11px";
-      info.textContent = `${item.name} (v${item.current_version} · @${item.author})`;
+      info.textContent = `${item.name} [v${item.current_version} @${item.author}]`;
 
       const loadBtn = document.createElement("button");
       loadBtn.type = "button";
