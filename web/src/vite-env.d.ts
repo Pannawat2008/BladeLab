@@ -9,6 +9,7 @@ declare module "*blade_wasm.js" {
     readonly volume_mm3: number;
     readonly span_min_mm: number;
     readonly span_max_mm: number;
+    readonly tube_axis: Float64Array;
     free(): void;
   }
 

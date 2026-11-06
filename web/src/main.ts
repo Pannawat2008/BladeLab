@@ -492,6 +492,112 @@ function updateFabricationStatus(design: Design) {
   );
 }
 
+/**
+ * Builds a clean, CAD-shaded Three.js `BufferGeometry` from the indexed WASM mesh:
+ * Computes 32° crease-angle normals so curved airfoil surfaces are silky-smooth
+ * while flat root/tip caps, split faces, interlocking tenons/sockets, bore rims,
+ * and finite trailing edges remain 100% flat and free of dark shading smears.
+ */
+function buildCleanBladeGeometry(
+  pos: Float32Array,
+  indices: Uint32Array,
+  creaseAngleDeg = 32,
+): THREE.BufferGeometry {
+  const vCount = (pos.length / 3) | 0;
+  const triCount = (indices.length / 3) | 0;
+  const faceUnitNormals = new Float32Array(triCount * 3);
+  const faceWeightedNormals = new Float32Array(triCount * 3);
+  const vertTris: number[][] = Array.from({ length: vCount }, () => []);
+
+  for (let t = 0; t < triCount; t++) {
+    const ia = indices[3 * t]!;
+    const ib = indices[3 * t + 1]!;
+    const ic = indices[3 * t + 2]!;
+    vertTris[ia]?.push(t);
+    vertTris[ib]?.push(t);
+    vertTris[ic]?.push(t);
+
+    const ax = pos[3 * ia]!,
+      ay = pos[3 * ia + 1]!,
+      az = pos[3 * ia + 2]!;
+    const bx = pos[3 * ib]!,
+      by = pos[3 * ib + 1]!,
+      bz = pos[3 * ib + 2]!;
+    const cx = pos[3 * ic]!,
+      cy = pos[3 * ic + 1]!,
+      cz = pos[3 * ic + 2]!;
+
+    const abx = bx - ax,
+      aby = by - ay,
+      abz = bz - az;
+    const acx = cx - ax,
+      acy = cy - ay,
+      acz = cz - az;
+    const nx = aby * acz - abz * acy;
+    const ny = abz * acx - abx * acz;
+    const nz = abx * acy - aby * acx;
+    const len = Math.hypot(nx, ny, nz);
+
+    faceWeightedNormals[3 * t] = nx;
+    faceWeightedNormals[3 * t + 1] = ny;
+    faceWeightedNormals[3 * t + 2] = nz;
+    if (len > 1e-12) {
+      faceUnitNormals[3 * t] = nx / len;
+      faceUnitNormals[3 * t + 1] = ny / len;
+      faceUnitNormals[3 * t + 2] = nz / len;
+    }
+  }
+
+  const cosThresh = Math.cos((creaseAngleDeg * Math.PI) / 180);
+  const outPositions = new Float32Array(triCount * 9);
+  const outNormals = new Float32Array(triCount * 9);
+
+  for (let t = 0; t < triCount; t++) {
+    const ux = faceUnitNormals[3 * t]!;
+    const uy = faceUnitNormals[3 * t + 1]!;
+    const uz = faceUnitNormals[3 * t + 2]!;
+
+    for (let k = 0; k < 3; k++) {
+      const vi = indices[3 * t + k]!;
+      const outBase = 9 * t + 3 * k;
+      outPositions[outBase] = pos[3 * vi]!;
+      outPositions[outBase + 1] = pos[3 * vi + 1]!;
+      outPositions[outBase + 2] = pos[3 * vi + 2]!;
+
+      let sx = 0,
+        sy = 0,
+        sz = 0;
+      const adj = vertTris[vi]!;
+      for (let j = 0; j < adj.length; j++) {
+        const tj = adj[j]!;
+        const vx = faceUnitNormals[3 * tj]!;
+        const vy = faceUnitNormals[3 * tj + 1]!;
+        const vz = faceUnitNormals[3 * tj + 2]!;
+        if (ux * vx + uy * vy + uz * vz >= cosThresh) {
+          sx += faceWeightedNormals[3 * tj]!;
+          sy += faceWeightedNormals[3 * tj + 1]!;
+          sz += faceWeightedNormals[3 * tj + 2]!;
+        }
+      }
+      const slen = Math.hypot(sx, sy, sz);
+      if (slen > 1e-12) {
+        outNormals[outBase] = sx / slen;
+        outNormals[outBase + 1] = sy / slen;
+        outNormals[outBase + 2] = sz / slen;
+      } else {
+        outNormals[outBase] = ux;
+        outNormals[outBase + 1] = uy;
+        outNormals[outBase + 2] = uz;
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(outPositions, 3));
+  geo.setAttribute("normal", new THREE.BufferAttribute(outNormals, 3));
+  return geo;
+}
+
 function rebuild3D(design: Design) {
   try {
     updateFabricationStatus(design);
@@ -508,29 +614,36 @@ function rebuild3D(design: Design) {
     }
     rotorGroup = new THREE.Group();
 
-    const bladeGeo = new THREE.BufferGeometry();
-    bladeGeo.setAttribute(
-      "position",
-      new THREE.BufferAttribute(data.positions as Float32Array, 3),
-    );
-    bladeGeo.setIndex(new THREE.BufferAttribute(data.indices as Uint32Array, 1));
-    bladeGeo.computeVertexNormals();
+    const rawPositions = data.positions as Float32Array;
+    const rawIndices = data.indices as Uint32Array;
+    const tubeAxis = data.tube_axis;
+    const bladeGeo = buildCleanBladeGeometry(rawPositions, rawIndices, 32);
+    const edgeGeo = !wireframeMode ? new THREE.EdgesGeometry(bladeGeo, 32) : null;
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: 0x0f172a,
+      transparent: true,
+      opacity: 0.36,
+    });
 
     const holeEnabled = inputSparHoleEnabled.checked;
     const showRod = holeEnabled && inputSparShowRod.checked;
 
     const bladeMaterial = new THREE.MeshStandardMaterial({
       color: 0x3b82f6,
-      metalness: 0.18,
-      roughness: 0.42,
+      metalness: 0.16,
+      roughness: 0.38,
       wireframe: wireframeMode,
       transparent: showRod,
       opacity: showRod ? 0.86 : 1.0,
       side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
     });
 
-    // Pitch-axis reference line for each blade
     const stationRows = resolveStationsPreview(design);
+    const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
+    const pivotX = design.rotor.pitch_axis_ratio * rootChord;
     const axisPoints = stationRows.map(
       (r) =>
         new THREE.Vector3(
@@ -542,45 +655,68 @@ function rebuild3D(design: Design) {
     const lineGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
     const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b });
 
-    const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
     const holeDia = Math.max(0.5, Number.parseFloat(inputSparHoleDiameter.value) || 5.0);
     const holeDepth = Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240);
     const holeOx = Number.parseFloat(inputSparHoleOffsetX.value) || 0;
     const holeOy = Number.parseFloat(inputSparHoleOffsetY.value) || 0;
+
+    // Center the blade pitch axis on X = 0 in both Single Blade and Full Rotor modes
+    const pivotShift = -pivotX;
 
     const count = viewMode === "rotor" ? Math.max(1, design.rotor.blade_count) : 1;
     for (let i = 0; i < count; i++) {
       const branch = new THREE.Group();
       branch.userData.isBladeBranch = true;
       const inner = new THREE.Group();
-      // Center the pitch axis at x=0 when assembling the multi-blade rotor
-      const pivotShift =
-        viewMode === "rotor" ? -design.rotor.pitch_axis_ratio * rootChord : 0;
 
       const bladeMesh = new THREE.Mesh(bladeGeo, bladeMaterial);
       bladeMesh.position.x = pivotShift;
+      inner.add(bladeMesh);
+
+      if (edgeGeo) {
+        const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+        edgeLines.position.x = pivotShift;
+        inner.add(edgeLines);
+      }
+
       const axisLine = new THREE.Line(lineGeo, lineMat);
       axisLine.position.x = pivotShift;
-
-      inner.add(bladeMesh);
       inner.add(axisLine);
 
       if (showRod) {
-        const rodRadius = Math.max(0.5, holeDia * 0.48);
         const stubOutMm = 18;
-        const totalRodLen = holeDepth + stubOutMm;
-        const rodGeo = new THREE.CylinderGeometry(rodRadius, rodRadius, totalRodLen, 24);
-        rodGeo.rotateX(Math.PI / 2);
+        const startPt =
+          tubeAxis && tubeAxis.length >= 7
+            ? new THREE.Vector3(tubeAxis[0]! + pivotShift, tubeAxis[1]!, tubeAxis[2]!)
+            : new THREE.Vector3(pivotX + holeOx + pivotShift, holeOy, design.rotor.hub_radius_mm);
+        const endPt =
+          tubeAxis && tubeAxis.length >= 7
+            ? new THREE.Vector3(tubeAxis[3]! + pivotShift, tubeAxis[4]!, tubeAxis[5]!)
+            : new THREE.Vector3(
+                pivotX + holeOx + pivotShift,
+                holeOy,
+                design.rotor.hub_radius_mm + holeDepth,
+              );
+        const effRodRadius =
+          tubeAxis && tubeAxis.length >= 7
+            ? Math.max(0.4, tubeAxis[6]! * 0.94)
+            : Math.max(0.5, holeDia * 0.48);
+
+        const dir = new THREE.Vector3().subVectors(endPt, startPt);
+        const dirUnit = dir.length() > 1e-6 ? dir.clone().normalize() : new THREE.Vector3(0, 0, 1);
+        const rodStart = startPt.clone().addScaledVector(dirUnit, -stubOutMm);
+        const totalRodLen = rodStart.distanceTo(endPt);
+        const rodMid = new THREE.Vector3().addVectors(rodStart, endPt).multiplyScalar(0.5);
+
+        const rodGeo = new THREE.CylinderGeometry(effRodRadius, effRodRadius, totalRodLen, 28);
         const rodMat = new THREE.MeshStandardMaterial({
           color: 0x10b981,
           metalness: 0.65,
           roughness: 0.25,
         });
         const rodMesh = new THREE.Mesh(rodGeo, rodMat);
-        const coreX = 0.3 * rootChord + holeOx + pivotShift;
-        const coreY = holeOy;
-        const centerZ = design.rotor.hub_radius_mm - stubOutMm + totalRodLen * 0.5;
-        rodMesh.position.set(coreX, coreY, centerZ);
+        rodMesh.position.copy(rodMid);
+        rodMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirUnit);
         inner.add(rodMesh);
       }
 
@@ -597,6 +733,8 @@ function rebuild3D(design: Design) {
       const hubOuterR = Math.max(12, design.hub.diameter_mm / 2);
       const hubInnerR = Math.max(2, Math.min(hubOuterR - 2, design.hub.bore_diameter_mm / 2));
       const hubLen = Math.max(10, design.hub.length_mm);
+      const rootCoreY =
+        tubeAxis && tubeAxis.length >= 7 ? tubeAxis[1]! : 0;
 
       const hubShape = new THREE.Shape();
       hubShape.absarc(0, 0, hubOuterR, 0, Math.PI * 2, false);
@@ -607,19 +745,29 @@ function rebuild3D(design: Design) {
       const hubGeo = new THREE.ExtrudeGeometry(hubShape, {
         depth: hubLen,
         bevelEnabled: false,
-        curveSegments: 48,
+        curveSegments: 64,
       });
       hubGeo.rotateX(Math.PI / 2);
-      hubGeo.translate(0, hubLen / 2, 0);
+      hubGeo.translate(0, hubLen / 2 + rootCoreY, 0);
 
       const hubMat = new THREE.MeshStandardMaterial({
         color: 0x64748b,
         metalness: 0.45,
         roughness: 0.35,
         wireframe: wireframeMode,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
       });
       const hubMesh = new THREE.Mesh(hubGeo, hubMat);
       rotorGroup.add(hubMesh);
+      if (!wireframeMode) {
+        const hubEdges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(hubGeo, 32),
+          edgeMat,
+        );
+        rotorGroup.add(hubEdges);
+      }
     }
 
     scene.add(rotorGroup);

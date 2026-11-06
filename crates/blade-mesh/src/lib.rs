@@ -39,8 +39,9 @@ pub mod threemf;
 
 pub use error::MeshError;
 pub use fabrication::{
-    alignment_report, compute_split_spans, section_core_station, tessellate_fabricated,
-    AlignmentReport, AlignmentShape, AlignmentSpec, FabricationSpec, SparHoleSpec,
+    alignment_report, compute_split_spans, section_core_station, spar_tube_axis_points,
+    tessellate_fabricated, AlignmentReport, AlignmentShape, AlignmentSpec, FabricationSpec,
+    SparHoleSpec,
 };
 pub use mesh::{check_mesh, Mesh, MeshReport, Triangle};
 pub use stl::{stl_len, write_stl};

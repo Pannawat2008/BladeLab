@@ -6,8 +6,8 @@
 
 use blade_geom::{build_sections, loft};
 use blade_mesh::{
-    alignment_report, check_mesh, tessellate_fabricated, write_3mf, write_stl, AlignmentShape,
-    AlignmentSpec, FabricationSpec, Mesh, SparHoleSpec,
+    alignment_report, check_mesh, spar_tube_axis_points, tessellate_fabricated, write_3mf,
+    write_stl, AlignmentShape, AlignmentSpec, FabricationSpec, Mesh, SparHoleSpec,
 };
 use blade_model::{resolve, CurveSource, Design};
 
@@ -29,6 +29,9 @@ pub struct MeshOutput {
     pub span_min_mm: f64,
     /// Highest z coordinate in mm (tip radius).
     pub span_max_mm: f64,
+    /// Optional planned coaxial carbon-fiber tube axis
+    /// `[x_start, y_start, z_start, x_end, y_end, z_end, radius_mm]`.
+    pub tube_axis: Option<[f64; 7]>,
 }
 
 /// Live-edit overrides for the design, applied before the pipeline runs.
@@ -158,8 +161,10 @@ pub fn fabrication_report_json(design_json: &str, overrides: &Overrides) -> Resu
 /// Returns a human-readable message (as `String`) when the JSON is invalid,
 /// an override produces an unbuildable design, or the geometry is degenerate.
 pub fn build_mesh(design_json: &str, overrides: &Overrides) -> Result<MeshOutput, String> {
-    let mesh = build_validated_blade_mesh_with_overrides(design_json, overrides)?;
-    Ok(output(&mesh))
+    let (mesh, tube_axis) = build_validated_blade_mesh_and_axis(design_json, overrides)?;
+    let mut out = output(&mesh);
+    out.tube_axis = tube_axis;
+    Ok(out)
 }
 
 /// Builds a validated watertight blade [`Mesh`] from `design_json` and [`Overrides`].
@@ -167,6 +172,13 @@ pub fn build_validated_blade_mesh_with_overrides(
     design_json: &str,
     overrides: &Overrides,
 ) -> Result<Mesh, String> {
+    Ok(build_validated_blade_mesh_and_axis(design_json, overrides)?.0)
+}
+
+fn build_validated_blade_mesh_and_axis(
+    design_json: &str,
+    overrides: &Overrides,
+) -> Result<(Mesh, Option<[f64; 7]>), String> {
     let mut design = Design::from_json(design_json).map_err(as_string)?;
     if let Some(chord) = overrides.tip_chord_mm {
         design.distributions.chord_mm = with_tip_value(design.distributions.chord_mm, chord);
@@ -182,12 +194,13 @@ pub fn build_validated_blade_mesh_with_overrides(
     let sections = build_sections(&blade).map_err(as_string)?;
     let surface = loft(&sections).map_err(as_string)?;
     let fab = overrides.fabrication_spec();
+    let tube_axis = spar_tube_axis_points(&surface, &fab).map_err(as_string)?;
     let mesh = tessellate_fabricated(&surface, &fab).map_err(as_string)?;
     let report = check_mesh(&mesh);
     if !report.is_valid_solid() {
         return Err("generated blade mesh is not a valid watertight solid".into());
     }
-    Ok(mesh)
+    Ok((mesh, tube_axis))
 }
 
 /// Builds a validated watertight blade [`Mesh`] from `design_json`.
@@ -251,6 +264,7 @@ fn output(mesh: &Mesh) -> MeshOutput {
         volume_mm3: mesh.signed_volume_mm3(),
         span_min_mm,
         span_max_mm,
+        tube_axis: None,
     }
 }
 

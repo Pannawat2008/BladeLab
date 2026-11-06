@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 62**
-> **LAST_UPDATED: 2026-11-06 16:42 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 63**
+> **LAST_UPDATED: 2026-11-06 16:52 (UTC+7) by geom-1**
 
 ---
 
@@ -429,6 +429,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-037** | 2026-11-06 15:45 | geom-1 | T-005
   `crates/blade-mesh/src/fabrication.rs` (`AlignmentShape::{Dovetail, Cruciform, Tapered, SnapLock, Round, Key}`, `outline_with_clearance`, `build_feature_rings`, `push_polygon_cap`) and `crates/blade-wasm` implement 2D and 3D **Interlocking Joints** on split blade faces: (1) `Dovetail` generates a 6-vertex butterfly / double-dovetail tenon and mortise along the chord (`waist = 0.52 * half_w + clearance`) that mechanically interlocks against chordwise shear and peel; (2) `Cruciform` generates a 12-vertex orthogonal `+` cross-beam tenon and mortise (`tl = 0.38 * half_l`, `tw = 0.42 * half_w`) that resists flapwise bending, lead-lag bending, and torsion simultaneously; (3) `Tapered` extrudes a 3-stage 3D frustum wedge (`1.00 -> 0.86 -> 0.72` along `z`) for self-centering zero-backlash locking; (4) `SnapLock` extrudes a 4-stage 3D axial barbed tenon and undercut socket (`0.85` neck -> `0.85` ramp -> `1.00` retention barb at `70%` height -> `0.74` lead-in tip) to resist spanwise pull-out; and (5) `web/` (`#align-shape`, `#btn-joint-*`, `renderAirfoilSectionSvgMarkup`) provides 1-click joint presets and live 2D cross-section SVG overlays.
   refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/mesh.rs, web/src/{state,main}.ts, web/index.html | supersedes: –
+- **F-geom1-038** | 2026-11-06 16:52 | geom-1 | T-005
+  Fixed the 3D model preview leveling and surface/edge cleanliness issues identified via `/grill-me`: (1) `crates/blade-mesh/src/fabrication.rs` (`SparTubeAxis`, `spar_tube_axis_points`, `MIN_SEGMENT_STATIONS = 14`) plans a single straight, uniform-radius cylindrical bore across the full hole depth (preferring a vertical `+z` axis when it fits safely inside all stations, or a straight 3D line from root core to hole-end core) so all split segments share identical coaxial bore rings at every split plane; (2) `crates/blade-wasm` exposes `MeshData::tube_axis` (`[x0, y0, z0, x1, y1, z1, radius]`) so the 3D green preview rod in `web/src/main.ts` is positioned and quaternion-aligned coaxially inside the bore; (3) `web/src/main.ts` (`buildCleanBladeGeometry`) computes **32° crease-angle vertex normals** and subtle CAD feature-edge lines (`THREE.EdgesGeometry(bladeGeo, 32)`) so flat root/tip caps, split faces, and interlocking joints are 100% flat and crisp while the airfoil skin remains silky-smooth; and (4) centers the blade pitch axis on `X = 0` in both Single Blade and Full Rotor modes and vertically centers the hub cylinder at `rootCoreY`.
+  refs: crates/blade-mesh/src/{fabrication,lib}.rs, crates/blade-wasm/src/{mesh,lib}.rs, web/src/{main,vite-env.d}.ts | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -802,4 +805,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T15:36:00+07:00 agent=geom-1 mem=v59 last_entry=L-geom1-016 task=T-005 note="lead requested: Interlocking Joint for split blade fabrication; adding interlocking joint geometries (Dovetail/Butterfly, Cruciform Cross-Lock, and Tapered Self-Centering Lock) to blade-mesh, blade-wasm, and web UI"
 [END] 2026-11-06T15:45+07:00 agent=geom-1 mem=v61 note="added Interlocking Joints (Dovetail Butterfly, Cruciform + Cross-Beam, 3D Snap-Lock Barb, and 3D Tapered Wedge) in crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/mesh.rs, and web UI (#align-shape, 1-click Joint Presets, and 2D SVG preview); verified watertight manifold meshes across all 4 interlocking types; F-geom1-037 recorded"
 [RE-ACK] 2026-11-06T16:42:30+07:00 agent=geom-1 mem=v61 last_entry=F-geom1-037 task=T-005 note="lead reported 3D model preview not level / not clean; aligned via /grill-me on: (1) straight coaxial CF spar tube bore & rod along span, (2) 32-deg crease-angle normals for crisp flat caps/split faces/pins + smooth airfoil skin, (3) centered hub/blade mid-plane & straight Z pitch-axis alignment, and (4) smooth cubic Catmull-Rom .dat resampling + denser spanwise loft tessellation"
+[END] 2026-11-06T16:52+07:00 agent=geom-1 mem=v63 note="fixed 3D model preview leveling & cleanliness: coaxial straight SparTubeAxis + MIN_SEGMENT_STATIONS=14 in crates/blade-mesh/src/fabrication.rs, MeshData::tube_axis in blade-wasm, and 32-deg crease-angle normals + CAD feature edges + coaxial 3D rod + centered hub/pitch-axis in web/src/main.ts; F-geom1-038 recorded"
 ```

@@ -161,6 +161,16 @@ impl MeshData {
     pub fn span_max_mm(&self) -> f64 {
         self.output.span_max_mm
     }
+
+    /// Planned coaxial carbon-fiber tube axis `[x0, y0, z0, x1, y1, z1, radius_mm]`
+    /// (7 entries when a spar hole is active, empty when disabled).
+    #[wasm_bindgen(getter)]
+    pub fn tube_axis(&self) -> Vec<f64> {
+        self.output
+            .tube_axis
+            .map(|a| a.to_vec())
+            .unwrap_or_default()
+    }
 }
 
 /// Builds the blade triangle mesh from `design_json`.

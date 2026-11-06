@@ -22,7 +22,7 @@ const HOLE_CIRCLE_SEGMENTS: usize = 32;
 const PIN_CIRCLE_SEGMENTS: usize = 24;
 
 /// Minimum spanwise station count per split segment.
-const MIN_SEGMENT_STATIONS: usize = 5;
+const MIN_SEGMENT_STATIONS: usize = 14;
 
 /// Radius scale factors tried (in order) when a pin does not fit the local
 /// airfoil thickness.
@@ -308,7 +308,7 @@ fn distance_to_contour(contour: &[Point3], x: f64, y: f64) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// Carbon tube bore geometry
+// Carbon tube bore geometry (straight coaxial cylinder along span)
 // ---------------------------------------------------------------------------
 
 /// A circle in a section plane describing the carbon tube bore.
@@ -320,21 +320,125 @@ struct TubeCircle {
     radius: f64,
 }
 
-/// Computes the bore circle inside `section`, clamped so it stays inside the
-/// local airfoil skin with a wall margin.
-fn tube_circle(section: &[Point3], spec: SparHoleSpec) -> TubeCircle {
-    let (core_center, max_thickness, _, _) = section_core_station(section);
-    let max_safe_radius = (0.38 * max_thickness).max(0.25);
-    let radius =
-        (0.5 * (spec.diameter_mm + spec.tolerance_mm.max(0.0))).clamp(0.2, max_safe_radius);
-    let max_offset = (0.15 * max_thickness).max(0.0);
-    let ox = spec.offset_x_mm.clamp(-max_offset, max_offset);
-    let oy = spec.offset_y_mm.clamp(-max_offset, max_offset);
-    TubeCircle {
-        cx: core_center.x + ox,
-        cy: core_center.y + oy,
-        cz: core_center.z,
-        radius,
+/// Straight coaxial centerline and uniform radius for the carbon-fiber spar
+/// tube bore from `z_start` (`span_start_mm`) to `z_end` (`hole_end_mm`).
+#[derive(Debug, Clone, Copy)]
+struct SparTubeAxis {
+    z_start: f64,
+    z_end: f64,
+    x_start: f64,
+    y_start: f64,
+    x_end: f64,
+    y_end: f64,
+    radius: f64,
+}
+
+impl SparTubeAxis {
+    /// Plans a straight, uniform-radius cylindrical bore from `z_start` to `z_end`
+    /// that stays strictly inside the airfoil skin across the entire bore depth.
+    fn plan(
+        surface: &BladeSurface,
+        spec: SparHoleSpec,
+        z_start: f64,
+        z_end: f64,
+    ) -> Result<Self, MeshError> {
+        let samples = 9usize;
+        let mut secs = Vec::with_capacity(samples);
+        let mut cores = Vec::with_capacity(samples);
+        let mut thicks = Vec::with_capacity(samples);
+        for k in 0..samples {
+            let frac = (k as f64) / ((samples - 1) as f64);
+            let z = z_start + frac * (z_end - z_start);
+            let sec = evaluate_section_at_span(surface, z)?;
+            let (core, thick, _, _) = section_core_station(&sec);
+            secs.push(sec);
+            cores.push(core);
+            thicks.push(thick);
+        }
+
+        let min_thick = thicks.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_offset = (0.15 * min_thick).max(0.0);
+        let ox = spec.offset_x_mm.clamp(-max_offset, max_offset);
+        let oy = spec.offset_y_mm.clamp(-max_offset, max_offset);
+
+        let x0 = cores[0].x + ox;
+        let y0 = cores[0].y + oy;
+        let x1_core = cores[samples - 1].x + ox;
+        let y1_core = cores[samples - 1].y + oy;
+
+        let desired_radius = (0.5 * (spec.diameter_mm + spec.tolerance_mm.max(0.0))).max(0.2);
+
+        // Search candidate vertical (+z) axes between (x0, y0) and (x1_core, y1_core)
+        // to find the vertical cylinder with maximum skin wall clearance across all
+        // sampled stations. If any vertical axis fits safely, use it (dx=0, dy=0);
+        // otherwise fall back to the straight 3D line (x0, y0, z_start) -> (x1_core, y1_core, z_end).
+        let mut best_vert = (x0, y0, 0.0_f64);
+        for step in 0..=8 {
+            let t = (step as f64) / 8.0;
+            let vx = x0 + t * (x1_core - x0);
+            let vy = y0 + t * (y1_core - y0);
+            let min_r = secs
+                .iter()
+                .zip(thicks.iter())
+                .map(|(sec, &th)| {
+                    if point_in_contour(sec, vx, vy) {
+                        (distance_to_contour(sec, vx, vy) - 0.55).min(0.38 * th)
+                    } else {
+                        0.0
+                    }
+                })
+                .fold(f64::INFINITY, f64::min);
+            if min_r > best_vert.2 {
+                best_vert = (vx, vy, min_r);
+            }
+        }
+
+        let (x_start, y_start, x_end, y_end) =
+            if best_vert.2 >= desired_radius.min(0.35 * min_thick) && best_vert.2 >= 0.4 {
+                (best_vert.0, best_vert.1, best_vert.0, best_vert.1)
+            } else {
+                (x0, y0, x1_core, y1_core)
+            };
+
+        let mut max_safe_radius = f64::INFINITY;
+        for (k, (sec, &th)) in secs.iter().zip(thicks.iter()).enumerate() {
+            let frac = (k as f64) / ((samples - 1) as f64);
+            let cx = x_start + frac * (x_end - x_start);
+            let cy = y_start + frac * (y_end - y_start);
+            let skin_r = if point_in_contour(sec, cx, cy) {
+                (distance_to_contour(sec, cx, cy) - 0.50).min(0.38 * th)
+            } else {
+                0.25
+            };
+            max_safe_radius = max_safe_radius.min(skin_r);
+        }
+        let radius = desired_radius.clamp(0.2, max_safe_radius.max(0.25));
+
+        Ok(Self {
+            z_start,
+            z_end,
+            x_start,
+            y_start,
+            x_end,
+            y_end,
+            radius,
+        })
+    }
+
+    /// Evaluates the bore circle at spanwise station `z`.
+    fn circle_at(&self, z: f64) -> TubeCircle {
+        let span = self.z_end - self.z_start;
+        let t = if span.abs() < 1e-9 {
+            0.0
+        } else {
+            ((z - self.z_start) / span).clamp(0.0, 1.0)
+        };
+        TubeCircle {
+            cx: self.x_start + t * (self.x_end - self.x_start),
+            cy: self.y_start + t * (self.y_end - self.y_start),
+            cz: z,
+            radius: self.radius,
+        }
     }
 }
 
@@ -568,7 +672,7 @@ fn plan_plane(
     len_upper: f64,
     span_end: f64,
     spec: &AlignmentSpec,
-    hole: Option<(SparHoleSpec, f64)>,
+    hole_axis: Option<SparTubeAxis>,
 ) -> Result<Option<PlaneFeatures>, MeshError> {
     let dc = spec.depth_clearance_mm.max(0.0);
     let max_depth = (0.6 * len_upper).max(1.0);
@@ -580,9 +684,9 @@ fn plan_plane(
         evaluate_section_at_span(surface, z_s)?,
         evaluate_section_at_span(surface, z_deep)?,
     ];
-    let tube = hole.and_then(|(h, end)| {
-        if end >= z_s - 1e-3 {
-            Some(tube_circle(&contours[0], h))
+    let tube = hole_axis.and_then(|axis| {
+        if axis.z_end >= z_s - 1e-3 {
+            Some(axis.circle_at(z_s))
         } else {
             None
         }
@@ -618,6 +722,38 @@ pub struct AlignmentReport {
     pub socket_depth_mm: f64,
 }
 
+/// Returns the planned coaxial carbon-fiber spar tube axis
+/// `[x_start, y_start, z_start, x_end, y_end, z_end, radius_mm]` when
+/// `spec.spar_hole` is active.
+///
+/// # Errors
+///
+/// Returns [`MeshError`] if section evaluation fails.
+pub fn spar_tube_axis_points(
+    surface: &BladeSurface,
+    spec: &FabricationSpec,
+) -> Result<Option<[f64; 7]>, MeshError> {
+    let active_hole = spec
+        .spar_hole
+        .filter(|h| h.diameter_mm > 0.1 && h.depth_mm > 0.1);
+    let Some(h) = active_hole else {
+        return Ok(None);
+    };
+    let span_start = surface.span_start_mm();
+    let span_end = surface.span_end_mm();
+    let hole_end_mm = (span_start + h.depth_mm).clamp(span_start + 1.0, span_end);
+    let axis = SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?;
+    Ok(Some([
+        axis.x_start,
+        axis.y_start,
+        axis.z_start,
+        axis.x_end,
+        axis.y_end,
+        axis.z_end,
+        axis.radius,
+    ]))
+}
+
 /// Reports how many alignment features fit on each interior split face.
 ///
 /// Features that cannot keep the requested wall to the skin are shrunk and,
@@ -647,6 +783,10 @@ pub fn alignment_report(
     let hole_end_mm = active_hole
         .map(|h| (span_start + h.depth_mm).clamp(span_start + 1.0, span_end))
         .unwrap_or(span_start);
+    let hole_axis = match active_hole {
+        Some(h) => Some(SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?),
+        None => None,
+    };
 
     let mut out = Vec::with_capacity(split_parts - 1);
     for i in 1..split_parts {
@@ -656,7 +796,7 @@ pub fn alignment_report(
             bounds[i + 1] - bounds[i],
             span_end,
             &align,
-            active_hole.map(|h| (h, hole_end_mm)),
+            hole_axis,
         )?;
         out.push(AlignmentReport {
             span_mm: bounds[i],
@@ -707,6 +847,10 @@ pub fn tessellate_fabricated(
     let hole_end_mm = active_hole
         .map(|h| (span_start + h.depth_mm).clamp(span_start + 1.0, span_end))
         .unwrap_or(span_start);
+    let hole_axis = match active_hole {
+        Some(h) => Some(SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?),
+        None => None,
+    };
 
     // Alignment features for every interior split face.
     let mut planes: Vec<Option<PlaneFeatures>> = Vec::with_capacity(split_parts + 1);
@@ -718,7 +862,7 @@ pub fn tessellate_fabricated(
                 split_bounds[i + 1] - split_bounds[i],
                 span_end,
                 &align,
-                active_hole.map(|h| (h, hole_end_mm)),
+                hole_axis,
             )?,
             _ => None,
         };
@@ -771,9 +915,9 @@ pub fn tessellate_fabricated(
             seg_spans = refined;
         }
 
-        let seg_hole = active_hole.and_then(|h| {
+        let seg_hole = hole_axis.and_then(|axis| {
             if hole_end_mm > z_a + 1e-3 {
-                Some((h, hole_end_mm.min(z_b)))
+                Some((axis, hole_end_mm.min(z_b)))
             } else {
                 None
             }
@@ -807,8 +951,8 @@ pub fn tessellate_fabricated(
 
 /// Per-segment build inputs.
 struct SegmentContext<'a> {
-    /// Carbon tube hole and the (unshifted) `z` where it ends inside this segment.
-    seg_hole: Option<(SparHoleSpec, f64)>,
+    /// Coaxial carbon tube bore axis and the (unshifted) `z` where it ends inside this segment.
+    seg_hole: Option<(SparTubeAxis, f64)>,
     /// Split face below this segment (sockets are cut into its bottom cap).
     bottom: Option<&'a PlaneFeatures>,
     /// Split face above this segment (pins grow from its top cap).
@@ -944,8 +1088,8 @@ fn append_segment_mesh(
     let mut bottom_holes: Vec<CapHole> = Vec::new();
     let mut top_holes: Vec<CapHole> = Vec::new();
 
-    // Carbon tube bore: inward-facing wall, blind end disc if it stops here.
-    if let Some((hole_spec, z_hole_top)) = ctx.seg_hole {
+    // Carbon tube bore: straight coaxial inward-facing wall, blind end disc if it stops here.
+    if let Some((hole_axis, z_hole_top)) = ctx.seg_hole {
         let mut hole_last_sec = 0;
         for (idx, &z) in seg_spans.iter().enumerate() {
             if z <= z_hole_top + 1e-3 {
@@ -956,8 +1100,10 @@ fn append_segment_mesh(
         let is_through_hole = hole_last_sec == sec_count - 1;
 
         let mut ring_starts: Vec<usize> = Vec::with_capacity(hole_last_sec + 1);
-        for sec in sections.iter().take(hole_last_sec + 1) {
-            let ring = ring_points(&tube_circle(sec, hole_spec));
+        for &z_unshifted in seg_spans.iter().take(hole_last_sec + 1) {
+            let mut circle = hole_axis.circle_at(z_unshifted);
+            circle.cz += ctx.z_shift;
+            let ring = ring_points(&circle);
             ring_starts.push(vertices.len());
             vertices.extend_from_slice(&ring);
         }
