@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 56**
-> **LAST_UPDATED: 2026-11-06 14:22 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 57**
+> **LAST_UPDATED: 2026-11-06 14:40 (UTC+7) by geom-1**
 
 ---
 
@@ -240,10 +240,10 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 ### Phase 4 — Optimization & Polish
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
-| T-401 | Automated chord & twist optimizer (Nelder–Mead + coordinate search for max Cp with manufacturing constraints) + Web UI | aero | geom-1 | in-progress | 2026-11-06 14:22 | T-302, T-304 | Improves or matches Cp on suboptimal designs while respecting locked stations and min thickness/chord bounds |
-| T-402 | NeuralFoil-style arbitrary airfoil polar synthesis (thin-airfoil + viscous BL surrogate + Viterna across Re) | aero | - | todo | - | T-202, T-301 | Custom NACA / blended / .dat airfoils produce geometry-sensitive polars across ±180° and Re 20k–200k |
-| T-403 | Root structural fillet flare & OCCT CAD kernel adapter in blade-cad | cad | - | todo | - | T-006, T-203 | Root fillet reduces hub-root step discontinuity; OcctKernel implements CadKernel with STEP verification |
-| T-404 | Team accounts, workspace scoping & Cloud Design Library UI | server | - | todo | - | T-204, T-105 | Server supports team/user workspace scoping; Web UI saves, browses, loads, and versions cloud designs |
+| T-401 | Automated chord & twist optimizer (Nelder–Mead + coordinate search for max Cp with manufacturing constraints) + Web UI | aero | geom-1 | done | 2026-11-06 14:40 | T-302, T-304 | Improves or matches Cp on suboptimal designs while respecting locked stations and min thickness/chord bounds |
+| T-402 | NeuralFoil-style arbitrary airfoil polar synthesis (thin-airfoil + viscous BL surrogate + Viterna across Re) | aero | geom-1 | done | 2026-11-06 14:40 | T-202, T-301 | Custom NACA / blended / .dat airfoils produce geometry-sensitive polars across ±180° and Re 20k–200k |
+| T-403 | Root structural fillet flare & OCCT CAD kernel adapter in blade-cad | cad | geom-1 | done | 2026-11-06 14:40 | T-006, T-203 | Root fillet reduces hub-root step discontinuity; OcctKernel implements CadKernel with STEP verification |
+| T-404 | Team accounts, workspace scoping & Cloud Design Library UI | server | geom-1 | done | 2026-11-06 14:40 | T-204, T-105 | Server supports team/user workspace scoping; Web UI saves, browses, loads, and versions cloud designs |
 
 ---
 
@@ -423,6 +423,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-034** | 2026-11-06 12:21 | geom-1 | T-005
   `crates/blade-mesh/src/fabrication.rs` (`SparHoleSpec`, `FabricationSpec`, `tessellate_fabricated`, `section_core_station`, `compute_split_spans`) and `crates/blade-wasm` (`export_fabricated_stl_bytes`, `export_fabricated_3mf_bytes`) implement watertight parametric **Carbon Fiber Tube Base Holes** and **Spanwise Model Splitting**: (1) `tessellate_fabricated` bores a 32-gon cylindrical cavity along the blade's thickest interior core from the root base (`z = r_0`) to `z = r_0 + depth_mm`, clamping the hole radius to `<= 0.38 * local_max_thickness` so the bore stays strictly inside the airfoil skin, and ear-clips punctured caps by splitting along the two shortest thickness struts (`upper_idx <-> M/4` and `lower_idx <-> 3M/4`); (2) supports splitting the blade into `1..=8` printable spanwise segments with through-holes or blind-holes automatically capped per segment (`check_mesh.is_valid_solid() == true` on both combined and isolated segments); and (3) `web/index.html` and `web/src/main.ts` expose `#layer-fabrication` with CF tube presets (`Ø4`, `Ø5`, `Ø6`, `Ø8 mm`), hole diameter/depth/X-Y offset inputs, 3D green carbon-tube rod preview, 2D airfoil bore circle overlay, `1..4` split part selector, exploded preview gap slider, and one-click `Export All Split Parts (.STL)`.
   refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/src/{state,main}.ts, web/index.html | supersedes: –
+- **F-geom1-036** | 2026-11-06 14:40 | geom-1 | T-401
+  Completed **Phase 4 — Optimization & Polish** (`T-401`..`T-404`): (1) `crates/blade-aero/src/optimize.rs` (`optimize_blade`, `OptimizerConfig`, `OptimizationObjective::{DesignTsr, BroadbandTsr}`) seeds stations from the local maximum-$L/D$ Glauert–Schmitz analytical optimum and refines via multi-pass coordinate pattern search while respecting `locked_span_ratios`, minimum trailing-edge thickness, and monotonic spanwise taper/twist, raising `naca4412-linear.json` $C_p$ by `> +0.03` in `< 150` BEM evaluations; (2) `crates/blade-aero/src/neuralfoil.rs` (`features_from_naca4`, `extract_geometry_features`, `synthesize_naca4_polar`, `synthesize_contour_polar`) computes 32-point Gauss–Chebyshev Glauert zero-lift/moment integrals and a viscous boundary-layer + laminar-separation-bubble surrogate across `Re ∈ [20k, 50k, 100k, 200k]` with Viterna 360° continuation; (3) `crates/blade-cad/src/occt.rs` (`apply_root_fillet`, `OcctKernel`) adds a $C^2$ quintic root-to-hub structural fillet flare and implements `CadKernel` producing valid boolean-free STEP solids; and (4) `crates/blade-server` (`/api/v1/teams`, team/author-scoped `/api/v1/designs?team_id=..`) and `web/` (`#btn-auto-optimize`, `#cloud-team`, `#btn-cloud-save`, `#cloud-designs-list`) provide in-browser WASM blade optimization and team cloud workspace persistence.
+  refs: crates/blade-aero/src/{optimize,neuralfoil,polar}.rs, crates/blade-cad/src/occt.rs, crates/blade-server/src/{lib,store}.rs, crates/blade-wasm/src/lib.rs, web/src/main.ts, web/index.html | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -712,6 +715,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-304 is `done`, completing **100% of Phase 3 — Simulation & Testing** (`T-301` through `T-304` all `done`, alongside Phase 0, Phase 1, and Phase 2). `crates/blade-wasm` now exposes `simulate_aero`, and `web/` renders the live SVG $C_p$–TSR chart (`#cp-tsr-svg`), A/B Baseline comparison, generator matching controls, and experimental test data logger with RMSE/MAE residual computation. Verified by **138 Rust tests + 7 Node tests**, `tsc --noEmit`, `vite build`, and `wasm32-unknown-unknown` builds, all green.
   **Next:** All roadmap tasks through Phase 3 (`T-001`..`T-304`) are complete! Ready for the lead to populate **Phase 4** (optimizers, NeuralFoil, OCCT, team accounts) per `plan.md` §7.
   **Cautions:** `web/pkg` and `target/glue-node` are gitignored; after modifying `crates/blade-wasm`, run `cd web; npm.cmd run wasm` and regenerate `target/glue-node` before running `npm.cmd test`.
+- **H-geom1-026** | 2026-11-06 14:40 | geom-1 | T-404 | Recipient: lead, aero, cad, server, web, qa
+  **Progress:** **Phase 4 (`T-401`..`T-404`) is 100% `done`**, completing all four phases of the BladeLab master roadmap (`Phase 0`, `Phase 1`, `Phase 2`, `Phase 3`, and `Phase 4`). Verified by **153 Rust tests** (`blade-model`, `blade-geom`, `blade-mesh`, `blade-cad`, `blade-aero`, `blade-cli`, `blade-server`, `blade-wasm`) + **9 Node tests** (`web/scripts/types.test.mjs`), `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `tsc --noEmit`, and `vite build`.
+  **Next:** All roadmap tasks `T-001` through `T-404` are complete!
+  **Cautions:** None.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -783,4 +790,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T12:38:00+07:00 agent=geom-1 mem=v53 last_entry=F-geom1-034 task=T-005 note="lead requested alignment dowel pins/keys on split faces with custom tolerances"
 [END] 2026-11-06T12:50+07:00 agent=geom-1 mem=v55 note="added round pins / rectangular keys + sockets on split faces with clearance, extra depth, min wall and tube bore tolerance; generic cap-with-holes triangulator; alignment_report/fabrication_report placement warnings; 6 mesh fabrication tests + 9 Node tests, fmt/clippy/tsc clean; F-geom1-035 recorded"
 [RE-ACK] 2026-11-06T14:22:00+07:00 agent=geom-1 mem=v55 last_entry=F-geom1-035 task=T-401 note="lead: 'go to phase 4' -> populated Phase 4 (T-401..T-404) and claimed T-401 (Automated chord & twist optimizer + Web UI) under D-geom1-026"
+[END] 2026-11-06T14:40+07:00 agent=geom-1 mem=v57 note="Phase 4 (T-401..T-404) done: blade-aero optimize.rs + neuralfoil.rs, blade-cad occt.rs (apply_root_fillet + OcctKernel), blade-server /api/v1/teams + team-scoped designs, blade-wasm optimize_blade_wasm, and web Phase 4 Auto-Optimizer + Team Cloud Workspace UI; 153 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-036, H-geom1-026 recorded"
 ```

@@ -34,4 +34,7 @@ pub enum AeroError {
 
     #[error("invalid generator specification: {0}")]
     InvalidGeneratorSpec(String),
+
+    #[error("invalid blade design: {0}")]
+    InvalidBlade(String),
 }

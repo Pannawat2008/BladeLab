@@ -10,8 +10,9 @@
 //! tessellate`) lives in [`mesh`] so it can be unit-tested on the host.
 
 use blade_aero::{
-    match_generator, simulate, simulate_tsr_sweep, AeroResult, GeneratorMatchResult, GeneratorSpec,
-    OperatingPoint, PolarSet, TsrSweepPoint,
+    match_generator, optimize_blade, simulate, simulate_tsr_sweep, AeroResult,
+    GeneratorMatchResult, GeneratorSpec, OperatingPoint, OptimizationResult, OptimizerConfig,
+    PolarSet, TsrSweepPoint,
 };
 use blade_model::{resolve, Design};
 use serde::{Deserialize, Serialize};
@@ -304,6 +305,28 @@ pub fn run_aero_simulation(design_json: &str, options_json: &str) -> Result<Stri
 #[wasm_bindgen]
 pub fn simulate_aero(design_json: &str, options_json: &str) -> Result<String, JsValue> {
     run_aero_simulation(design_json, options_json).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Runs the automated chord & twist optimizer on `design_json` with optional
+/// `config_json` (`OptimizerConfig`), returning serialized JSON (`OptimizationResult`).
+pub fn run_blade_optimization(design_json: &str, config_json: &str) -> Result<String, String> {
+    let design = Design::from_json(design_json).map_err(|e| format!("invalid design: {e}"))?;
+    let cfg: OptimizerConfig = if config_json.trim().is_empty() {
+        OptimizerConfig::default()
+    } else {
+        serde_json::from_str(config_json).map_err(|e| format!("bad optimizer config JSON: {e}"))?
+    };
+    let polars = PolarSet::builtin();
+    let res: OptimizationResult =
+        optimize_blade(&design, &polars, &cfg).map_err(|e| format!("optimizer error: {e}"))?;
+    serde_json::to_string(&res).map_err(|e| e.to_string())
+}
+
+/// Runs the automated blade chord & twist optimizer (`T-401`) from wasm,
+/// returning a JSON string (`OptimizationResult`).
+#[wasm_bindgen]
+pub fn optimize_blade_wasm(design_json: &str, config_json: &str) -> Result<String, JsValue> {
+    run_blade_optimization(design_json, config_json).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Exports the current blade design as a binary STL byte buffer (`Uint8Array` in JS).

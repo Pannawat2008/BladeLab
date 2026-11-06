@@ -931,6 +931,20 @@
             <span id="ab-delta-summary" class="section-meta" style="color: #93c5fd">No Baseline A</span>
           </div>
 
+          <div class="bind-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #1e293b">
+            <span style="font-weight: 600; color: #c8d1e0">Phase 4 · Auto-Optimizer</span>
+            <select id="opt-objective" title="Optimization objective">
+              <option value="design_tsr" selected>Max Cp at Design TSR</option>
+              <option value="broadband_tsr">Broadband TSR (±20%)</option>
+            </select>
+          </div>
+          <div class="toolbar" style="margin-top: 4px">
+            <button id="btn-auto-optimize" class="btn-primary" type="button" style="flex: 1" title="Run Glauert-Schmitz + Coordinate Search optimizer respecting locked stations and manufacturing limits">
+              Auto-Optimize Blade (Max Cp)
+            </button>
+          </div>
+          <div id="opt-status" class="aero-subbox" style="margin-top: 4px">Optimizer ready (respects locked stations)</div>
+
           <div class="grid-2" style="margin-top: 8px">
             <div class="field">
               <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
@@ -956,6 +970,36 @@
             ></textarea>
           </div>
           <div id="exp-fit-summary" class="aero-subbox">Exp log: 0 pts</div>
+
+          <div class="bind-row" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #1e293b">
+            <span style="font-weight: 600; color: #c8d1e0">Phase 4 · Team &amp; Cloud Workspace</span>
+            <button id="btn-cloud-refresh" class="btn-mini" type="button" title="Refresh team designs from blade-server">Refresh</button>
+          </div>
+          <div class="grid-2" style="margin-top: 4px">
+            <div class="field">
+              <label for="cloud-team">Team Workspace</label>
+              <select id="cloud-team">
+                <option value="team-default" selected>BladeLab Core Team</option>
+                <option value="team-comp">Wind Competition Team</option>
+                <option value="all">All Teams</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="cloud-author">Engineer Handle</label>
+              <input id="cloud-author" type="text" value="panna" />
+            </div>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="cloud-design-name">Design Name</label>
+              <input id="cloud-design-name" type="text" value="Rotor-R600-B3" />
+            </div>
+            <div class="field" style="justify-content: flex-end">
+              <button id="btn-cloud-save" class="btn-primary" type="button" style="height: 28px">Save to Cloud</button>
+            </div>
+          </div>
+          <div id="cloud-status" class="aero-subbox" style="margin-top: 6px">Cloud workspace ready</div>
+          <div id="cloud-designs-list" style="margin-top: 6px; display: flex; flex-direction: column; gap: 4px"></div>
         </section>
       </div>
     </div>

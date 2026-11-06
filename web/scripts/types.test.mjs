@@ -471,4 +471,22 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   );
   assert.ok(lowerSnug.volume_mm3 > lowerPlain.volume_mm3, "pins add volume to the lower part");
   assert.ok(upperLoose.volume_mm3 < upperSnug.volume_mm3, "larger clearance cuts bigger sockets");
+
+  // Phase 4: Auto-optimize blade via WASM (T-401 / T-402)
+  const { optimize_blade_wasm } = require(gluePath);
+  const optRes = JSON.parse(
+    optimize_blade_wasm(
+      JSON.stringify(initialDesign),
+      JSON.stringify({
+        objective: { mode: "design_tsr" },
+        locked_span_ratios: [0.1],
+        max_iterations: 10,
+      }),
+    ),
+  );
+  assert.ok(
+    optRes.optimized_cp > optRes.initial_cp + 0.02,
+    `expected WASM optimizer to improve Cp: ${optRes.initial_cp} -> ${optRes.optimized_cp}`,
+  );
+  assert.ok(optRes.optimized_design.overrides.length >= 10);
 });

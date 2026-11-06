@@ -29,7 +29,9 @@
 pub mod assembly;
 pub mod error;
 pub mod kernel;
+pub mod occt;
 
 pub use assembly::{assembly_mesh, hub_mesh, HUB_CIRCUMFERENCE_SEGMENTS};
 pub use error::CadError;
 pub use kernel::{CadKernel, TruckKernel};
+pub use occt::{apply_root_fillet, OcctKernel};

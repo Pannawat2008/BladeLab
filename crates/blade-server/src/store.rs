@@ -15,6 +15,33 @@ use thiserror::Error;
 /// Canonical PostgreSQL schema migration (`migrations/0001_designs.sql`).
 pub const POSTGRES_SCHEMA_SQL: &str = include_str!("../migrations/0001_designs.sql");
 
+/// Default team workspace ID when none is specified.
+pub const DEFAULT_TEAM_ID: &str = "team-default";
+
+/// Default author handle when none is specified.
+pub const DEFAULT_AUTHOR: &str = "engineer";
+
+fn default_team_id() -> String {
+    DEFAULT_TEAM_ID.to_string()
+}
+
+fn default_author() -> String {
+    DEFAULT_AUTHOR.to_string()
+}
+
+/// Team workspace account (`T-404`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamAccount {
+    /// Stable team slug/identifier (e.g. `"team-default"`).
+    pub id: String,
+    /// Human-readable team display name.
+    pub name: String,
+    /// Member handles belonging to the workspace.
+    pub members: Vec<String>,
+    /// Creation timestamp (milliseconds since Unix epoch).
+    pub created_at_epoch_ms: u64,
+}
+
 /// Summary metadata for a stored design (returned by `GET /api/v1/designs`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesignSummary {
@@ -22,6 +49,12 @@ pub struct DesignSummary {
     pub id: String,
     /// Human-readable design name.
     pub name: String,
+    /// Owning team workspace identifier (`T-404`).
+    #[serde(default = "default_team_id")]
+    pub team_id: String,
+    /// Author who last updated this design (`T-404`).
+    #[serde(default = "default_author")]
+    pub author: String,
     /// Latest version number (`>= 1`).
     pub current_version: u32,
     /// `blake3` hex digest of the canonicalised latest design JSON.
@@ -39,6 +72,12 @@ pub struct DesignRecord {
     pub id: String,
     /// Human-readable design name.
     pub name: String,
+    /// Owning team workspace identifier (`T-404`).
+    #[serde(default = "default_team_id")]
+    pub team_id: String,
+    /// Author who last updated this design (`T-404`).
+    #[serde(default = "default_author")]
+    pub author: String,
     /// Latest version number (`>= 1`).
     pub current_version: u32,
     /// `blake3` hex digest of the canonicalised latest design JSON.
@@ -58,6 +97,8 @@ impl DesignRecord {
         DesignSummary {
             id: self.id.clone(),
             name: self.name.clone(),
+            team_id: self.team_id.clone(),
+            author: self.author.clone(),
             current_version: self.current_version,
             content_blake3: self.content_blake3.clone(),
             created_at_epoch_ms: self.created_at_epoch_ms,
@@ -75,6 +116,9 @@ pub struct DesignVersionRecord {
     pub version: u32,
     /// Design name at the time this version was recorded.
     pub name: String,
+    /// Author who committed this version (`T-404`).
+    #[serde(default = "default_author")]
+    pub author: String,
     /// Optional commit/revision note describing the change.
     pub note: Option<String>,
     /// `blake3` hex digest of the canonicalised design JSON for this version.
@@ -117,11 +161,43 @@ pub enum StoreError {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct StoreInner {
     next_seq: u64,
+    teams: BTreeMap<String, TeamAccount>,
     designs: BTreeMap<String, DesignRecord>,
     versions: BTreeMap<String, Vec<DesignVersionRecord>>,
+}
+
+impl Default for StoreInner {
+    fn default() -> Self {
+        let now = now_epoch_ms();
+        let mut teams = BTreeMap::new();
+        teams.insert(
+            DEFAULT_TEAM_ID.to_string(),
+            TeamAccount {
+                id: DEFAULT_TEAM_ID.to_string(),
+                name: "BladeLab Core Team".to_string(),
+                members: vec!["lead".to_string(), "aero".to_string(), "cad".to_string()],
+                created_at_epoch_ms: now,
+            },
+        );
+        teams.insert(
+            "team-comp".to_string(),
+            TeamAccount {
+                id: "team-comp".to_string(),
+                name: "Wind Turbine Competition Team".to_string(),
+                members: vec!["panna".to_string(), "rotor-dev".to_string()],
+                created_at_epoch_ms: now,
+            },
+        );
+        Self {
+            next_seq: 0,
+            teams,
+            designs: BTreeMap::new(),
+            versions: BTreeMap::new(),
+        }
+    }
 }
 
 /// Thread-safe transactional store for designs and their version histories (`T-204`).
@@ -173,6 +249,22 @@ impl DesignStore {
         design: Design,
         note: Option<String>,
     ) -> Result<DesignRecord, StoreError> {
+        self.create_scoped(name, design, note, None, None)
+    }
+
+    /// Validates and stores a new design at `version = 1` scoped to a team and author (`T-404`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] if `name` is empty or `design` fails validation.
+    pub fn create_scoped(
+        &self,
+        name: String,
+        design: Design,
+        note: Option<String>,
+        team_id: Option<String>,
+        author: Option<String>,
+    ) -> Result<DesignRecord, StoreError> {
         let trimmed_name = name.trim().to_string();
         if trimmed_name.is_empty() {
             return Err(StoreError::EmptyName);
@@ -180,6 +272,14 @@ impl DesignStore {
         validate_design_payload(&design)?;
         let digest = canonical_design_blake3(&design);
         let now = now_epoch_ms();
+        let eff_team = team_id
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(default_team_id);
+        let eff_author = author
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(default_author);
 
         let mut guard = self
             .inner
@@ -188,9 +288,21 @@ impl DesignStore {
         guard.next_seq += 1;
         let id = format!("dsn-{:04}", guard.next_seq);
 
+        guard
+            .teams
+            .entry(eff_team.clone())
+            .or_insert_with(|| TeamAccount {
+                id: eff_team.clone(),
+                name: eff_team.clone(),
+                members: vec![eff_author.clone()],
+                created_at_epoch_ms: now,
+            });
+
         let record = DesignRecord {
             id: id.clone(),
             name: trimmed_name.clone(),
+            team_id: eff_team,
+            author: eff_author.clone(),
             current_version: 1,
             content_blake3: digest.clone(),
             created_at_epoch_ms: now,
@@ -201,6 +313,7 @@ impl DesignStore {
             design_id: id.clone(),
             version: 1,
             name: trimmed_name,
+            author: eff_author,
             note,
             content_blake3: digest,
             created_at_epoch_ms: now,
@@ -216,11 +329,66 @@ impl DesignStore {
     /// Lists all stored designs ordered by ID.
     #[must_use]
     pub fn list(&self) -> Vec<DesignSummary> {
+        self.list_for_team(None)
+    }
+
+    /// Lists stored designs optionally filtered by `team_id` (`T-404`).
+    #[must_use]
+    pub fn list_for_team(&self, team_id: Option<&str>) -> Vec<DesignSummary> {
         let guard = self
             .inner
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.designs.values().map(DesignRecord::summary).collect()
+        guard
+            .designs
+            .values()
+            .filter(|rec| match team_id {
+                Some(t) if !t.trim().is_empty() && t.trim() != "all" => rec.team_id == t.trim(),
+                _ => true,
+            })
+            .map(DesignRecord::summary)
+            .collect()
+    }
+
+    /// Lists all registered team workspaces (`T-404`).
+    #[must_use]
+    pub fn list_teams(&self) -> Vec<TeamAccount> {
+        let guard = self
+            .inner
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.teams.values().cloned().collect()
+    }
+
+    /// Creates or updates a team workspace (`T-404`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::EmptyName`] if `id` or `name` is empty.
+    pub fn upsert_team(
+        &self,
+        id: String,
+        name: String,
+        members: Vec<String>,
+    ) -> Result<TeamAccount, StoreError> {
+        let tid = id.trim().to_string();
+        let tname = name.trim().to_string();
+        if tid.is_empty() || tname.is_empty() {
+            return Err(StoreError::EmptyName);
+        }
+        let now = now_epoch_ms();
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let acct = TeamAccount {
+            id: tid.clone(),
+            name: tname,
+            members,
+            created_at_epoch_ms: now,
+        };
+        guard.teams.insert(tid, acct.clone());
+        Ok(acct)
     }
 
     /// Retrieves a stored design by ID.
@@ -292,6 +460,7 @@ impl DesignStore {
             design_id: id.to_string(),
             version: updated_record.current_version,
             name: updated_record.name.clone(),
+            author: updated_record.author.clone(),
             note,
             content_blake3: digest,
             created_at_epoch_ms: updated_record.updated_at_epoch_ms,

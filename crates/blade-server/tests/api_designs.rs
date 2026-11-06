@@ -4,7 +4,8 @@ use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use blade_model::Design;
 use blade_server::{
-    build_router, AppState, DesignRecord, DesignSummary, DesignVersionRecord, POSTGRES_SCHEMA_SQL,
+    build_router, AppState, DesignRecord, DesignSummary, DesignVersionRecord, TeamAccount,
+    POSTGRES_SCHEMA_SQL,
 };
 use tower::ServiceExt;
 
@@ -181,4 +182,64 @@ async fn rejects_invalid_designs_and_unknown_ids_with_clear_http_statuses() {
         .unwrap();
     let resp_404 = app.oneshot(req_404).await.unwrap();
     assert_eq!(resp_404.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn team_accounts_and_workspace_scoping_filter_designs() {
+    let app = build_router(AppState::new());
+
+    // 1. List seeded teams
+    let req_teams = Request::builder()
+        .method(Method::GET)
+        .uri("/api/v1/teams")
+        .body(Body::empty())
+        .unwrap();
+    let resp_teams = app.clone().oneshot(req_teams).await.unwrap();
+    assert_eq!(resp_teams.status(), StatusCode::OK);
+    let teams: Vec<TeamAccount> =
+        serde_json::from_slice(&to_bytes(resp_teams.into_body(), 1024 * 1024).await.unwrap())
+            .unwrap();
+    assert!(teams.len() >= 2);
+
+    // 2. Create a design scoped to team-comp via headers
+    let req_c1 = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/designs")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("x-bladelab-team", "team-comp")
+        .header("x-bladelab-user", "panna")
+        .body(Body::from(LINEAR_FIXTURE))
+        .unwrap();
+    let resp_c1 = app.clone().oneshot(req_c1).await.unwrap();
+    assert_eq!(resp_c1.status(), StatusCode::CREATED);
+    let rec1: DesignRecord =
+        serde_json::from_slice(&to_bytes(resp_c1.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(rec1.team_id, "team-comp");
+    assert_eq!(rec1.author, "panna");
+
+    // 3. Create a second design in team-default
+    let req_c2 = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/designs")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(SCHMITZ_FIXTURE))
+        .unwrap();
+    let resp_c2 = app.clone().oneshot(req_c2).await.unwrap();
+    assert_eq!(resp_c2.status(), StatusCode::CREATED);
+
+    // 4. Filter by team_id=team-comp returns only 1 design
+    let req_filter = Request::builder()
+        .method(Method::GET)
+        .uri("/api/v1/designs?team_id=team-comp")
+        .body(Body::empty())
+        .unwrap();
+    let resp_filter = app.oneshot(req_filter).await.unwrap();
+    let list_comp: Vec<DesignSummary> = serde_json::from_slice(
+        &to_bytes(resp_filter.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(list_comp.len(), 1);
+    assert_eq!(list_comp[0].team_id, "team-comp");
 }

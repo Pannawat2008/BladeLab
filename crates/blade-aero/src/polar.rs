@@ -75,53 +75,31 @@ impl PolarTable {
     }
 
     /// Synthesizes a low-Reynolds 4-digit NACA polar table with Viterna 360°
-    /// extrapolation from `(max_camber, camber_position, thickness_ratio)`.
+    /// extrapolation from `(max_camber, camber_position, thickness_ratio)` via
+    /// the `NeuralFoil`-style Glauert + viscous boundary-layer surrogate (`T-402`).
     pub fn from_naca4_params(
         max_camber: f64,
         camber_position: f64,
         thickness_ratio: f64,
         aspect_ratio: f64,
     ) -> Result<Self, AeroError> {
-        let m_pct = (max_camber * 100.0).round() as u32;
-        let p_tenth = (camber_position * 10.0).round() as u32;
-        let t_pct = (thickness_ratio * 100.0).round() as u32;
-        let code = format!("NACA{m_pct}{p_tenth}{t_pct:02}");
-
-        // Zero-lift angle shift from thin-airfoil camber (~ -100 * m deg)
-        let alpha_zero_deg = -105.0 * max_camber;
-        let cd0_base = 0.010 + 0.045 * thickness_ratio + 0.08 * max_camber * max_camber;
-
-        let mut sweeps = Vec::new();
-        for &re in &[30_000.0_f64, 100_000.0_f64, 200_000.0_f64] {
-            let re_factor = (100_000.0 / re).powf(0.22);
-            let mut points = Vec::new();
-            for alpha_i in (-12..=16).step_by(2) {
-                let alpha = alpha_i as f64;
-                let eff_deg = alpha - alpha_zero_deg;
-                let eff_rad = eff_deg.to_radians();
-                // Linear lift slope 2*pi with soft stall roll-off above 10 deg
-                let stall_atten = 1.0 / (1.0 + (alpha.abs() / 13.5).powi(4));
-                let cl = 2.0 * std::f64::consts::PI * eff_rad * stall_atten
-                    + 0.45 * eff_rad.sin() * (1.0 - stall_atten);
-                let cd = (cd0_base * re_factor + 0.012 * cl * cl + 0.055 * (alpha / 14.0).powi(4))
-                    .max(0.005);
-                points.push(PolarPoint {
-                    alpha_deg: alpha,
-                    cl,
-                    cd,
-                });
-            }
-            sweeps.push(PolarSweepSpec {
-                reynolds: re,
-                points,
-            });
-        }
-
-        Self::from_spec(PolarTableSpec {
-            name: code,
+        crate::neuralfoil::synthesize_naca4_polar(
+            max_camber,
+            camber_position,
+            thickness_ratio,
             aspect_ratio,
-            sweeps,
-        })
+        )
+    }
+
+    /// Synthesizes a low-Reynolds 360° polar table directly from an arbitrary 2D
+    /// airfoil coordinate contour (`(x, y)` points) via `NeuralFoil` feature
+    /// extraction (`T-402`).
+    pub fn from_contour(
+        name: &str,
+        points: &[(f64, f64)],
+        aspect_ratio: f64,
+    ) -> Result<Self, AeroError> {
+        crate::neuralfoil::synthesize_contour_polar(name, points, aspect_ratio)
     }
 
     #[must_use]
@@ -234,12 +212,20 @@ impl PolarSet {
             return Err(AeroError::UnknownAirfoil(name.clone()));
         }
 
-        let m_pct = (airfoil.max_camber * 100.0).round() as u32;
-        let p_tenth = (airfoil.camber_position * 10.0).round() as u32;
-        let t_pct = (airfoil.thickness_ratio * 100.0).round() as u32;
-        let naca_key = format!("NACA{m_pct}{p_tenth}{t_pct:02}");
-        if let Some(table) = self.get(&naca_key) {
-            return Ok(table.clone());
+        let m_f = airfoil.max_camber * 100.0;
+        let p_f = airfoil.camber_position * 10.0;
+        let t_f = airfoil.thickness_ratio * 100.0;
+        let m_pct = m_f.round() as u32;
+        let p_tenth = p_f.round() as u32;
+        let t_pct = t_f.round() as u32;
+        if (m_f - f64::from(m_pct)).abs() < 1e-3
+            && (p_f - f64::from(p_tenth)).abs() < 1e-3
+            && (t_f - f64::from(t_pct)).abs() < 1e-3
+        {
+            let naca_key = format!("NACA{m_pct}{p_tenth}{t_pct:02}");
+            if let Some(table) = self.get(&naca_key) {
+                return Ok(table.clone());
+            }
         }
 
         PolarTable::from_naca4_params(

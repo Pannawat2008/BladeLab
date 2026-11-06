@@ -18,6 +18,7 @@ import init, {
   export_fabricated_stl_bytes,
   export_stl_bytes,
   fabrication_report,
+  optimize_blade_wasm,
   simulate_aero,
 } from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
@@ -1572,6 +1573,45 @@ btnClearOverrides.addEventListener("click", () => {
 });
 
 // ---- Phase 3 Aero / A-B / Generator / Test Data Listeners ----
+const selectOptObjective = document.getElementById("opt-objective") as HTMLSelectElement;
+const btnAutoOptimize = document.getElementById("btn-auto-optimize") as HTMLButtonElement;
+const optStatusEl = document.getElementById("opt-status")!;
+
+btnAutoOptimize.addEventListener("click", () => {
+  try {
+    // Snapshot current design as Baseline A so the user sees the before/after Cp-TSR curve comparison
+    if (latestBundleB && !baselineBundleA) {
+      baselineBundleA = JSON.parse(JSON.stringify(latestBundleB)) as AeroSimulationBundle;
+      btnClearA.disabled = false;
+    }
+    const mode = selectOptObjective.value;
+    const cfg = {
+      objective:
+        mode === "broadband_tsr"
+          ? { mode: "broadband_tsr", spread_ratio: 0.2 }
+          : { mode: "design_tsr" },
+      locked_span_ratios: Array.from(lockedSpanRatios),
+      max_iterations: 20,
+    };
+    const raw = optimize_blade_wasm(JSON.stringify(workingDesign), JSON.stringify(cfg));
+    const parsed = JSON.parse(raw) as {
+      optimized_design: Design;
+      initial_cp: number;
+      optimized_cp: number;
+      delta_cp: number;
+      initial_power_w: number;
+      optimized_power_w: number;
+      iterations: number;
+      evaluations: number;
+    };
+    commitDesign(parsed.optimized_design);
+    const sign = parsed.delta_cp >= 0 ? "+" : "";
+    optStatusEl.textContent = `Optimized in ${parsed.evaluations} evals: Cp ${parsed.initial_cp.toFixed(3)} → ${parsed.optimized_cp.toFixed(3)} (${sign}${parsed.delta_cp.toFixed(3)}) · P ${parsed.optimized_power_w.toFixed(1)} W`;
+  } catch (err) {
+    optStatusEl.textContent = `Optimization error: ${String(err)}`;
+  }
+});
+
 btnSnapshotA.addEventListener("click", () => {
   if (latestBundleB) {
     baselineBundleA = JSON.parse(JSON.stringify(latestBundleB)) as AeroSimulationBundle;
@@ -1593,6 +1633,116 @@ btnClearA.addEventListener("click", () => {
 inputExpData.addEventListener("input", () => {
   updateAeroPanel(workingDesign);
 });
+
+// ---- Phase 4 Team & Cloud Workspace Listeners ----
+const selectCloudTeam = document.getElementById("cloud-team") as HTMLSelectElement;
+const inputCloudAuthor = document.getElementById("cloud-author") as HTMLInputElement;
+const inputCloudDesignName = document.getElementById("cloud-design-name") as HTMLInputElement;
+const btnCloudSave = document.getElementById("btn-cloud-save") as HTMLButtonElement;
+const btnCloudRefresh = document.getElementById("btn-cloud-refresh") as HTMLButtonElement;
+const cloudStatusEl = document.getElementById("cloud-status")!;
+const cloudDesignsListEl = document.getElementById("cloud-designs-list")!;
+
+interface CloudDesignSummary {
+  id: string;
+  name: string;
+  team_id: string;
+  author: string;
+  current_version: number;
+}
+
+async function refreshCloudDesigns() {
+  const team = selectCloudTeam.value || "team-default";
+  try {
+    const resp = await fetch(`/api/v1/designs?team_id=${encodeURIComponent(team)}`);
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const items = (await resp.json()) as CloudDesignSummary[];
+    cloudDesignsListEl.innerHTML = "";
+    if (items.length === 0) {
+      cloudStatusEl.textContent = `0 saved designs in ${team}`;
+      return;
+    }
+    cloudStatusEl.textContent = `${items.length} design(s) in ${team}`;
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "bind-row";
+      row.style.background = "#141922";
+      row.style.padding = "4px 6px";
+      row.style.borderRadius = "4px";
+      row.style.border = "1px solid #1e293b";
+
+      const info = document.createElement("span");
+      info.style.fontSize = "11px";
+      info.textContent = `${item.name} (v${item.current_version} · @${item.author})`;
+
+      const loadBtn = document.createElement("button");
+      loadBtn.type = "button";
+      loadBtn.className = "btn-mini";
+      loadBtn.textContent = "Load";
+      loadBtn.addEventListener("click", async () => {
+        try {
+          const r = await fetch(`/api/v1/designs/${encodeURIComponent(item.id)}`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const rec = (await r.json()) as { name: string; design: Design; current_version: number };
+          inputCloudDesignName.value = rec.name;
+          commitDesign(rec.design);
+          cloudStatusEl.textContent = `Loaded ${rec.name} (v${rec.current_version})`;
+        } catch (err) {
+          cloudStatusEl.textContent = `Load failed: ${String(err)}`;
+        }
+      });
+
+      row.append(info, loadBtn);
+      cloudDesignsListEl.appendChild(row);
+    }
+  } catch {
+    cloudStatusEl.textContent = "Cloud server offline (local WASM active)";
+  }
+}
+
+btnCloudSave.addEventListener("click", async () => {
+  const team = selectCloudTeam.value === "all" ? "team-default" : selectCloudTeam.value;
+  const author = inputCloudAuthor.value.trim() || "engineer";
+  const name =
+    inputCloudDesignName.value.trim() ||
+    `Rotor-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}`;
+  try {
+    const resp = await fetch("/api/v1/designs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-bladelab-team": team,
+        "x-bladelab-user": author,
+      },
+      body: JSON.stringify({
+        name,
+        design: workingDesign,
+        note: `Saved from Web Workbench by @${author}`,
+        team_id: team,
+        author,
+      }),
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const created = (await resp.json()) as CloudDesignSummary;
+    cloudStatusEl.textContent = `Saved ${created.name} (${created.id} v${created.current_version}) to ${created.team_id}`;
+    await refreshCloudDesigns();
+  } catch (err) {
+    cloudStatusEl.textContent = `Cloud save error: ${String(err)}`;
+  }
+});
+
+btnCloudRefresh.addEventListener("click", () => {
+  void refreshCloudDesigns();
+});
+
+selectCloudTeam.addEventListener("change", () => {
+  void refreshCloudDesigns();
+});
+void refreshCloudDesigns();
 
 // ---- Undo / Redo / Reset ----
 function performUndo() {

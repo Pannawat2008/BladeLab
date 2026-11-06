@@ -9,6 +9,8 @@
 pub mod bem;
 pub mod error;
 pub mod generator;
+pub mod neuralfoil;
+pub mod optimize;
 pub mod polar;
 pub mod viterna;
 
@@ -22,5 +24,11 @@ pub use generator::{
     eval_generator_at_rpm, match_generator, sweep_generator_load, GeneratorMatchResult,
     GeneratorSpec, GeneratorState,
 };
+pub use neuralfoil::{
+    extract_geometry_features, features_from_naca4, synthesize_contour_polar,
+    synthesize_naca4_polar, synthesize_polar_from_features, AirfoilGeometryFeatures,
+    SYNTHESIS_REYNOLDS_GRID,
+};
+pub use optimize::{optimize_blade, OptimizationObjective, OptimizationResult, OptimizerConfig};
 pub use polar::{PolarSet, PolarSweepSpec, PolarTable, PolarTableSpec, BUILTIN_POLAR_NAMES};
 pub use viterna::{viterna_cd_max, wrap_alpha_deg, PolarEval, PolarPoint, ViternaSweep};

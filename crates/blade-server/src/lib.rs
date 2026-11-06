@@ -30,7 +30,8 @@ use tower::{Layer, Service};
 pub mod store;
 
 pub use store::{
-    DesignRecord, DesignStore, DesignSummary, DesignVersionRecord, StoreError, POSTGRES_SCHEMA_SQL,
+    DesignRecord, DesignStore, DesignSummary, DesignVersionRecord, StoreError, TeamAccount,
+    DEFAULT_AUTHOR, DEFAULT_TEAM_ID, POSTGRES_SCHEMA_SQL,
 };
 
 /// Shared application state holding the `blake3` export cache and the
@@ -209,13 +210,17 @@ impl IntoResponse for ServerError {
     }
 }
 
-/// Builds the Axum [`Router`] with `/healthz`, `/api/v1/export`, `/api/v1/designs`
-/// CRUD + versioning endpoints (`T-204`), and full panic containment across
-/// every route.
+/// Builds the Axum [`Router`] with `/healthz`, `/api/v1/export`, `/api/v1/teams`,
+/// `/api/v1/designs` CRUD + versioning endpoints (`T-204`, `T-404`), and full
+/// panic containment across every route.
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/api/v1/export", post(handle_export))
+        .route(
+            "/api/v1/teams",
+            get(handle_list_teams).post(handle_upsert_team),
+        )
         .route(
             "/api/v1/designs",
             get(handle_list_designs).post(handle_create_design),
@@ -245,11 +250,33 @@ struct DesignUpsertEnvelope {
     name: Option<String>,
     design: Design,
     note: Option<String>,
+    team_id: Option<String>,
+    author: Option<String>,
 }
 
-fn parse_design_upsert(
-    body: &[u8],
-) -> Result<(Option<String>, Design, Option<String>), ServerError> {
+#[derive(Debug, Default, Deserialize)]
+struct ListDesignsQuery {
+    team_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TeamUpsertPayload {
+    id: String,
+    name: String,
+    #[serde(default)]
+    members: Vec<String>,
+}
+
+type ParsedUpsert = (
+    Option<String>,
+    Design,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+fn parse_design_upsert(body: &[u8]) -> Result<ParsedUpsert, ServerError> {
     let text = std::str::from_utf8(body)
         .map_err(|err| ServerError::BadRequest(format!("body must be UTF-8 JSON: {err}")))?;
     let value: serde_json::Value =
@@ -258,11 +285,11 @@ fn parse_design_upsert(
     if value.get("design").is_some() {
         let env: DesignUpsertEnvelope = serde_json::from_value(value)
             .map_err(|err| ServerError::BadRequest(err.to_string()))?;
-        Ok((env.name, env.design, env.note))
+        Ok((env.name, env.design, env.note, env.team_id, env.author))
     } else {
         let design =
             Design::from_json(text).map_err(|err| ServerError::BadRequest(err.to_string()))?;
-        Ok((None, design, None))
+        Ok((None, design, None, None, None))
     }
 }
 
@@ -277,21 +304,54 @@ fn map_store_error(err: StoreError) -> ServerError {
     }
 }
 
+fn header_string(headers: &HeaderMap, key: &str) -> Option<String> {
+    headers
+        .get(key)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+async fn handle_list_teams(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.store.list_teams())
+}
+
+async fn handle_upsert_team(
+    State(state): State<AppState>,
+    Json(payload): Json<TeamUpsertPayload>,
+) -> Result<Response, ServerError> {
+    let acct = state
+        .store
+        .upsert_team(payload.id, payload.name, payload.members)
+        .map_err(map_store_error)?;
+    Ok((StatusCode::CREATED, Json(acct)).into_response())
+}
+
 async fn handle_create_design(
     State(state): State<AppState>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, ServerError> {
-    let (name_opt, design, note) = parse_design_upsert(&body)?;
+    let (name_opt, design, note, body_team, body_author) = parse_design_upsert(&body)?;
     let name = name_opt.unwrap_or_else(|| "Untitled Design".to_string());
+    let team_id = body_team.or_else(|| header_string(&headers, "x-bladelab-team"));
+    let author = body_author.or_else(|| header_string(&headers, "x-bladelab-user"));
     let created = state
         .store
-        .create(name, design, note)
+        .create_scoped(name, design, note, team_id, author)
         .map_err(map_store_error)?;
     Ok((StatusCode::CREATED, Json(created)).into_response())
 }
 
-async fn handle_list_designs(State(state): State<AppState>) -> impl IntoResponse {
-    Json(state.store.list())
+async fn handle_list_designs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ListDesignsQuery>,
+) -> impl IntoResponse {
+    let team_filter = query
+        .team_id
+        .or_else(|| header_string(&headers, "x-bladelab-team"));
+    Json(state.store.list_for_team(team_filter.as_deref()))
 }
 
 async fn handle_get_design(
@@ -306,7 +366,7 @@ async fn handle_update_design(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Result<Json<DesignRecord>, ServerError> {
-    let (name_opt, design, note) = parse_design_upsert(&body)?;
+    let (name_opt, design, note, _team_opt, _author_opt) = parse_design_upsert(&body)?;
     state
         .store
         .update(&id, name_opt, design, note)
