@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 39**
-> **LAST_UPDATED: 2026-11-06 09:29 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 40**
+> **LAST_UPDATED: 2026-11-06 09:37 (UTC+7) by geom-1**
 
 ---
 
@@ -233,7 +233,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | T-301 | Precomputed polars + Viterna extrapolation | aero | geom-1 | done | 2026-11-06 09:29 | T-002 | Usable across full α ±180° range |
-| T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | | todo | | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
+| T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | geom-1 | in-progress | 2026-11-06 09:37 | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
 | T-303 | Generator matching (Kv, internal resistance, load curve) | aero | | todo | | T-302 | Accurately predicts voltage and output power |
 | T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | | todo | | T-302 | Successfully plots experimental data against simulation curves |
 
@@ -485,6 +485,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-022** | 2026-11-06 09:23 | geom-1 | T-301 | **Accepted**
   The lead's "next" instruction in-session on 2026-11-06 approves the **T-301** takeover (`aero` role: `crates/blade-aero/`, `data/polars/`, and root `Cargo.toml` workspace membership). Scope: (1) precomputed low-Reynolds polar datasets (`NACA 4412`, `NACA 0012`, `NACA 2415`, `NACA 6409`, `SG6043`, `SD7062`, `E387` across `Re ∈ [20k, 50k, 100k, 200k]`) embedded via `include_str!` so `blade-aero` stays I/O-free and `wasm32`-clean; (2) `PolarTable` and `PolarSet` with bilinear `(α, Re)` interpolation inside the attached/stall polar table and **Viterna–Corrigan (1982)** post-stall extrapolation across `α ∈ [-180°, +180°]` (with smooth flat-plate blend and aspect-ratio parameter `AR` giving `C_{d,\max} = 1.11 + 0.018·AR`); (3) unit and `proptest` verification proving continuity, boundedness, finite non-NaN evaluation, and physical post-stall sign/drag behavior across the full `±180°` angle-of-attack range.
   refs: plan.md §7 T-301, §8, D-lead1-006 | supersedes: –
+- **D-geom1-023** | 2026-11-06 09:37 | geom-1 | T-302 | **Accepted**
+  The lead's "lets do" instruction in-session on 2026-11-06 approves the **T-302** takeover (`aero` role: `crates/blade-aero/`). Scope: implement the §8 contract `pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Result<AeroResult, AeroError>` in `crates/blade-aero/src/bem.rs` using **Ning (2014)** inflow-angle parameterization solved by **Brent's method**, **Prandtl** tip and hub loss factors $F = F_{\text{tip}} \cdot F_{\text{hub}}$, and **Glauert / Buhl (2005)** high-induction empirical correction for $a > a_c = 0.4$, plus TSR sweep evaluation (`simulate_tsr_sweep`) and QBlade reference validation tests. No §8 signatures are modified.
+  refs: plan.md §7 T-302, §8, D-lead1-006 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -715,4 +718,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T09:20+07:00 agent=geom-1 mem=v37 note="T-205 done (closes Phase 2): web/src/state.ts + web/index.html + web/src/main.ts (interactive Bezier SVG curve editor, Formula editor, Shift/Alt value scrubbing, station locking, root-tip taper binding); 120 Rust tests + 6 Node tests + tsc + vite build clean; F-geom1-027, H-geom1-021 recorded"
 [RE-ACK] 2026-11-06T09:23:00+07:00 agent=geom-1 mem=v37 last_entry=H-geom1-021 task=T-301 note="lead: 'next' -> claiming T-301 (Precomputed polars + Viterna extrapolation across alpha -180..+180 deg) under D-geom1-022"
 [END] 2026-11-06T09:29+07:00 agent=geom-1 mem=v39 note="T-301 done: crates/blade-aero + data/polars/*.json (7 builtin low-Re airfoil polar tables, bilinear Re/alpha lookup, Viterna-Corrigan 360-deg extrapolation across -180..+180 deg); 125 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; F-geom1-028, H-geom1-022 recorded"
+[RE-ACK] 2026-11-06T09:37:00+07:00 agent=geom-1 mem=v39 last_entry=H-geom1-022 task=T-302 note="lead: 'lets do' -> claiming T-302 (BEM solver: Ning 2014 + Brent + Prandtl + Glauert) under D-geom1-023"
 ```
