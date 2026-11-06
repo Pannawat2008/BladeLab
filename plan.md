@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 65**
-> **LAST_UPDATED: 2026-11-06 17:47 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 66**
+> **LAST_UPDATED: 2026-11-06 18:21 (UTC+7) by geom-1**
 
 ---
 
@@ -811,4 +811,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T16:52+07:00 agent=geom-1 mem=v63 note="fixed 3D model preview leveling & cleanliness: coaxial straight SparTubeAxis + MIN_SEGMENT_STATIONS=14 in crates/blade-mesh/src/fabrication.rs, MeshData::tube_axis in blade-wasm, and 32-deg crease-angle normals + CAD feature edges + coaxial 3D rod + centered hub/pitch-axis in web/src/main.ts; F-geom1-038 recorded"
 [RE-ACK] 2026-11-06T17:41:30+07:00 agent=geom-1 mem=v63 last_entry=F-geom1-038 task=T-105 note="lead requested making the web UI appealing and responsive; applying frontend-design and ui-taste skills across web/index.html and web/src/main.ts"
 [END] 2026-11-06T17:47+07:00 agent=geom-1 mem=v65 note="upgraded web/index.html and web/src/main.ts for appealing CAD/telemetry styling and full responsiveness: glassmorphic docks, color-coded KPI cards, custom range sliders, desktop dock toggles (#btn-toggle-left, #btn-toggle-right, #btn-zen-3d + [ / ] shortcuts), quick-jump section nav pills with scroll-spy, collapsible section headers, and <=1180px / <=720px mobile/tablet workspace switcher (#mobile-workspace-nav); 9 Node tests + tsc + vite build clean; F-geom1-039 recorded"
+[RE-ACK] 2026-11-06T18:21:30+07:00 agent=geom-1 mem=v65 last_entry=F-geom1-039 task=T-105 note="lead requested: web check, fix any UI/layout/interaction problems found, and apply strict /ui-taste audit & anti-slop craft (reference/audit.md + reference/anti-slop-craft.md)"
 ```
