@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 40**
-> **LAST_UPDATED: 2026-11-06 09:37 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 41**
+> **LAST_UPDATED: 2026-11-06 09:45 (UTC+7) by geom-1**
 
 ---
 
@@ -233,7 +233,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
 |---|---|---|---|---|---|---|---|
 | T-301 | Precomputed polars + Viterna extrapolation | aero | geom-1 | done | 2026-11-06 09:29 | T-002 | Usable across full α ±180° range |
-| T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | geom-1 | in-progress | 2026-11-06 09:37 | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
+| T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | geom-1 | done | 2026-11-06 09:45 | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
 | T-303 | Generator matching (Kv, internal resistance, load curve) | aero | | todo | | T-302 | Accurately predicts voltage and output power |
 | T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | | todo | | T-302 | Successfully plots experimental data against simulation curves |
 
@@ -396,6 +396,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-028** | 2026-11-06 09:29 | geom-1 | T-301
   `crates/blade-aero` and `data/polars/{sg6043,sd7062,e387,naca4412,naca0012,naca2415,naca6409}.json` provide precomputed low-Reynolds polar sets (`Re ∈ [30k, 50k, 100k, 150k, 200k]`) and 360-degree **Viterna–Corrigan (1982)** extrapolation (`ViternaSweep`, `PolarTable`, `PolarSet`). `ViternaSweep::eval` matches $(C_l, C_d)$ with exact $C^0$ continuity at negative/positive stall boundaries ($\alpha_s^-, \alpha_s^+$), peaks at $C_d(\pm 90^\circ) = C_{d,\max} = 1.11 + 0.018 \cdot \min(AR, 50)$ with $C_l(\pm 90^\circ) = 0$, and smoothly models deep backflow ($|\alpha| \in (90^\circ, 180^\circ]$) with periodic continuity at $\alpha = \pm 180^\circ$.
   refs: crates/blade-aero/src/{viterna,polar,error,lib}.rs, data/polars/*.json | supersedes: –
+- **F-geom1-029** | 2026-11-06 09:45 | geom-1 | T-302
+  `blade_aero::simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Result<AeroResult, AeroError>` (`crates/blade-aero/src/bem.rs`) implements the §8 BEM contract using **Ning (2014)** 1D inflow-angle parameterization solved by **Brent's method** (`tol = 1e-9 rad`), **Prandtl** tip and hub loss factors $F = F_{\text{tip}} \cdot F_{\text{hub}}$, and **Glauert / Buhl (2005)** high-induction empirical correction for $a > a_c = 0.4$ ($\kappa > 2/3$). **QBlade reference tolerance:** on the 3-blade `R = 600 mm` NACA 4412 Schmitz rotor (`fixtures/naca4412-schmitz.json`) at design $V_\infty = 8.0\text{ m/s}$ and $\lambda = 4.5$ ($\Omega = 60\text{ rad/s} = 572.958\text{ RPM}$), `simulate` matches QBlade / Ning reference values (`Cp_ref = 0.448`, `Ct_ref = 0.785`) within **$|\Delta C_p| < 0.025$** and **$|\Delta C_t| < 0.040$**, preserves exact dimensional identity $C_p = C_q \cdot \lambda$ to $< 10^{-12}$, and stays strictly below the Betz limit $16/27 \approx 0.5926$ across the entire operating envelope (`proptest` over $V_\infty \in [2, 25]\text{ m/s}$, $\lambda \in [1, 11]$, $\theta_p \in [-12^\circ, 20^\circ]$).
+  refs: crates/blade-aero/src/bem.rs, crates/blade-aero/tests/bem_solver.rs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -664,6 +667,10 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
   **Progress:** T-301 is `done`. `crates/blade-aero` and `data/polars/*.json` implement `PolarSet`, `PolarTable`, and `ViternaSweep` with bilinear `(Re, α)` interpolation and Viterna–Corrigan 360° post-stall extrapolation across `α ∈ [-180°, +180°]`. Verified by 4 unit tests + 1 `proptest` suite in `crates/blade-aero/tests/polars_viterna.rs` (`C^0` continuity across stall and ±90° boundaries, `Cd > 0`, 360° periodicity, and `wasm32-unknown-unknown` compilation). Workspace total is **125 Rust tests + 6 Node tests**, all green.
   **Next:** **T-302** (`BEM solver (Ning 2014 + Brent) + Prandtl + Glauert`, now unblocked by `T-301`).
   **Cautions:** When $C_{d,s} > C_{d,\max}\sin^2\alpha_s$, the raw Viterna cosine coefficient $B_2 > 0$ can slightly overshoot $C_{d,\max}$ near $|\alpha| = 89^\circ$; `ViternaSweep::eval` clamps post-stall drag to `[MIN_POST_STALL_CD, cd_max]` so $C_d(\alpha) \le C_{d,\max}$ holds everywhere.
+- **H-geom1-023** | 2026-11-06 09:45 | geom-1 | T-302 | Recipient: lead, aero, web, qa
+  **Progress:** T-302 is `done`. `blade_aero::{simulate, simulate_tsr_sweep, OperatingPoint, AeroResult, StationAero, TsrSweepPoint}` implements the §8 BEM contract with Ning (2014) + Brent root-finding, Prandtl tip/hub loss, and Glauert/Buhl high-induction correction. Verified by 6 unit tests + 1 `proptest` suite in `crates/blade-aero/tests/bem_solver.rs` (including QBlade reference case tolerance logged in `F-geom1-029`). Workspace total is **132 Rust tests + 6 Node tests**, all green.
+  **Next:** **T-303** (`Generator matching: Kv, internal resistance, load curve`) and **T-304** (`UI: Cp–TSR charts, A/B comparison, test data logging`), both now unblocked by `T-302`!
+  **Cautions:** Boundary stations sitting on $r = r_{\text{hub}}$ or $r = R$ evaluate Prandtl induction with a 1.5% span inset ($r_{\text{eff}}$) and taper their elemental loads by $F(\phi)$ so trapezoidal integration across the blade span remains well-conditioned.
 
 ### 9.8 Session Log (Append-only, latest entries at bottom)
 
@@ -719,4 +726,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T09:23:00+07:00 agent=geom-1 mem=v37 last_entry=H-geom1-021 task=T-301 note="lead: 'next' -> claiming T-301 (Precomputed polars + Viterna extrapolation across alpha -180..+180 deg) under D-geom1-022"
 [END] 2026-11-06T09:29+07:00 agent=geom-1 mem=v39 note="T-301 done: crates/blade-aero + data/polars/*.json (7 builtin low-Re airfoil polar tables, bilinear Re/alpha lookup, Viterna-Corrigan 360-deg extrapolation across -180..+180 deg); 125 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; F-geom1-028, H-geom1-022 recorded"
 [RE-ACK] 2026-11-06T09:37:00+07:00 agent=geom-1 mem=v39 last_entry=H-geom1-022 task=T-302 note="lead: 'lets do' -> claiming T-302 (BEM solver: Ning 2014 + Brent + Prandtl + Glauert) under D-geom1-023"
+[END] 2026-11-06T09:45+07:00 agent=geom-1 mem=v41 note="T-302 done: crates/blade-aero/src/bem.rs (simulate + simulate_tsr_sweep with Ning 2014 + Brent + Prandtl + Glauert/Buhl); matches QBlade reference within |dCp|<0.025 and |dCt|<0.040 (F-geom1-029); 132 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; H-geom1-023 recorded"
 ```
