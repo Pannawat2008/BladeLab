@@ -1010,25 +1010,25 @@ export function renderCpTsrSvgMarkup(
 
   const betzY = toY(16.0 / 27.0).toFixed(1);
   const parts: string[] = [
-    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="#d85858" stroke-width="1" stroke-dasharray="4 3" />`,
+    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="#e5484d" stroke-width="1" stroke-dasharray="4 3" />`,
   ];
 
   if (options.designTsr !== undefined && Number.isFinite(options.designTsr)) {
     const dx = toX(options.designTsr).toFixed(1);
     parts.push(
-      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="#384152" stroke-width="1" stroke-dasharray="2 2" />`,
+      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="#262c3a" stroke-width="1" stroke-dasharray="2 2" />`,
     );
   }
 
   if (options.baselineASweep && options.baselineASweep.length > 0) {
     parts.push(
-      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="#a0aec0" stroke-width="1.75" stroke-dasharray="4 3" />`,
+      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="#7a8296" stroke-width="1.5" stroke-dasharray="4 3" />`,
     );
   }
 
   if (currentSweep.length > 0) {
     parts.push(
-      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="#7bd88f" stroke-width="2.2" />`,
+      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="#38bdf8" stroke-width="2" />`,
     );
   }
 
@@ -1036,7 +1036,7 @@ export function renderCpTsrSvgMarkup(
     const cx = toX(exp.tsr).toFixed(1);
     const cy = toY(exp.cp).toFixed(1);
     parts.push(
-      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="4" fill="#f5a623" stroke="#111318" stroke-width="1.2" />`,
+      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="3.5" fill="#f59e0b" stroke="#07080d" stroke-width="1.2" />`,
     );
   }
 
@@ -1144,9 +1144,9 @@ export function renderAirfoilSectionSvgMarkup(
   const pivotX = (padX + design.rotor.pitch_axis_ratio * scale).toFixed(1);
 
   const elements = [
-    `<line x1="${padX}" y1="${midY}" x2="${w - padX}" y2="${midY}" stroke="#283242" stroke-width="1" stroke-dasharray="3 3" />`,
-    `<polygon class="airfoil-contour" points="${contourPoly}" fill="rgba(59, 130, 246, 0.18)" stroke="#3b82f6" stroke-width="1.75" />`,
-    `<path class="airfoil-camber" d="${camberPts.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="2 2" />`,
+    `<line x1="${padX}" y1="${midY}" x2="${w - padX}" y2="${midY}" stroke="#262c3a" stroke-width="1" stroke-dasharray="3 3" />`,
+    `<polygon class="airfoil-contour" points="${contourPoly}" fill="rgba(56, 189, 248, 0.14)" stroke="#38bdf8" stroke-width="1.5" />`,
+    `<path class="airfoil-camber" d="${camberPts.join(" ")}" fill="none" stroke="#7a8296" stroke-width="1" stroke-dasharray="2 2" />`,
     `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" />`,
   ];
 
@@ -1166,7 +1166,7 @@ export function renderAirfoilSectionSvgMarkup(
     const holeCy = (midY - coreYc * scale * 1.35).toFixed(1);
     const holeR = Math.max(2.2, (effRadiusMm / rootChordMm) * scale * 1.35).toFixed(1);
     elements.push(
-      `<circle class="spar-hole-circle" cx="${holeCx}" cy="${holeCy}" r="${holeR}" fill="rgba(16, 185, 129, 0.25)" stroke="#10b981" stroke-width="1.6" />`,
+      `<circle class="spar-hole-circle" cx="${holeCx}" cy="${holeCy}" r="${holeR}" fill="rgba(76, 195, 138, 0.22)" stroke="#4cc38a" stroke-width="1.5" />`,
     );
   }
 
@@ -1233,8 +1233,8 @@ export function renderAirfoilSectionSvgMarkup(
   }
 
   elements.push(
-    `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="4.2" fill="#f59e0b" stroke="#0c0f14" stroke-width="1.4" />`,
-    `<text x="${padX}" y="14" fill="#94a3b8" font-size="10" font-family="ui-monospace, monospace">${label} · Pivot x/c=${design.rotor.pitch_axis_ratio.toFixed(2)}</text>`,
+    `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="3.8" fill="#f59e0b" stroke="#07080d" stroke-width="1.4" />`,
+    `<text x="${padX}" y="14" fill="#7a8296" font-size="10" font-family="ui-monospace, monospace">${label} · Pivot x/c=${design.rotor.pitch_axis_ratio.toFixed(2)}</text>`,
   );
 
   return elements.join("\n");

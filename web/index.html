@@ -7,39 +7,43 @@
     <style>
       :root {
         color-scheme: dark;
-        /* One Cool-Slate Grey Family (ui-taste Anti-Slop Law #3) */
-        --bg-canvas: #090d14;
-        --bg-panel: #111722;
-        --bg-panel-header: #0d121b;
-        --bg-well: #161e2c;
-        --bg-well-hover: #1e293b;
-        --bg-input: #0b0f17;
-        --border-subtle: #1e293b;
-        --border-strong: #334155;
-        --text-primary: #f1f5f9;
-        --text-secondary: #cbd5e1;
-        --text-muted: #94a3b8;
-        --fg: #f1f5f9;
+        /* Pass 2 (Color): Unslop Dark Ink Neutral Ramp (references/tokens.md) */
+        --bg-canvas: #0b0d14;
+        --bg-deep: #07080d;
+        --bg-panel: #0b0d14;
+        --bg-card: #11141c;
+        --bg-raised: #1a1e28;
+        --bg-raised-hover: #222734;
+        --border-hairline: rgba(238, 240, 245, 0.08);
+        --border-strong: rgba(238, 240, 245, 0.14);
+        --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
-        /* One Locked Primary Accent: Sky Cyan (ui-taste Anti-Slop Law #2) */
-        --accent: #0ea5e9;
-        --accent-bright: #38bdf8;
-        --accent-dim: rgba(14, 165, 233, 0.16);
+        /* Three Text Roles from Ink Ramp (Pass 2 & Pass 5) */
+        --text-primary: #eef0f5;
+        --text-secondary: #a3a9b8;
+        --text-muted: #7a8296;
+        --fg: #eef0f5;
 
-        /* Semantic Status Tokens Only (Success, Warning/Datum, Error) */
+        /* One Accent: Clear Sky Blue + Off-White Primary CTA (Pass 2) */
+        --accent: #38bdf8;
+        --accent-dim: rgba(56, 189, 248, 0.12);
+
+        /* Toned Semantic Colors (references/tokens.md) */
         --datum: #f59e0b;
-        --status-ok: #10b981;
-        --status-err: #ef4444;
+        --status-ok: #4cc38a;
+        --status-err: #e5484d;
 
-        /* Shape Lock: Strict 3-Step Corner-Radius Scale (ui-taste Anti-Slop Law #4)
-           12px = Floating Docks, 8px = Section Cards/Wells, 6px = Inputs/Buttons, 999px = Status Pills */
-        --radius-panel: 12px;
-        --radius-well: 8px;
-        --radius-control: 6px;
-        --radius-pill: 999px;
+        /* Pass 7 (Details): Nested Radius Scale (Outer 16 -> Card 12 -> Control 8 -> Keycap 4) */
+        --radius-panel: 16px;
+        --radius-card: 12px;
+        --radius-control: 8px;
+        --radius-tag: 4px;
+
+        /* Pass 9 (Motion): Single Easing Curve */
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
 
         --panel-left-w: 400px;
-        --panel-right-w: 382px;
+        --panel-right-w: 384px;
         --top-dock-h: 52px;
         --dock-gap: 12px;
       }
@@ -55,21 +59,22 @@
         overflow: hidden;
         background: var(--bg-canvas);
         color: var(--text-primary);
-        font: 12.5px/1.45 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font: 400 13px/20px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: 0;
         -webkit-font-smoothing: antialiased;
       }
 
-      /* Keyboard Focus Visibility (WCAG 2.2 AA) */
+      /* Keyboard Focus Visibility */
       button:focus-visible,
       input:focus-visible,
       select:focus-visible,
       textarea:focus-visible,
       [tabindex]:focus-visible {
-        outline: 2px solid var(--accent-bright);
-        outline-offset: 1px;
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
       }
 
-      /* Reduced Motion Support (ui-taste Motion Law) */
+      /* Pass 9: Reduced Motion Support */
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -81,7 +86,7 @@
         }
       }
 
-      /* Subtle sleek scrollbars */
+      /* Quiet Scrollbars */
       * {
         scrollbar-width: thin;
         scrollbar-color: var(--border-strong) transparent;
@@ -95,10 +100,10 @@
       }
       *::-webkit-scrollbar-thumb {
         background: var(--border-strong);
-        border-radius: var(--radius-pill);
+        border-radius: var(--radius-tag);
       }
       *::-webkit-scrollbar-thumb:hover {
-        background: var(--accent);
+        background: var(--text-muted);
       }
 
       #app {
@@ -107,7 +112,7 @@
         z-index: 1;
       }
 
-      /* Left Geometry & Airfoil Engineering Dock */
+      /* Pass 1 & 6: Floating Docks on 4px Grid (gap 12px, radius 16px, hairline border, no heavy shadow) */
       #panel {
         position: fixed;
         top: var(--dock-gap);
@@ -118,18 +123,15 @@
         display: flex;
         flex-direction: column;
         background: var(--bg-panel);
-        border: 1px solid var(--border-subtle);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-panel);
-        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
         overflow: hidden;
         z-index: 10;
         transition:
-          transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
-          opacity 0.18s ease,
-          width 0.2s ease;
+          transform 0.32s var(--ease),
+          opacity 0.2s var(--ease);
       }
 
-      /* Top-Right Viewport & CAD Export Bar */
       #top-dock {
         position: fixed;
         top: var(--dock-gap);
@@ -139,19 +141,17 @@
         flex-wrap: wrap;
         align-items: center;
         justify-content: space-between;
-        gap: 6px 10px;
+        gap: 8px 12px;
         padding: 8px 12px;
         background: var(--bg-panel);
-        border: 1px solid var(--border-subtle);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-panel);
-        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.48);
         z-index: 12;
         transition:
-          left 0.22s cubic-bezier(0.23, 1, 0.32, 1),
-          right 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+          transform 0.32s var(--ease),
+          opacity 0.2s var(--ease);
       }
 
-      /* Right Aerodynamics & Telemetry Dock (dynamically positioned below #top-dock) */
       #aero-dock {
         position: fixed;
         top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
@@ -162,19 +162,16 @@
         display: flex;
         flex-direction: column;
         background: var(--bg-panel);
-        border: 1px solid var(--border-subtle);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-panel);
-        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
         overflow: hidden;
         z-index: 10;
         transition:
-          transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
-          opacity 0.18s ease,
-          width 0.2s ease,
-          top 0.15s ease;
+          transform 0.32s var(--ease),
+          opacity 0.2s var(--ease);
       }
 
-      /* Desktop Dock Collapse States */
+      /* Desktop Dock Collapse States (transform/opacity only — Pass 9) */
       body.hide-left-dock #panel {
         transform: translateX(calc(-100% - 24px));
         opacity: 0;
@@ -189,15 +186,16 @@
         pointer-events: none;
       }
 
-      /* Panel Header & Brand Indicator */
+      /* Panel Header (48px height, 12px/16px padding on 4px grid) */
       .panel-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        padding: 10px 14px;
-        border-bottom: 1px solid var(--border-subtle);
-        background: var(--bg-panel-header);
+        min-height: 48px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border-hairline);
+        background: var(--bg-deep);
       }
       .brand-title {
         display: flex;
@@ -205,52 +203,74 @@
         gap: 8px;
         min-width: 0;
       }
+      /* Signature Detail: Golden Pitch-Axis Datum Dot */
       .brand-dot {
         width: 8px;
         height: 8px;
-        border-radius: var(--radius-pill);
-        background: var(--accent);
+        border-radius: 50%;
+        background: var(--datum);
         flex-shrink: 0;
       }
       .panel-header h1,
       .panel-header h2 {
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 500;
+        letter-spacing: 0;
         margin: 0;
-        letter-spacing: -0.01em;
         color: var(--text-primary);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
 
-      /* SVG Icon Alignment */
+      /* Pass 3 (Icons): Uniform 16px × 16px, stroke 1.5, muted/secondary text color */
       .ui-icon {
-        width: 13px;
-        height: 13px;
+        width: 16px;
+        height: 16px;
         stroke: currentColor;
-        stroke-width: 1.8;
+        stroke-width: 1.5;
         stroke-linecap: round;
         stroke-linejoin: round;
         fill: none;
         flex-shrink: 0;
+        color: var(--text-muted);
+      }
+      button:hover .ui-icon,
+      button.active .ui-icon {
+        color: currentColor;
       }
 
-      /* Quick Section Jump Bar inside #panel */
+      /* Pass 7 (Details): Keyboard Shortcut Keycaps */
+      kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 16px;
+        padding: 0 4px;
+        font: 400 11px/16px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--text-muted);
+        background: var(--bg-deep);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-tag);
+      }
+
+      /* Quick Section Jump Bar inside #panel (Pass 1: 32px rows, 4px gap) */
       .section-nav {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 4px;
-        padding: 6px 12px;
-        background: var(--bg-panel-header);
-        border-bottom: 1px solid var(--border-subtle);
+        padding: 8px 12px;
+        background: var(--bg-deep);
+        border-bottom: 1px solid var(--border-hairline);
       }
       .section-nav button {
-        padding: 4px 6px;
-        font-size: 11px;
-        font-weight: 600;
+        height: 28px;
+        padding: 0 8px;
+        font-size: 12px;
+        font-weight: 500;
         border-radius: var(--radius-control);
-        background: var(--bg-well);
+        background: transparent;
         border: 1px solid transparent;
         color: var(--text-muted);
         text-align: center;
@@ -258,104 +278,113 @@
       }
       .section-nav button:hover {
         color: var(--text-primary);
-        background: var(--bg-well-hover);
-        border-color: var(--border-strong);
+        background: var(--bg-card);
       }
       .section-nav button.active {
         color: var(--text-primary);
-        background: var(--accent-dim);
-        border-color: var(--accent);
+        background: var(--bg-raised);
+        border-color: var(--border-strong);
+        box-shadow: var(--top-highlight);
       }
 
       .toolbar {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: 5px;
+        gap: 4px;
       }
+      /* Pass 5 (Type): Sentence case, zero uppercase tracking */
       .toolbar-label {
-        font-size: 10.5px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 400;
+        letter-spacing: 0;
         color: var(--text-muted);
-        margin-right: 2px;
+        margin-right: 4px;
       }
       .toolbar-divider {
         width: 1px;
-        height: 18px;
-        background: var(--border-subtle);
-        margin: 0 2px;
+        height: 20px;
+        background: var(--border-hairline);
+        margin: 0 4px;
       }
 
-      /* Buttons (Press feedback 100ms scale(0.97) per ui-taste Motion Law) */
+      /* Pass 1, 2 & 9: Buttons (32px height, 8px radius, surface step + top highlight, off-white primary CTA) */
       button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 5px;
-        background: var(--bg-well);
+        gap: 8px;
+        height: 32px;
+        background: var(--bg-raised);
         color: var(--text-primary);
-        border: 1px solid var(--border-strong);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-control);
-        padding: 4px 9px;
-        font-size: 11.5px;
+        padding: 0 12px;
+        font-size: 12px;
+        line-height: 16px;
         font-weight: 500;
         font-family: inherit;
+        letter-spacing: 0;
         cursor: pointer;
         transition:
-          background 0.12s cubic-bezier(0.23, 1, 0.32, 1),
-          border-color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
-          color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
-          transform 0.1s cubic-bezier(0.23, 1, 0.32, 1);
+          background-color 0.14s var(--ease),
+          border-color 0.14s var(--ease),
+          color 0.14s var(--ease),
+          transform 0.12s var(--ease);
       }
       button:hover:not(:disabled) {
-        background: var(--bg-well-hover);
-        border-color: var(--accent-bright);
-        color: #ffffff;
+        background: var(--bg-raised-hover);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
       }
       button:active:not(:disabled) {
-        transform: scale(0.97);
+        transform: scale(0.98);
       }
       button.active {
-        background: var(--accent-dim);
-        border-color: var(--accent-bright);
-        color: #f0f9ff;
+        background: var(--bg-raised-hover);
+        border-color: var(--accent);
+        color: var(--text-primary);
+        box-shadow: var(--top-highlight);
       }
+      /* Pass 2: Off-white primary action with dark ink text */
       button.btn-primary {
-        background: var(--accent);
-        border-color: var(--accent-bright);
-        color: #ffffff;
-        font-weight: 600;
+        background: var(--text-primary);
+        border-color: var(--text-primary);
+        color: var(--bg-deep);
+        font-weight: 500;
       }
       button.btn-primary:hover:not(:disabled) {
-        background: var(--accent-bright);
-        color: #090d14;
+        background: #ffffff;
+        border-color: #ffffff;
+        color: var(--bg-deep);
       }
       button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
+      }
+      .btn-mini {
+        height: 28px;
+        padding: 0 8px;
+        font-size: 12px;
       }
 
       .panel-scroll {
         flex: 1;
         overflow-y: auto;
         overflow-x: hidden;
-        padding: 10px 12px 14px;
+        padding: 12px;
         scroll-behavior: smooth;
       }
 
-      /* Engineering Section Cards (8px --radius-well) */
+      /* Pass 1 & 7: Section Cards (16px dock - 4px = 12px card radius, 16px internal padding, 12px gap) */
       section {
-        margin-bottom: 10px;
-        padding: 10px 11px;
-        background: var(--bg-well);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-well);
-        transition: border-color 0.15s ease;
-      }
-      section:hover {
-        border-color: var(--border-strong);
+        margin-bottom: 12px;
+        padding: 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-card);
+        transition: border-color 0.16s var(--ease);
       }
       section:last-child {
         margin-bottom: 0;
@@ -366,44 +395,46 @@
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        font-size: 11.5px;
-        font-weight: 600;
+        font-size: 13px;
+        line-height: 20px;
+        font-weight: 500;
         color: var(--text-primary);
-        margin-bottom: 9px;
+        margin-bottom: 12px;
       }
       .section-toggle-btn {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        height: 28px;
         background: transparent;
         border: none;
-        padding: 2px 4px;
-        margin: -2px -4px;
-        font-size: 11.5px;
-        font-weight: 600;
+        padding: 0 4px;
+        margin: 0 -4px;
+        font-size: 13px;
+        font-weight: 500;
         color: var(--text-primary);
         border-radius: var(--radius-control);
         cursor: pointer;
         text-align: left;
       }
       .section-toggle-btn:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.04);
-        color: var(--accent-bright);
+        background: transparent;
+        color: var(--accent);
         border-color: transparent;
       }
       .section-chevron {
-        width: 12px;
-        height: 12px;
-        stroke: var(--accent-bright);
-        stroke-width: 2;
+        width: 16px;
+        height: 16px;
+        stroke: var(--text-muted);
+        stroke-width: 1.5;
         fill: none;
-        transition: transform 0.18s cubic-bezier(0.23, 1, 0.32, 1);
+        transition: transform 0.16s var(--ease);
       }
       section.collapsed .section-chevron {
         transform: rotate(-90deg);
       }
       section.collapsed {
-        padding-bottom: 8px;
+        padding-bottom: 12px;
       }
       section.collapsed .section-title {
         margin-bottom: 0;
@@ -412,15 +443,10 @@
         display: none !important;
       }
 
+      /* Pass 7 (Details): Quiet Mono Meta (no glowing pill border/fill) */
       .section-meta {
-        font-size: 10.5px;
-        font-weight: 600;
-        color: var(--accent-bright);
-        background: var(--accent-dim);
-        border: 1px solid rgba(56, 189, 248, 0.28);
-        padding: 1px 8px;
-        border-radius: var(--radius-pill);
-        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font: 400 12px/16px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--text-muted);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
       }
@@ -428,54 +454,61 @@
       .grid-2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px 10px;
+        gap: 8px 12px;
       }
 
-      /* Telemetry KPI Cards (Locked single accent + clean neutral border) */
+      /* Pass 5 & 7: Stat Cards (Sentence-case labels, weight 500 tabular figures, quiet hairline) */
       .kpi-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 6px;
-        margin-bottom: 10px;
+        gap: 8px;
+        margin-bottom: 12px;
       }
       .kpi-card {
-        background: var(--bg-input);
-        border: 1px solid var(--border-subtle);
-        border-top: 2px solid var(--accent);
-        border-radius: var(--radius-well);
-        padding: 7px 8px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        padding: 8px 12px;
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 4px;
+      }
+      .kpi-card:first-child {
+        border-color: rgba(56, 189, 248, 0.32);
       }
       .kpi-label {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 400;
+        letter-spacing: 0;
         color: var(--text-muted);
       }
       .kpi-val {
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 16px;
+        line-height: 20px;
+        font-weight: 500;
         color: var(--text-primary);
         font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-variant-numeric: tabular-nums;
       }
+      .kpi-card:first-child .kpi-val {
+        color: var(--accent);
+      }
 
-      /* Form Fields & Scrubbable Labels */
+      /* Form Fields & Scrubbable Labels (Pass 1: 4px gap, 32px input height, 8px radius) */
       .field {
         display: flex;
         flex-direction: column;
-        gap: 3px;
+        gap: 4px;
         min-width: 0;
       }
       .field label {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        font-size: 11px;
-        font-weight: 500;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 400;
         color: var(--text-secondary);
         white-space: nowrap;
         overflow: hidden;
@@ -486,11 +519,11 @@
         user-select: none;
         touch-action: none;
         border-bottom: 1px dashed var(--border-strong);
-        transition: color 0.12s ease, border-color 0.12s ease;
+        transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
       }
       .scrub-label:hover {
-        color: var(--accent-bright);
-        border-bottom-color: var(--accent-bright);
+        color: var(--text-primary);
+        border-bottom-color: var(--datum);
       }
 
       .field input[type="number"],
@@ -498,15 +531,17 @@
       .field select,
       .compact-select,
       #opt-objective {
-        background: var(--bg-input);
+        height: 32px;
+        background: var(--bg-raised);
         color: var(--text-primary);
-        border: 1px solid var(--border-strong);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-control);
-        padding: 5px 8px;
+        padding: 0 8px;
         font-size: 12px;
+        line-height: 16px;
         font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, sans-serif;
         font-variant-numeric: tabular-nums;
-        transition: border-color 0.12s ease;
+        transition: border-color 0.14s var(--ease);
       }
       .field select,
       .compact-select,
@@ -523,54 +558,57 @@
       .field select:focus,
       .compact-select:focus,
       #opt-objective:focus {
-        border-color: var(--accent-bright);
+        border-color: var(--accent);
       }
 
+      /* Pass 7: Flattened Control Rows (no nested boxes inside cards — clean hairline dividers) */
       .bind-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: 6px 8px;
-        margin: 6px 0 8px;
-        padding: 6px 9px;
-        background: var(--bg-panel-header);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-well);
-        font-size: 11.5px;
+        gap: 8px;
+        margin: 8px 0;
+        padding: 8px 0;
+        border-top: 1px solid var(--border-hairline);
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--text-secondary);
       }
       .bind-row label {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         cursor: pointer;
         color: var(--text-secondary);
       }
       .bind-row input[type="checkbox"] {
         accent-color: var(--accent);
-        width: 14px;
-        height: 14px;
+        width: 16px;
+        height: 16px;
+        margin: 0;
         cursor: pointer;
       }
       .bind-row input[type="number"] {
-        width: 68px;
-        background: var(--bg-input);
+        width: 72px;
+        height: 28px;
+        background: var(--bg-raised);
         color: var(--text-primary);
-        border: 1px solid var(--border-strong);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-control);
-        padding: 3px 6px;
-        font-size: 11.5px;
+        padding: 0 8px;
+        font-size: 12px;
         font-family: "JetBrains Mono", ui-monospace, monospace;
       }
 
-      /* Interactive Vector Plots */
+      /* Pass 1 & 7: Interactive Vector Plots (heights on 4px grid: 160px and 96px) */
       #bezier-svg,
       #cp-tsr-svg {
         width: 100%;
-        height: 152px;
-        background: var(--bg-input);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-well);
+        height: 160px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
         display: block;
         margin-bottom: 8px;
         touch-action: none;
@@ -578,9 +616,9 @@
       #airfoil-preview-svg {
         width: 100%;
         height: 96px;
-        background: var(--bg-input);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-well);
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
         display: block;
         margin-top: 8px;
       }
@@ -588,61 +626,65 @@
       .aero-legend {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        font-size: 10.5px;
-        font-weight: 500;
+        gap: 12px;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 400;
         color: var(--text-muted);
-        margin-bottom: 6px;
+        margin-bottom: 8px;
       }
       .aero-legend span {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
+        gap: 8px;
       }
       .swatch {
         width: 8px;
         height: 8px;
-        border-radius: var(--radius-pill);
+        border-radius: 50%;
         display: inline-block;
       }
+
+      /* Sub-groups inside a card use top hairline separation instead of nested box borders */
       .aero-subbox {
-        margin-top: 8px;
-        padding: 8px 10px;
-        background: var(--bg-panel-header);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-well);
-        font-size: 11px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border-hairline);
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--text-secondary);
         font-variant-numeric: tabular-nums;
       }
 
       .field textarea {
         width: 100%;
-        background: var(--bg-input);
+        background: var(--bg-raised);
         color: var(--text-primary);
-        border: 1px solid var(--border-strong);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-control);
-        padding: 6px 8px;
-        font: 11px/1.4 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        padding: 8px;
+        font: 400 12px/16px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         resize: vertical;
       }
       .field textarea:focus {
-        border-color: var(--accent-bright);
+        border-color: var(--accent);
       }
 
       .lock-btn {
-        padding: 2px 6px;
-        font-size: 10.5px;
+        height: 24px;
+        padding: 0 8px;
+        font-size: 12px;
         background: transparent;
         border-color: transparent;
         color: var(--text-muted);
       }
       .lock-btn.locked {
-        background: rgba(245, 158, 11, 0.16);
+        background: rgba(245, 158, 11, 0.14);
         border-color: var(--datum);
         color: var(--datum);
       }
 
-      /* Custom Range Sliders */
+      /* Custom Range Sliders (4px track height, 16px thumb on 4px grid) */
       .row {
         margin: 8px 0;
       }
@@ -651,80 +693,83 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 4px;
-        font-size: 11.5px;
+        font-size: 12px;
+        line-height: 16px;
         color: var(--text-secondary);
       }
       .row label span {
         font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-size: 11px;
-        color: var(--accent-bright);
-        font-weight: 600;
+        font-size: 12px;
+        color: var(--text-primary);
+        font-weight: 500;
       }
       .row input[type="range"] {
         -webkit-appearance: none;
         appearance: none;
         width: 100%;
-        height: 6px;
-        background: var(--bg-input);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius-pill);
+        height: 4px;
+        background: var(--bg-raised);
+        border-radius: var(--radius-tag);
         cursor: pointer;
       }
       .row input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
-        width: 14px;
-        height: 14px;
-        border-radius: var(--radius-pill);
-        background: var(--accent-bright);
-        border: 2px solid var(--bg-canvas);
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        border: 2px solid var(--bg-deep);
         cursor: grab;
-        transition: transform 0.1s ease, background 0.12s ease;
+        transition: transform 0.12s var(--ease), background-color 0.12s var(--ease);
       }
       .row input[type="range"]::-webkit-slider-thumb:hover {
-        transform: scale(1.12);
+        transform: scale(1.1);
+        background: var(--accent);
       }
       .row input[type="range"]::-moz-range-thumb {
-        width: 14px;
-        height: 14px;
-        border-radius: var(--radius-pill);
-        background: var(--accent-bright);
-        border: 2px solid var(--bg-canvas);
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        border: 2px solid var(--bg-deep);
         cursor: grab;
       }
 
-      /* Segmented Control Mode Tabs */
+      /* Segmented Control Mode Tabs (4px padding, 8px inner radius) */
       .mode-tabs {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
         gap: 4px;
-        padding: 3px;
-        background: var(--bg-input);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-well);
+        padding: 4px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
         margin-bottom: 8px;
       }
       .mode-tabs button {
+        height: 28px;
         border: 1px solid transparent;
         background: transparent;
         color: var(--text-muted);
-        padding: 4px 6px;
-        font-size: 11px;
-        font-weight: 600;
-        border-radius: var(--radius-control);
+        padding: 0 8px;
+        font-size: 12px;
+        font-weight: 500;
+        border-radius: var(--radius-tag);
       }
       .mode-tabs button:hover:not(:disabled) {
         color: var(--text-primary);
-        background: var(--bg-well);
+        background: var(--bg-card);
         border-color: transparent;
       }
       .mode-tabs button.active {
-        background: var(--bg-well-hover);
-        color: var(--accent-bright);
-        border-color: var(--accent);
+        background: var(--bg-raised);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+        box-shadow: var(--top-highlight);
       }
 
-      /* Station Table (List rows highlight background only, never scale per ui-taste Motion Law) */
+      /* Pass 1 & 5: Station Table (Right-aligned numeric columns, uniform 32px rows) */
       .table-wrap {
         width: 100%;
         overflow-x: auto;
@@ -732,80 +777,78 @@
       table.station-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 11px;
-        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
       }
       table.station-table th {
-        text-align: left;
-        font-family: "Inter", system-ui, sans-serif;
-        font-weight: 600;
-        font-size: 10.5px;
+        text-align: right;
+        font: 400 12px/16px "Inter", system-ui, sans-serif;
         color: var(--text-muted);
-        padding: 5px 4px;
-        border-bottom: 1px solid var(--border-subtle);
+        padding: 8px 4px;
+        border-bottom: 1px solid var(--border-hairline);
+      }
+      table.station-table th:first-child,
+      table.station-table td:first-child {
+        text-align: left;
       }
       table.station-table td {
-        padding: 3.5px 4px;
-        border-bottom: 1px solid var(--border-subtle);
+        text-align: right;
+        height: 32px;
+        padding: 4px;
+        border-bottom: 1px solid var(--border-hairline);
+        color: var(--text-secondary);
       }
       table.station-table tr:hover td {
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(255, 255, 255, 0.02);
       }
       table.station-table tr.overridden {
         background: var(--accent-dim);
       }
       table.station-table input[type="number"] {
-        width: 62px;
-        background: var(--bg-input);
+        width: 64px;
+        height: 24px;
+        text-align: right;
+        background: var(--bg-raised);
         color: var(--text-primary);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius-control);
-        padding: 2px 5px;
-        font-size: 11px;
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-tag);
+        padding: 0 4px;
+        font-size: 12px;
         font-family: inherit;
         font-variant-numeric: tabular-nums;
       }
       table.station-table tr.overridden input[type="number"] {
-        border-color: var(--accent-bright);
-        color: var(--accent-bright);
-        font-weight: 600;
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 500;
       }
 
-      .btn-mini {
-        padding: 3px 7px;
-        font-size: 11px;
-      }
-
+      /* Pass 7: Quiet Mono Status Readouts */
       #export-status {
-        font-size: 11px;
-        font-weight: 600;
+        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
         color: var(--status-ok);
-        background: rgba(16, 185, 129, 0.12);
-        border: 1px solid rgba(16, 185, 129, 0.32);
-        padding: 2px 8px;
-        border-radius: var(--radius-pill);
-        font-family: "JetBrains Mono", ui-monospace, monospace;
+        padding: 0 4px;
         font-variant-numeric: tabular-nums;
       }
 
       #error-banner {
         display: none;
         margin: 0 12px 8px;
-        padding: 7px 10px;
-        border-radius: var(--radius-well);
-        background: rgba(239, 68, 68, 0.16);
+        padding: 8px 12px;
+        border-radius: var(--radius-control);
+        background: rgba(229, 72, 77, 0.14);
         border: 1px solid var(--status-err);
-        color: #fecaca;
-        font-size: 11.5px;
+        color: var(--text-primary);
+        font-size: 12px;
+        line-height: 16px;
       }
 
       #stats {
-        padding: 8px 14px;
-        border-top: 1px solid var(--border-subtle);
-        background: var(--bg-panel-header);
-        font-size: 11px;
-        font-family: "JetBrains Mono", ui-monospace, monospace;
+        min-height: 36px;
+        padding: 8px 16px;
+        border-top: 1px solid var(--border-hairline);
+        background: var(--bg-deep);
+        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
         display: flex;
         justify-content: space-between;
@@ -814,29 +857,29 @@
       }
       #stats .ok {
         color: var(--status-ok);
-        font-weight: 600;
+        font-weight: 500;
       }
       #stats .slow {
         color: var(--datum);
-        font-weight: 600;
+        font-weight: 500;
       }
 
       .fit-badge {
-        margin-top: 6px;
-        padding: 6px 9px;
-        font: 11px/1.4 "JetBrains Mono", ui-monospace, monospace;
-        color: var(--text-secondary);
-        background: var(--bg-input);
-        border: 1px solid var(--border-subtle);
+        margin-top: 8px;
+        padding: 8px;
+        font: 400 12px/16px "JetBrains Mono", ui-monospace, monospace;
+        color: var(--text-muted);
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
         border-radius: var(--radius-control);
       }
       .fit-badge.warn {
-        color: #fcd34d;
-        background: rgba(245, 158, 11, 0.12);
-        border-color: var(--datum);
+        color: var(--datum);
+        background: rgba(245, 158, 11, 0.1);
+        border-color: rgba(245, 158, 11, 0.35);
       }
 
-      /* Mobile & Tablet Bottom Workspace Switcher */
+      /* Mobile & Tablet Bottom Workspace Switcher (nested radius: 12px outer, 8px buttons) */
       #mobile-workspace-nav {
         display: none;
         position: fixed;
@@ -844,27 +887,28 @@
         bottom: 12px;
         transform: translateX(-50%);
         z-index: 30;
-        background: var(--bg-panel-header);
+        background: var(--bg-deep);
         border: 1px solid var(--border-strong);
-        border-radius: var(--radius-pill);
+        border-radius: var(--radius-card);
         padding: 4px;
         gap: 4px;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.72);
       }
       #mobile-workspace-nav button {
-        border-radius: var(--radius-pill);
-        padding: 6px 14px;
-        font-size: 11.5px;
-        font-weight: 600;
+        height: 32px;
+        border-radius: var(--radius-control);
+        padding: 0 12px;
+        font-size: 12px;
+        font-weight: 500;
         border: 1px solid transparent;
         background: transparent;
         color: var(--text-muted);
         white-space: nowrap;
       }
       #mobile-workspace-nav button.active {
-        background: var(--accent);
-        color: #ffffff;
-        border-color: var(--accent-bright);
+        background: var(--bg-raised);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+        box-shadow: var(--top-highlight);
       }
 
       /* Responsive Breakpoint 1: Compact Laptop (1180px - 1440px) */
@@ -872,7 +916,7 @@
         :root {
           --panel-left-w: 364px;
           --panel-right-w: 348px;
-          --dock-gap: 10px;
+          --dock-gap: 8px;
         }
       }
 
@@ -885,8 +929,8 @@
         #panel,
         #aero-dock {
           top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
-          bottom: 62px;
-          width: min(420px, calc(100vw - 20px));
+          bottom: 60px;
+          width: min(420px, calc(100vw - 16px));
         }
         #mobile-workspace-nav {
           display: inline-flex;
@@ -895,7 +939,6 @@
           display: none;
         }
 
-        /* On <= 1180px, switch cleanly between Geometry, 3D Canvas, and Telemetry */
         body[data-mobile-pane="canvas"] #panel,
         body[data-mobile-pane="canvas"] #aero-dock {
           transform: translateY(12px);
@@ -920,8 +963,8 @@
           --dock-gap: 8px;
         }
         #top-dock {
-          padding: 6px 8px;
-          gap: 6px;
+          padding: 8px;
+          gap: 8px;
           overflow-x: auto;
           flex-wrap: nowrap;
         }
@@ -935,14 +978,14 @@
           right: 8px;
           width: auto;
           max-width: none;
-          bottom: 58px;
+          bottom: 56px;
         }
         .kpi-grid {
           grid-template-columns: repeat(2, 1fr);
         }
         .grid-2 {
           grid-template-columns: 1fr 1fr;
-          gap: 6px 8px;
+          gap: 8px;
         }
       }
     </style>
@@ -954,22 +997,24 @@
     <header id="top-dock" role="banner" aria-label="Viewport and CAD Export Toolbar">
       <div class="toolbar">
         <div class="toolbar" id="dock-toggles-desktop">
-          <button id="btn-toggle-left" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Left CAD &amp; Geometry Dock ([)">
+          <button id="btn-toggle-left" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Left CAD &amp; Geometry Dock">
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
-            CAD Dock
+            <span>CAD</span>
+            <kbd>[</kbd>
           </button>
-          <button id="btn-toggle-right" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Right BEM Telemetry Dock (])">
+          <button id="btn-toggle-right" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Right BEM Telemetry Dock">
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
-            Aero Dock
+            <span>Aero</span>
+            <kbd>]</kbd>
           </button>
           <button id="btn-zen-3d" class="btn-mini" type="button" aria-pressed="false" title="Maximize 3D Viewport">
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
-            Full 3D
+            <span>Full 3D</span>
           </button>
           <span class="toolbar-divider"></span>
         </div>
 
-        <span class="toolbar-label">3D View:</span>
+        <span class="toolbar-label">View</span>
         <button id="btn-view-single" type="button">Single Blade</button>
         <button id="btn-view-rotor" class="active" type="button">Full Rotor (B×)</button>
         <button id="btn-view-wireframe" type="button">Wireframe</button>
@@ -981,15 +1026,15 @@
       </div>
 
       <div class="toolbar" id="export-bar">
-        <span class="toolbar-label">Export:</span>
+        <span class="toolbar-label">Export</span>
         <select id="export-part" class="compact-select" aria-label="Select part to export" title="Select part to export">
           <option value="blade">Blade Only</option>
           <option value="assembly">Full Assembly (Blade + Hub)</option>
           <option value="hub">Hub Only</option>
         </select>
         <button id="btn-export-stl" class="btn-primary" type="button" title="Download watertight binary STL">Export STL</button>
-        <button id="btn-export-3mf" class="btn-primary" type="button" title="Download 3MF package (mm units)">Export 3MF</button>
-        <button id="btn-export-step" class="btn-primary" type="button" title="Download ISO-10303-21 B-rep STEP solid">Export STEP</button>
+        <button id="btn-export-3mf" type="button" title="Download 3MF package (mm units)">Export 3MF</button>
+        <button id="btn-export-step" type="button" title="Download ISO-10303-21 B-rep STEP solid">Export STEP</button>
         <button id="btn-export-json" type="button" title="Download Design JSON">Export JSON</button>
         <span id="export-status" role="status" aria-live="polite">Ready</span>
       </div>
@@ -1000,7 +1045,7 @@
       <div class="panel-header">
         <div class="brand-title">
           <span class="brand-dot" aria-hidden="true"></span>
-          <h1>BladeLab · CAD &amp; Fabrication</h1>
+          <h1>BladeLab · Rotor CAD &amp; Fabrication</h1>
         </div>
         <div class="toolbar">
           <button id="btn-undo" class="btn-mini" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
@@ -1009,7 +1054,7 @@
         </div>
       </div>
 
-      <!-- Quick Section Jump Pills -->
+      <!-- Quick Section Jump Tabs -->
       <nav class="section-nav" id="panel-section-nav" aria-label="CAD Section Navigation">
         <button type="button" class="active" data-scroll-target="layer1-rotor">Rotor</button>
         <button type="button" data-scroll-target="layer1-distributions">Airfoil</button>
@@ -1018,12 +1063,12 @@
       </nav>
 
       <div class="panel-scroll" id="panel-scroll-container">
-        <!-- Layer 1: Global Rotor Parameters -->
+        <!-- Global Rotor Parameters -->
         <section id="layer1-rotor">
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
-              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
-              <span>Layer 1 · Rotor Parameters</span>
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span>Rotor Geometry</span>
             </button>
             <span id="rotor-summary" class="section-meta">R=600 mm · L=540 mm · B=3</span>
           </div>
@@ -1061,7 +1106,7 @@
               <input id="rotor-pitch-axis" type="number" min="0" max="1" step="0.05" value="0.25" />
             </div>
           </div>
-          <div class="row" style="margin-top: 8px">
+          <div class="row" style="margin-top: 12px">
             <label for="rotor-length-slider">Blade Length L <span id="blade-length-val">540 mm</span></label>
             <input id="rotor-length-slider" type="range" min="100" max="1800" step="10" value="540" />
           </div>
@@ -1079,12 +1124,12 @@
           </div>
         </section>
 
-        <!-- Layer 1 / 2: Spanwise Distribution Mode & Airfoil Profile -->
+        <!-- Spanwise Distribution Mode & Airfoil Profile -->
         <section id="layer1-distributions">
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
-              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
-              <span>Layer 1/2 · Chord, Twist &amp; Airfoil</span>
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span>Chord, Twist &amp; Airfoil</span>
             </button>
           </div>
           <div class="mode-tabs" role="tablist" aria-label="Spanwise Distribution Mode">
@@ -1103,7 +1148,7 @@
           </div>
 
           <div class="bind-row">
-            <span>All Chords Width:</span>
+            <span>All Chords Width</span>
             <div class="toolbar">
               <button id="btn-chord-minus" class="btn-mini" type="button" title="Subtract 5 mm from all chords">−5 mm</button>
               <button id="btn-chord-plus" class="btn-mini" type="button" title="Add 5 mm to all chords">+5 mm</button>
@@ -1124,11 +1169,11 @@
               </div>
             </div>
             <div class="row">
-              <label for="twist">Tip twist <span id="twist-val">3°</span></label>
+              <label for="twist">Tip Twist <span id="twist-val">3°</span></label>
               <input id="twist" type="range" min="0" max="25" step="0.5" value="3" />
             </div>
             <div class="row">
-              <label for="chord">Tip chord <span id="chord-val">35 mm</span></label>
+              <label for="chord">Tip Chord <span id="chord-val">35 mm</span></label>
               <input id="chord" type="range" min="10" max="120" step="1" value="35" />
             </div>
           </div>
@@ -1175,8 +1220,8 @@
             </div>
           </div>
 
-          <div class="aero-subbox" style="margin-top: 10px">
-            <div class="field" style="margin-bottom: 6px">
+          <div class="aero-subbox">
+            <div class="field" style="margin-bottom: 8px">
               <label for="airfoil-family">Airfoil Profile Family</label>
               <select id="airfoil-family">
                 <option value="naca4">NACA 4-Digit (Parametric)</option>
@@ -1203,17 +1248,17 @@
         <section id="layer-fabrication">
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
-              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
-              <span>Fabrication · Carbon Tube &amp; Split Model</span>
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span>Carbon Tube &amp; Split Joints</span>
             </button>
             <span id="fab-summary" class="section-meta">Solid · 1 Part</span>
           </div>
 
-          <div class="aero-subbox">
-            <div class="bind-row" style="margin-top: 0">
-              <label for="spar-hole-enabled" style="font-weight: 600; color: var(--fg)">
+          <div>
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <label for="spar-hole-enabled" style="font-weight: 500; color: var(--fg)">
                 <input id="spar-hole-enabled" type="checkbox" />
-                Add Base Hole (Carbon Fiber Tube)
+                Base Hole (Carbon Tube)
               </label>
               <label for="spar-show-rod" title="Show 3D carbon-fiber tube preview rod">
                 <input id="spar-show-rod" type="checkbox" checked />
@@ -1222,7 +1267,7 @@
             </div>
 
             <div class="bind-row">
-              <span>CF Tube Presets:</span>
+              <span>CF Tube Presets</span>
               <div class="toolbar">
                 <button id="btn-cf-4" class="btn-mini" type="button" title="4.0 mm carbon tube hole">Ø4 mm</button>
                 <button id="btn-cf-5" class="btn-mini" type="button" title="5.0 mm carbon tube hole">Ø5 mm</button>
@@ -1255,14 +1300,14 @@
               </div>
             </div>
 
-            <div class="row" style="margin-top: 6px">
+            <div class="row" style="margin-top: 8px">
               <label for="spar-hole-depth-slider">Hole Depth <span id="spar-hole-depth-val">240 mm</span></label>
               <input id="spar-hole-depth-slider" type="range" min="15" max="1200" step="5" value="240" />
             </div>
             <div id="spar-hole-status" class="fit-badge">Base hole off — enable to bore root for carbon tube</div>
           </div>
 
-          <div class="aero-subbox" style="margin-top: 8px">
+          <div class="aero-subbox">
             <div class="grid-2">
               <div class="field">
                 <label for="split-parts">Split Blade Into</label>
@@ -1285,7 +1330,7 @@
               </div>
             </div>
 
-            <div class="row" style="margin-top: 6px">
+            <div class="row" style="margin-top: 8px">
               <label for="split-ratio-slider">Primary Split Position <span id="split-ratio-val">50% (r=330 mm)</span></label>
               <input id="split-ratio-slider" type="range" min="15" max="85" step="1" value="50" />
             </div>
@@ -1296,10 +1341,10 @@
             </div>
 
             <div class="bind-row" style="margin-top: 8px">
-              <span style="font-weight: 600; color: var(--fg)">Interlocking Joints &amp; Alignment on Split Faces</span>
+              <span style="font-weight: 500; color: var(--fg)">Interlocking Joints on Split Faces</span>
             </div>
-            <div class="bind-row">
-              <span>Joint Presets:</span>
+            <div class="bind-row" style="border-top: none; padding-top: 0">
+              <span>Joint Presets</span>
               <div class="toolbar">
                 <button id="btn-joint-dovetail" class="btn-mini" type="button" title="2-part split with Butterfly / Double-Dovetail interlocking keys">Dovetail</button>
                 <button id="btn-joint-cruciform" class="btn-mini" type="button" title="2-part split with Cruciform (+) orthogonal cross-rib interlock">Cruciform +</button>
@@ -1354,11 +1399,11 @@
               </div>
               <div class="field">
                 <label for="align-min-wall" class="scrub-label" data-scrub-for="align-min-wall" title="Smallest wall kept between sockets and the airfoil skin">Min Skin Wall (mm)</label>
-                <input id="align-min-wall" type="number" min="0.4" max="3" step="0.1" value="0.8" />
+                <input id="align-min-wall" type="number" min="0" max="3" step="0.1" value="0.8" />
               </div>
             </div>
             <div class="bind-row">
-              <span>Fit Preset:</span>
+              <span>Fit Preset</span>
               <div class="toolbar">
                 <button id="btn-fit-tight" class="btn-mini" type="button" title="Tight press fit: 0.10 mm clearance, 0.10 mm tube tolerance">Tight</button>
                 <button id="btn-fit-standard" class="btn-mini" type="button" title="Standard FDM sliding fit: 0.20 mm">Standard</button>
@@ -1367,18 +1412,18 @@
             </div>
             <div id="align-status" class="fit-badge">Alignment off</div>
 
-            <div class="toolbar" style="margin-top: 6px">
+            <div class="toolbar" style="margin-top: 8px">
               <button id="btn-export-split-all" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STL)</button>
             </div>
           </div>
         </section>
 
-        <!-- Layer 3: Per-Station Override Table -->
+        <!-- Per-Station Override Table -->
         <section id="layer3-stations">
           <div class="section-title">
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
-              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
-              <span>Layer 3 · Per-Station Table</span>
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span>Spanwise Station Overrides</span>
             </button>
             <button id="btn-clear-overrides" class="btn-mini" type="button">Clear Overrides</button>
           </div>
@@ -1415,7 +1460,7 @@
       <div class="panel-header">
         <div class="brand-title">
           <span class="brand-dot" aria-hidden="true"></span>
-          <h2>Phase 3/4 · BEM Telemetry &amp; Cloud</h2>
+          <h2>BEM Telemetry &amp; Wind-Tunnel Bench</h2>
         </div>
         <span id="aero-summary" class="section-meta">Cp=– · P=– W</span>
       </div>
@@ -1442,10 +1487,10 @@
           </div>
 
           <div class="aero-legend">
-            <span><i class="swatch" style="background: #10b981"></i>Design B</span>
-            <span><i class="swatch" style="background: #94a3b8"></i>Baseline A</span>
+            <span><i class="swatch" style="background: #38bdf8"></i>Design B</span>
+            <span><i class="swatch" style="background: #7a8296"></i>Baseline A</span>
             <span><i class="swatch" style="background: #f59e0b"></i>Exp Data</span>
-            <span><i class="swatch" style="background: #ef4444"></i>Betz 0.593</span>
+            <span><i class="swatch" style="background: #e5484d"></i>Betz 0.593</span>
           </div>
           <svg id="cp-tsr-svg" viewBox="0 0 320 155" role="img" aria-label="Cp vs Tip-Speed Ratio Chart"></svg>
 
@@ -1457,75 +1502,81 @@
             <span id="ab-delta-summary" class="section-meta">No Baseline A</span>
           </div>
 
-          <div class="bind-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle)">
-            <span style="font-weight: 600; color: var(--text-primary)">Phase 4 · Auto-Optimizer</span>
+          <div class="bind-row" style="margin-top: 8px; padding-top: 12px">
+            <span style="font-weight: 500; color: var(--text-primary)">Blade Optimizer</span>
             <select id="opt-objective" aria-label="Optimization objective" title="Optimization objective">
               <option value="design_tsr" selected>Max Cp at Design TSR</option>
               <option value="broadband_tsr">Broadband TSR (±20%)</option>
             </select>
           </div>
-          <div class="toolbar" style="margin-top: 4px">
+          <div class="toolbar" style="margin-top: 8px">
             <button id="btn-auto-optimize" class="btn-primary" type="button" style="flex: 1" title="Run Glauert-Schmitz + Coordinate Search optimizer respecting locked stations and manufacturing limits">
               Auto-Optimize Blade (Max Cp)
             </button>
           </div>
-          <div id="opt-status" class="aero-subbox" style="margin-top: 4px">Optimizer ready (respects locked stations)</div>
+          <div id="opt-status" class="fit-badge">Optimizer ready (respects locked stations)</div>
 
-          <div class="grid-2" style="margin-top: 8px">
-            <div class="field">
-              <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
-              <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
+          <div class="aero-subbox">
+            <div class="grid-2">
+              <div class="field">
+                <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
+                <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
+              </div>
+              <div class="field">
+                <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int">R_int (Ω)</label>
+                <input id="gen-r-int" type="number" min="0.05" max="50" step="0.05" value="0.8" />
+              </div>
             </div>
-            <div class="field">
-              <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int">R_int (Ω)</label>
-              <input id="gen-r-int" type="number" min="0.05" max="50" step="0.05" value="0.8" />
+            <div class="field" style="margin-top: 8px">
+              <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R_load (Ω)</label>
+              <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
             </div>
+            <div id="gen-summary" class="fit-badge">Gen: –</div>
           </div>
-          <div class="field" style="margin-top: 6px">
-            <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R_load (Ω)</label>
-            <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
-          </div>
-          <div id="gen-summary" class="aero-subbox">Gen: –</div>
 
-          <div class="field" style="margin-top: 10px">
-            <label for="exp-data-input">Experimental Data Log (tsr, cp or rpm=.., power_w=..)</label>
-            <textarea
-              id="exp-data-input"
-              rows="3"
-              placeholder="# Paste wind-tunnel or bench rows:&#10;3.5, 0.34&#10;4.5, 0.42&#10;rpm=570, power_w=150"
-            ></textarea>
+          <div class="aero-subbox">
+            <div class="field">
+              <label for="exp-data-input">Experimental Data Log (tsr, cp or rpm=.., power_w=..)</label>
+              <textarea
+                id="exp-data-input"
+                rows="3"
+                placeholder="3.5, 0.34&#10;4.5, 0.42&#10;rpm=570, power_w=150"
+              ></textarea>
+            </div>
+            <div id="exp-fit-summary" class="fit-badge">Exp log: 0 pts</div>
           </div>
-          <div id="exp-fit-summary" class="aero-subbox">Exp log: 0 pts</div>
 
-          <div class="bind-row" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-subtle)">
-            <span style="font-weight: 600; color: var(--text-primary)">Phase 4 · Team &amp; Cloud Workspace</span>
-            <button id="btn-cloud-refresh" class="btn-mini" type="button" title="Refresh team designs from blade-server">Refresh</button>
+          <div class="aero-subbox">
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span style="font-weight: 500; color: var(--text-primary)">Team &amp; Cloud Designs</span>
+              <button id="btn-cloud-refresh" class="btn-mini" type="button" title="Refresh team designs from blade-server">Refresh</button>
+            </div>
+            <div class="grid-2" style="margin-top: 4px">
+              <div class="field">
+                <label for="cloud-team">Team Workspace</label>
+                <select id="cloud-team">
+                  <option value="team-default" selected>BladeLab Core Team</option>
+                  <option value="team-comp">Wind Competition Team</option>
+                  <option value="all">All Teams</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="cloud-author">Engineer Handle</label>
+                <input id="cloud-author" type="text" value="panna" />
+              </div>
+            </div>
+            <div class="grid-2" style="margin-top: 8px">
+              <div class="field">
+                <label for="cloud-design-name">Design Name</label>
+                <input id="cloud-design-name" type="text" value="Rotor-R600-B3" />
+              </div>
+              <div class="field" style="justify-content: flex-end">
+                <button id="btn-cloud-save" type="button">Save to Cloud</button>
+              </div>
+            </div>
+            <div id="cloud-status" class="fit-badge">Cloud workspace ready</div>
+            <div id="cloud-designs-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px"></div>
           </div>
-          <div class="grid-2" style="margin-top: 4px">
-            <div class="field">
-              <label for="cloud-team">Team Workspace</label>
-              <select id="cloud-team">
-                <option value="team-default" selected>BladeLab Core Team</option>
-                <option value="team-comp">Wind Competition Team</option>
-                <option value="all">All Teams</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="cloud-author">Engineer Handle</label>
-              <input id="cloud-author" type="text" value="panna" />
-            </div>
-          </div>
-          <div class="grid-2" style="margin-top: 6px">
-            <div class="field">
-              <label for="cloud-design-name">Design Name</label>
-              <input id="cloud-design-name" type="text" value="Rotor-R600-B3" />
-            </div>
-            <div class="field" style="justify-content: flex-end">
-              <button id="btn-cloud-save" class="btn-primary" type="button" style="height: 29px">Save to Cloud</button>
-            </div>
-          </div>
-          <div id="cloud-status" class="aero-subbox" style="margin-top: 6px">Cloud workspace ready</div>
-          <div id="cloud-designs-list" style="margin-top: 6px; display: flex; flex-direction: column; gap: 4px"></div>
         </section>
       </div>
     </aside>
@@ -1534,15 +1585,15 @@
     <nav id="mobile-workspace-nav" aria-label="Workspace Switcher">
       <button id="btn-mob-cad" type="button" class="active" data-mobile-target="cad">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
-        CAD &amp; Joint
+        <span>CAD &amp; Joint</span>
       </button>
       <button id="btn-mob-canvas" type="button" data-mobile-target="canvas">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
-        3D Viewport
+        <span>3D Viewport</span>
       </button>
       <button id="btn-mob-aero" type="button" data-mobile-target="aero">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2 12 6 7 9.5 9.5 14 4"/></svg>
-        BEM &amp; Cloud
+        <span>BEM &amp; Cloud</span>
       </button>
     </nav>
 

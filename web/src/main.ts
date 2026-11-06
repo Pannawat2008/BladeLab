@@ -1001,17 +1001,17 @@ function renderBezierEditor(design: Design) {
   const polyPts = pts.map((p) => `${toSvgX(p.x).toFixed(1)},${toSvgY(p.y).toFixed(1)}`).join(" ");
 
   bezierSvg.innerHTML = `
-    <polyline points="${polyPts}" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="3 3" />
-    <path d="${samples.join(" ")}" fill="none" stroke="#3b82f6" stroke-width="2" />
+    <polyline points="${polyPts}" fill="none" stroke="#262c3a" stroke-width="1" stroke-dasharray="3 3" />
+    <path d="${samples.join(" ")}" fill="none" stroke="#38bdf8" stroke-width="2" />
   `;
 
   pts.forEach((pt, idx) => {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
     circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
-    circle.setAttribute("r", "5.5");
-    circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f59e0b" : "#60a5fa");
-    circle.setAttribute("stroke", "#0c0f14");
+    circle.setAttribute("r", "5");
+    circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f59e0b" : "#38bdf8");
+    circle.setAttribute("stroke", "#07080d");
     circle.setAttribute("stroke-width", "1.5");
     circle.style.cursor = "grab";
 

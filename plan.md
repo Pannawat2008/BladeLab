@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 68**
-> **LAST_UPDATED: 2026-11-06 21:41 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 69**
+> **LAST_UPDATED: 2026-11-06 21:49 (UTC+7) by geom-1**
 
 ---
 
@@ -438,6 +438,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-040** | 2026-11-06 18:28 | geom-1 | T-105
   Executed a full 5-dimension `/ui-taste` audit (`reference/audit.md` + `reference/anti-slop-craft.md` + `reference/craft.md`) and fixed all identified web issues in `web/index.html` and `web/src/main.ts`: (1) **Dynamic `#top-dock` height tracking (`ResizeObserver` -> `--top-dock-h`)** so `#aero-dock` and `#panel` never overlap `#top-dock` when the toolbar wraps onto 2 rows at intermediate widths (`900px–1380px`); (2) **Keyboard focus trap prevention (`inert` + `aria-hidden`)** on off-screen docks (`syncDockAccessibilityState`) plus semantic `<button class="section-toggle-btn" aria-expanded="true">` disclosure headers and visible `:focus-visible` rings; (3) **Pointer capture cleanup & touch scrubbing** (`touch-action: none` on `.scrub-label` plus `pointercancel` and `lostpointercapture` listeners on both value-scrubbing labels and SVG Bézier handles); (4) **Performance & Reduced Motion** (removed heavy `backdrop-filter: blur(16px)` over the 60fps WebGL canvas and added `@media (prefers-reduced-motion: reduce)`); and (5) **Strict Anti-Slop Pre-Flight Compliance** (1 locked accent `#0ea5e9`, 1 cool-slate grey family, strict 4-step radius scale `12px/8px/6px/999px`, 0 Unicode/emoji icons in UI chrome replaced with crisp inline SVG icons, and unified `Export` / `Clear` terminology).
   refs: web/index.html, web/src/main.ts, .agents/skills/ui-taste/SKILL.md | supersedes: F-geom1-039
+- **F-geom1-041** | 2026-11-06 21:49 | geom-1 | T-105
+  Executed the 9-pass `/unslop` workflow (by Damir Sokolovsky, `@heydamir`, CC BY 4.0; `.agents/skills/unslop/SKILL.md`) across `web/index.html`, `web/src/main.ts`, and `web/src/state.ts`: (1) **Spacing:** aligned every margin, padding, gap, and row height (`24px`, `28px`, `32px`, `48px`, `96px`, `160px`) onto the strict 4px grid and right-aligned numeric columns in `.station-table`; (2) **Color:** adopted the Dark Ink neutral ramp (`#07080d` deep, `#0b0d14` canvas/panel, `#11141c` card, `#1a1e28` raised, `rgba(238,240,245,0.08)` hairlines, `#eef0f5` / `#a3a9b8` / `#7a8296` text roles), replaced heavy drop shadows with surface steps + top specular hairlines, and styled primary actions (`#btn-export-stl`, `#btn-auto-optimize`, `#btn-export-split-all`) with off-white `#eef0f5` fill and dark `#07080d` ink text; (3) **Icons:** standardized all inline SVGs to `16×16px` with `1.5` stroke in `--text-muted`; (4) **Copy & Type:** removed internal plan jargon (`Layer 1`, `Phase 3/4`) and trailing colons from headings/labels, eliminated uppercase wide-tracked `.kpi-label` / `.toolbar-label` and negative letter-spacing, and limited font weights to `400` and `500`; and (5) **Details & Motion:** flattened nested `.bind-row` / `.aero-subbox` boxes into clean hairline dividers, turned `.section-meta` into quiet mono text, added `<kbd>[</kbd>` / `<kbd>]</kbd>` keycaps, enforced nested radius math (`16px` dock -> `12px` card -> `8px` control -> `4px` keycap), and unified all transitions on `cubic-bezier(0.22, 1, 0.36, 1)`.
+  refs: web/index.html, web/src/main.ts, web/src/state.ts, .agents/skills/unslop/SKILL.md | supersedes: F-geom1-040
 
 ### 9.3 Decisions (D)
 
@@ -817,4 +820,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T18:21:30+07:00 agent=geom-1 mem=v65 last_entry=F-geom1-039 task=T-105 note="lead requested: web check, fix any UI/layout/interaction problems found, and apply strict /ui-taste audit & anti-slop craft (reference/audit.md + reference/anti-slop-craft.md)"
 [END] 2026-11-06T18:28+07:00 agent=geom-1 mem=v67 note="completed /ui-taste 5-dimension web audit & fixes in web/index.html and web/src/main.ts: ResizeObserver --top-dock-h prevents toolbar wrap overlap, inert/aria-hidden prevents hidden dock tab traps, semantic button[data-collapse-section] + focus-visible, pointercancel/lostpointercapture + touch-action:none on scrubbers, removed WebGL-taxing backdrop-filter blur, and passed all 9 Anti-Slop pre-flight checks (1 accent, 1 grey family, 4-step radius lock, inline SVG icons, unified labels); F-geom1-040 recorded"
 [RE-ACK] 2026-11-06T21:41:50+07:00 agent=geom-1 mem=v67 last_entry=F-geom1-040 task=T-105 note="lead invoked /unslop; executing unslop audit (references/signs.md + references/tokens.md) and presenting 5-line Direction for confirmation"
+[END] 2026-11-06T21:49+07:00 agent=geom-1 mem=v69 note="completed 9-pass /unslop across web/index.html, web/src/main.ts, and web/src/state.ts: 4px grid rhythm, Dark Ink neutral ramp (#07080d/#0b0d14/#11141c/#1a1e28) with 8% hairlines and off-white primary CTAs, 16px stroke-1.5 icons, sentence-case zero-tracking type (weights 400/500), flattened hairline sub-rows, quiet mono meta, <kbd> keycaps, nested radii (16->12->8->4), and cubic-bezier(0.22,1,0.36,1) motion; 9 Node tests + tsc + vite build clean; F-geom1-041 recorded"
 ```
