@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 45**
-> **LAST_UPDATED: 2026-11-06 10:04 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 47**
+> **LAST_UPDATED: 2026-11-06 11:22 (UTC+7) by geom-1**
 
 ---
 
@@ -405,6 +405,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-031** | 2026-11-06 10:04 | geom-1 | T-304
   `crates/blade-wasm/src/lib.rs` exposes `simulate_aero(design_json, options_json)` (`run_aero_simulation` returning `AeroSimulationBundle` with `design_point`, `sweep`, `peak_cp`, `peak_tsr`, `peak_power_w`, and optional `generator_match`). `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` deliver the Phase-3 BEM & Test Bench UI (`#layer-aero`): (1) live SVG $C_p$–TSR chart (`#cp-tsr-svg`, `renderCpTsrSvgMarkup`) plotting the Betz limit ($16/27 \approx 0.593$), active Design B curve (`class="curve-b"`), optional Baseline A curve (`class="curve-a"`), and experimental scatter points (`class="exp-point"`); (2) A/B Design Comparison (`#btn-snapshot-a`, `#btn-clear-a`, `compareABSimulation`) reporting $\Delta C_p$, $\Delta C_{p,\text{peak}}$, and $\Delta P$; (3) Generator Matching controls (`#gen-kv`, `#gen-r-int`, `#gen-r-load`); and (4) Experimental Test Data Logger (`#exp-data-input`, `parseExperimentalDataLog`, `evaluateExperimentalFit`) parsing both `tsr, cp` and `rpm=.., power_w=..` rows and computing RMSE/MAE fit metrics against the simulated curve.
   refs: crates/blade-wasm/src/lib.rs, web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
+- **F-geom1-032** | 2026-11-06 11:22 | geom-1 | T-205
+  `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` now also expose direct **Blade Length** controls (`#rotor-blade-length`, `#rotor-length-slider`, `updateBladeLengthMm` syncing $L = R - r_0$), **Move Chord / Pitch-Axis** controls (`#rotor-pitch-axis`, `updatePitchAxisRatio`, `#chord-offset-x`, `#chord-offset-y`, and a 3D orange pitch-axis reference line in Three.js), **All-Chords Width** shift/scale buttons (`−5 mm`, `+5 mm`, `×0.9`, `×1.1` via `shiftAllChordsMm` / `scaleAllChords`), and **Airfoil Profile Family & Thickness/Camber** controls (`#airfoil-family`: `NACA 4-Digit`, `SG6043`, `SD7062`, `E387`, plus `#airfoil-thickness` and `#airfoil-camber` via `updatePrimaryAirfoil`).
+  refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -751,4 +754,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T09:53+07:00 agent=geom-1 mem=v43 note="T-303 done: crates/blade-aero/src/generator.rs (GeneratorSpec, eval_generator_at_rpm, match_generator, sweep_generator_load); accurately predicts equilibrium RPM, voltage, current, and electrical power across load curves; 137 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; F-geom1-030, H-geom1-024 recorded"
 [RE-ACK] 2026-11-06T09:54:00+07:00 agent=geom-1 mem=v43 last_entry=H-geom1-024 task=T-304 note="lead: 'lets do next' -> claiming T-304 (UI: Cp-TSR charts, A/B comparison, test data logging) under D-geom1-025"
 [END] 2026-11-06T10:04+07:00 agent=geom-1 mem=v45 note="T-304 done (closes Phase 3): blade-wasm simulate_aero + web/ Cp-TSR SVG chart, A/B comparison, generator controls, and experimental test data logger with RMSE/MAE fit; 138 Rust tests + 7 Node tests + tsc + vite build clean; F-geom1-031, H-geom1-025 recorded"
+[RE-ACK] 2026-11-06T11:18:00+07:00 agent=geom-1 mem=v45 last_entry=H-geom1-025 task=T-205 note="lead requested adding UI controls for Move Chord (pitch_axis_ratio + 3D chord X-offset + global chord scale), direct Blade Length (L = R - r0), and Airfoil Profile/Thickness/Camber"
+[END] 2026-11-06T11:22+07:00 agent=geom-1 mem=v47 note="added UI controls for Blade Length L=R-r0, Move Chord (Pitch Axis x/c + 3D X/Y offset sliders + 3D pitch-axis line), All-Chords width shift/scale (-5/+5 mm, x0.9/x1.1), and Airfoil Family/Thickness/Camber; 8 Node tests + tsc + vite build clean; F-geom1-032 recorded"
 ```

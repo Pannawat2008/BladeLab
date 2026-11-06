@@ -373,6 +373,26 @@
               <label for="rotor-stations" class="scrub-label" data-scrub-for="rotor-stations" title="Drag horizontally to scrub">Stations N</label>
               <input id="rotor-stations" type="number" min="3" max="41" step="1" value="11" />
             </div>
+            <div class="field">
+              <label for="rotor-blade-length" class="scrub-label" data-scrub-for="rotor-blade-length" title="Blade span L = R − r₀ (mm)">Blade Length L (mm)</label>
+              <input id="rotor-blade-length" type="number" min="50" max="2400" step="10" value="540" />
+            </div>
+            <div class="field">
+              <label for="rotor-pitch-axis" class="scrub-label" data-scrub-for="rotor-pitch-axis" title="Chordwise pitch-axis pivot fraction (0=LE, 0.25=quarter-chord, 1=TE)">Pitch Axis x/c</label>
+              <input id="rotor-pitch-axis" type="number" min="0" max="1" step="0.05" value="0.25" />
+            </div>
+          </div>
+          <div class="row" style="margin-top: 8px">
+            <label for="rotor-length-slider">Blade Length L <span id="blade-length-val">540 mm</span></label>
+            <input id="rotor-length-slider" type="range" min="100" max="1800" step="10" value="540" />
+          </div>
+          <div class="row">
+            <label for="chord-offset-x">Move Chord X-Offset <span id="chord-offset-x-val">0 mm</span></label>
+            <input id="chord-offset-x" type="range" min="-120" max="120" step="1" value="0" />
+          </div>
+          <div class="row">
+            <label for="chord-offset-y">Move Chord Y-Offset <span id="chord-offset-y-val">0 mm</span></label>
+            <input id="chord-offset-y" type="range" min="-60" max="60" step="1" value="0" />
           </div>
         </section>
 
@@ -394,6 +414,16 @@
               Bind Tip = Root × Taper
             </label>
             <input id="taper-ratio" type="number" min="0.1" max="2.0" step="0.05" value="0.5" title="Tip-to-root chord taper ratio" />
+          </div>
+
+          <div class="bind-row">
+            <span>All Chords Width:</span>
+            <div class="toolbar">
+              <button id="btn-chord-minus" class="btn-mini" type="button" title="Subtract 5 mm from all chords">−5 mm</button>
+              <button id="btn-chord-plus" class="btn-mini" type="button" title="Add 5 mm to all chords">+5 mm</button>
+              <button id="btn-chord-narrow" class="btn-mini" type="button" title="Scale all chords by 0.9×">×0.9</button>
+              <button id="btn-chord-widen" class="btn-mini" type="button" title="Scale all chords by 1.1×">×1.1</button>
+            </div>
           </div>
 
           <div id="controls-linear">
@@ -456,6 +486,28 @@
             <div class="field">
               <label for="formula-twist">Twist Formula (°, x=r/R, s=0..1)</label>
               <input id="formula-twist" type="text" value="20 - 17 * s" />
+            </div>
+          </div>
+
+          <div class="aero-subbox" style="margin-top: 10px">
+            <div class="field" style="margin-bottom: 6px">
+              <label for="airfoil-family">Airfoil Profile Family</label>
+              <select id="airfoil-family">
+                <option value="naca4">NACA 4-Digit (Parametric)</option>
+                <option value="SG6043">SG6043 (Selig High-Lift Low-Re)</option>
+                <option value="SD7062">SD7062 (Selig Thick Low-Re)</option>
+                <option value="E387">E387 (Eppler Classic Low-Re)</option>
+              </select>
+            </div>
+            <div id="naca4-controls" class="grid-2">
+              <div class="field">
+                <label for="airfoil-thickness" class="scrub-label" data-scrub-for="airfoil-thickness">Thickness t/c (%)</label>
+                <input id="airfoil-thickness" type="number" min="4" max="30" step="0.5" value="12" />
+              </div>
+              <div class="field">
+                <label for="airfoil-camber" class="scrub-label" data-scrub-for="airfoil-camber">Max Camber m (%)</label>
+                <input id="airfoil-camber" type="number" min="0" max="9.5" step="0.5" value="4" />
+              </div>
             </div>
           </div>
         </section>

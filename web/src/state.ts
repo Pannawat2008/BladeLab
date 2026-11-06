@@ -6,6 +6,7 @@
 // - Layer 3 per-station resolution and override editing
 
 import type {
+  AirfoilSpec,
   BezierControlPoint,
   CurveSource,
   Design,
@@ -247,6 +248,142 @@ export function updateRotorField<K extends keyof Rotor>(
 ): Design {
   const next = cloneDesign(design);
   next.rotor[field] = value;
+  return next;
+}
+
+/**
+ * Updates the physical blade span length `L = R - r_0` (in mm) by setting
+ * `rotor.radius_mm = rotor.hub_radius_mm + max(10, bladeLengthMm)`.
+ */
+export function updateBladeLengthMm(design: Design, bladeLengthMm: number): Design {
+  const next = cloneDesign(design);
+  const clampedLength = Math.max(10, bladeLengthMm);
+  next.rotor.radius_mm = Number((next.rotor.hub_radius_mm + clampedLength).toFixed(4));
+  return next;
+}
+
+/**
+ * Updates the chordwise pitch-axis pivot fraction (`0.0` = LE .. `1.0` = TE).
+ */
+export function updatePitchAxisRatio(design: Design, pitchAxisRatio: number): Design {
+  const next = cloneDesign(design);
+  next.rotor.pitch_axis_ratio = Number(
+    Math.min(1.0, Math.max(0.0, pitchAxisRatio)).toFixed(4),
+  );
+  return next;
+}
+
+/**
+ * Scales all chord widths across the blade by `factor` (e.g. `1.1` = +10%,
+ * `0.9` = -10%), preserving any locked stations.
+ */
+export function scaleAllChords(
+  design: Design,
+  factor: number,
+  lockedSpanRatios: readonly number[] = [],
+): Design {
+  const safeFactor = Math.max(0.1, Math.min(5.0, factor));
+  const next = cloneDesign(design);
+  const c = next.distributions.chord_mm;
+  if (c.type === "linear") {
+    c.root = Number(Math.max(2, c.root * safeFactor).toFixed(3));
+    c.tip = Number(Math.max(2, c.tip * safeFactor).toFixed(3));
+  } else if (c.type === "constant") {
+    c.value = Number(Math.max(2, c.value * safeFactor).toFixed(3));
+  } else if (c.type === "bezier") {
+    c.points = c.points.map((pt) => ({
+      x: pt.x,
+      y: Number(Math.max(2, pt.y * safeFactor).toFixed(3)),
+    }));
+  } else if (c.type === "schmitz") {
+    const baseCl = c.design_cl ?? 1.0;
+    c.design_cl = Number(Math.max(0.1, baseCl / safeFactor).toFixed(4));
+  } else if (c.type === "formula") {
+    c.expr = `(${c.expr}) * ${Number(safeFactor.toFixed(4))}`;
+  }
+  next.overrides = next.overrides.map((ov) => ({
+    ...ov,
+    chord_mm:
+      ov.chord_mm !== null
+        ? Number(Math.max(2, ov.chord_mm * safeFactor).toFixed(3))
+        : null,
+  }));
+  return preserveLockedStations(design, next, lockedSpanRatios);
+}
+
+/**
+ * Shifts all chord widths across the blade by `deltaMm` (e.g. `+5` or `-5` mm),
+ * preserving any locked stations.
+ */
+export function shiftAllChordsMm(
+  design: Design,
+  deltaMm: number,
+  lockedSpanRatios: readonly number[] = [],
+): Design {
+  const next = cloneDesign(design);
+  const c = next.distributions.chord_mm;
+  if (c.type === "linear") {
+    c.root = Number(Math.max(2, c.root + deltaMm).toFixed(3));
+    c.tip = Number(Math.max(2, c.tip + deltaMm).toFixed(3));
+  } else if (c.type === "constant") {
+    c.value = Number(Math.max(2, c.value + deltaMm).toFixed(3));
+  } else if (c.type === "bezier") {
+    c.points = c.points.map((pt) => ({
+      x: pt.x,
+      y: Number(Math.max(2, pt.y + deltaMm).toFixed(3)),
+    }));
+  } else if (c.type === "formula") {
+    const sign = deltaMm >= 0 ? "+" : "-";
+    c.expr = `(${c.expr}) ${sign} ${Math.abs(deltaMm)}`;
+  } else {
+    // For Schmitz mode, apply the shift across station overrides
+    const rows = resolveStationsPreview(design);
+    for (const row of rows) {
+      const shifted = Number(Math.max(2, row.effective_chord_mm + deltaMm).toFixed(3));
+      const existing = next.overrides.find(
+        (ov) => Math.abs(ov.span_ratio - row.span_ratio) <= RATIO_EPS,
+      );
+      if (existing) {
+        existing.chord_mm = shifted;
+      } else {
+        next.overrides.push({
+          span_ratio: row.span_ratio,
+          chord_mm: shifted,
+          twist_deg: null,
+          airfoil: null,
+        });
+      }
+    }
+    next.overrides.sort((a, b) => a.span_ratio - b.span_ratio);
+  }
+  if (c.type !== "schmitz") {
+    next.overrides = next.overrides.map((ov) => ({
+      ...ov,
+      chord_mm:
+        ov.chord_mm !== null
+          ? Number(Math.max(2, ov.chord_mm + deltaMm).toFixed(3))
+          : null,
+    }));
+  }
+  return preserveLockedStations(design, next, lockedSpanRatios);
+}
+
+/**
+ * Updates the primary airfoil specification across the blade's airfoil stations.
+ */
+export function updatePrimaryAirfoil(design: Design, spec: AirfoilSpec): Design {
+  const next = cloneDesign(design);
+  if (next.airfoils.length === 0) {
+    next.airfoils = [
+      { span_ratio: 0.0, airfoil: spec },
+      { span_ratio: 1.0, airfoil: spec },
+    ];
+  } else {
+    next.airfoils = next.airfoils.map((st) => ({
+      span_ratio: st.span_ratio,
+      airfoil: JSON.parse(JSON.stringify(spec)) as AirfoilSpec,
+    }));
+  }
   return next;
 }
 

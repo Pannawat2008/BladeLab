@@ -33,11 +33,16 @@ import {
   RATIO_EPS,
   renderCpTsrSvgMarkup,
   resolveStationsPreview,
+  scaleAllChords,
   setStationOverride,
+  shiftAllChordsMm,
   updateBezierControlPoint,
+  updateBladeLengthMm,
+  updatePitchAxisRatio,
+  updatePrimaryAirfoil,
   updateRotorField,
 } from "./state";
-import type { BezierControlPoint, Design } from "./types/blade-model";
+import type { AirfoilSpec, BezierControlPoint, Design } from "./types/blade-model";
 
 // ---- wasm bootstrap ----
 await init(wasmUrl);
@@ -83,6 +88,24 @@ const inputBlades = document.getElementById("rotor-blades") as HTMLInputElement;
 const inputTsr = document.getElementById("rotor-tsr") as HTMLInputElement;
 const inputWind = document.getElementById("rotor-wind") as HTMLInputElement;
 const inputStations = document.getElementById("rotor-stations") as HTMLInputElement;
+const inputBladeLength = document.getElementById("rotor-blade-length") as HTMLInputElement;
+const inputPitchAxis = document.getElementById("rotor-pitch-axis") as HTMLInputElement;
+const sliderBladeLength = document.getElementById("rotor-length-slider") as HTMLInputElement;
+const bladeLengthVal = document.getElementById("blade-length-val")!;
+const sliderChordOffsetX = document.getElementById("chord-offset-x") as HTMLInputElement;
+const chordOffsetXVal = document.getElementById("chord-offset-x-val")!;
+const sliderChordOffsetY = document.getElementById("chord-offset-y") as HTMLInputElement;
+const chordOffsetYVal = document.getElementById("chord-offset-y-val")!;
+
+const btnChordMinus = document.getElementById("btn-chord-minus") as HTMLButtonElement;
+const btnChordPlus = document.getElementById("btn-chord-plus") as HTMLButtonElement;
+const btnChordNarrow = document.getElementById("btn-chord-narrow") as HTMLButtonElement;
+const btnChordWiden = document.getElementById("btn-chord-widen") as HTMLButtonElement;
+
+const selectAirfoilFamily = document.getElementById("airfoil-family") as HTMLSelectElement;
+const naca4Controls = document.getElementById("naca4-controls")!;
+const inputAirfoilThickness = document.getElementById("airfoil-thickness") as HTMLInputElement;
+const inputAirfoilCamber = document.getElementById("airfoil-camber") as HTMLInputElement;
 
 const btnModeLinear = document.getElementById("mode-linear") as HTMLButtonElement;
 const btnModeSchmitz = document.getElementById("mode-schmitz") as HTMLButtonElement;
@@ -150,6 +173,18 @@ function toggleStationLock(spanRatio: number): void {
 
 // ---- 3D mesh rebuild ----
 let mesh: THREE.Mesh | null = null;
+let pitchAxisLine: THREE.Line | null = null;
+
+function applyMeshChordOffset() {
+  const ox = sliderChordOffsetX ? sliderChordOffsetX.valueAsNumber || 0 : 0;
+  const oy = sliderChordOffsetY ? sliderChordOffsetY.valueAsNumber || 0 : 0;
+  if (mesh) {
+    mesh.position.set(ox, oy, 0);
+  }
+  if (pitchAxisLine) {
+    pitchAxisLine.position.set(ox, oy, 0);
+  }
+}
 
 function rebuild3D(design: Design) {
   try {
@@ -163,6 +198,10 @@ function rebuild3D(design: Design) {
     if (mesh !== null) {
       mesh.geometry.dispose();
       scene.remove(mesh);
+    }
+    if (pitchAxisLine !== null) {
+      pitchAxisLine.geometry.dispose();
+      scene.remove(pitchAxisLine);
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
@@ -182,6 +221,24 @@ function rebuild3D(design: Design) {
       }),
     );
     scene.add(mesh);
+
+    // Build visual pitch-axis reference line along the blade span
+    const stationRows = resolveStationsPreview(design);
+    const axisPoints = stationRows.map(
+      (r) =>
+        new THREE.Vector3(
+          design.rotor.pitch_axis_ratio * r.effective_chord_mm,
+          0,
+          r.radius_mm,
+        ),
+    );
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
+    pitchAxisLine = new THREE.Line(
+      lineGeo,
+      new THREE.LineBasicMaterial({ color: 0xf5a623 }),
+    );
+    scene.add(pitchAxisLine);
+    applyMeshChordOffset();
 
     updateStats(elapsed, data);
     updateAeroPanel(design);
@@ -297,13 +354,35 @@ function activeDistributionMode(design: Design): "linear" | "schmitz" | "bezier"
 function syncControlsFromDesign(design: Design) {
   const { rotor, distributions } = design;
 
-  rotorSummary.textContent = `R=${rotor.radius_mm} mm · B=${rotor.blade_count} · λ=${rotor.design_tsr}`;
+  const bladeLenMm = Math.max(0, rotor.radius_mm - rotor.hub_radius_mm);
+  rotorSummary.textContent = `R=${rotor.radius_mm} mm · L=${bladeLenMm.toFixed(0)} mm · B=${rotor.blade_count}`;
   inputRadius.value = String(rotor.radius_mm);
   inputHubRadius.value = String(rotor.hub_radius_mm);
   inputBlades.value = String(rotor.blade_count);
   inputTsr.value = String(rotor.design_tsr);
   inputWind.value = String(rotor.wind_speed_mps);
   inputStations.value = String(rotor.station_count);
+  inputBladeLength.value = String(Number(bladeLenMm.toFixed(1)));
+  sliderBladeLength.value = String(Math.round(bladeLenMm));
+  bladeLengthVal.textContent = `${bladeLenMm.toFixed(0)} mm`;
+  inputPitchAxis.value = String(rotor.pitch_axis_ratio);
+
+  const primaryAirfoil = design.airfoils[0]?.airfoil;
+  if (primaryAirfoil) {
+    if (primaryAirfoil.type === "named") {
+      selectAirfoilFamily.value = primaryAirfoil.name;
+      naca4Controls.style.display = "none";
+    } else {
+      selectAirfoilFamily.value = "naca4";
+      naca4Controls.style.display = "grid";
+      inputAirfoilThickness.value = String(
+        Number((primaryAirfoil.thickness_ratio * 100).toFixed(1)),
+      );
+      inputAirfoilCamber.value = String(
+        Number((primaryAirfoil.max_camber * 100).toFixed(1)),
+      );
+    }
+  }
 
   const mode = activeDistributionMode(design);
   btnModeLinear.classList.toggle("active", mode === "linear");
@@ -605,6 +684,85 @@ bindRotorNumberInput(inputBlades, "blade_count", true);
 bindRotorNumberInput(inputTsr, "design_tsr");
 bindRotorNumberInput(inputWind, "wind_speed_mps");
 bindRotorNumberInput(inputStations, "station_count", true);
+
+inputBladeLength.addEventListener("change", () => {
+  const len = Number.parseFloat(inputBladeLength.value);
+  if (Number.isFinite(len) && len >= 10) {
+    commitDesign(updateBladeLengthMm(workingDesign, len));
+  }
+});
+
+sliderBladeLength.addEventListener("input", () => {
+  const len = sliderBladeLength.valueAsNumber;
+  bladeLengthVal.textContent = `${len} mm`;
+  workingDesign = updateBladeLengthMm(history.current(), len);
+  inputRadius.value = String(workingDesign.rotor.radius_mm);
+  inputBladeLength.value = String(len);
+  renderStationTable(workingDesign);
+  rebuild3D(workingDesign);
+});
+
+sliderBladeLength.addEventListener("change", () => {
+  commitDesign(updateBladeLengthMm(history.current(), sliderBladeLength.valueAsNumber));
+});
+
+inputPitchAxis.addEventListener("change", () => {
+  const ratio = Number.parseFloat(inputPitchAxis.value);
+  if (Number.isFinite(ratio)) {
+    commitDesign(updatePitchAxisRatio(workingDesign, ratio));
+  }
+});
+
+sliderChordOffsetX.addEventListener("input", () => {
+  chordOffsetXVal.textContent = `${sliderChordOffsetX.valueAsNumber} mm`;
+  applyMeshChordOffset();
+});
+
+sliderChordOffsetY.addEventListener("input", () => {
+  chordOffsetYVal.textContent = `${sliderChordOffsetY.valueAsNumber} mm`;
+  applyMeshChordOffset();
+});
+
+btnChordMinus.addEventListener("click", () => {
+  commitDesign(shiftAllChordsMm(workingDesign, -5, lockedSpanRatios));
+});
+
+btnChordPlus.addEventListener("click", () => {
+  commitDesign(shiftAllChordsMm(workingDesign, 5, lockedSpanRatios));
+});
+
+btnChordNarrow.addEventListener("click", () => {
+  commitDesign(scaleAllChords(workingDesign, 0.9, lockedSpanRatios));
+});
+
+btnChordWiden.addEventListener("click", () => {
+  commitDesign(scaleAllChords(workingDesign, 1.1, lockedSpanRatios));
+});
+
+function applySelectedAirfoil() {
+  const family = selectAirfoilFamily.value;
+  let spec: AirfoilSpec;
+  if (family === "naca4") {
+    const thicknessPct = Math.min(30, Math.max(4, Number.parseFloat(inputAirfoilThickness.value) || 12));
+    const camberPct = Math.min(9.5, Math.max(0, Number.parseFloat(inputAirfoilCamber.value) || 0));
+    spec = {
+      type: "naca4",
+      max_camber: Number((camberPct / 100).toFixed(4)),
+      camber_position: camberPct > 0 ? 0.4 : 0.0,
+      thickness_ratio: Number((thicknessPct / 100).toFixed(4)),
+    };
+  } else {
+    spec = {
+      type: "named",
+      name: family,
+    };
+  }
+  commitDesign(updatePrimaryAirfoil(workingDesign, spec));
+}
+
+selectAirfoilFamily.addEventListener("change", applySelectedAirfoil);
+inputAirfoilThickness.addEventListener("change", applySelectedAirfoil);
+inputAirfoilCamber.addEventListener("change", applySelectedAirfoil);
 
 // ---- Layer 1/2 Distribution Listeners ----
 btnModeLinear.addEventListener("click", () => {

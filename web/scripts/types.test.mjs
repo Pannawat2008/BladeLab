@@ -24,8 +24,13 @@ import {
   parseExperimentalDataLog,
   renderCpTsrSvgMarkup,
   resolveStationsPreview,
+  scaleAllChords,
   setStationOverride,
+  shiftAllChordsMm,
   updateBezierControlPoint,
+  updateBladeLengthMm,
+  updatePitchAxisRatio,
+  updatePrimaryAirfoil,
   updateRotorField,
 } from "../src/state.ts";
 
@@ -331,4 +336,47 @@ test("Cp-TSR chart, A/B comparison, and experimental test data logging plot agai
   assert.ok(svgMarkup.includes('class="curve-b"'));
   const expCircleCount = (svgMarkup.match(/class="exp-point"/g) || []).length;
   assert.equal(expCircleCount, 3);
+});
+
+test("blade length L, pitch-axis pivot, global chord width shift/scale, and airfoil profile helpers update 3D geometry (T-205)", () => {
+  // 1. Direct Blade Length L = R - r_0 updates radius_mm = hub_radius_mm + L
+  const withLen = updateBladeLengthMm(initialDesign, 700);
+  assert.equal(withLen.rotor.hub_radius_mm, 60);
+  assert.equal(withLen.rotor.radius_mm, 760);
+
+  // 2. Pitch-axis ratio clamps to [0, 1]
+  const withPitchAxis = updatePitchAxisRatio(withLen, 0.35);
+  assert.equal(withPitchAxis.rotor.pitch_axis_ratio, 0.35);
+
+  // 3. Global chord shift (+10 mm) and scale (1.2×)
+  const shifted = shiftAllChordsMm(clearAllOverrides(initialDesign), 10);
+  const shiftedRows = resolveStationsPreview(shifted);
+  assert.ok(Math.abs(shiftedRows[0].effective_chord_mm - 80.0) < 1e-6);
+  assert.ok(Math.abs(shiftedRows[10].effective_chord_mm - 45.0) < 1e-6);
+
+  const scaled = scaleAllChords(shifted, 1.2);
+  const scaledRows = resolveStationsPreview(scaled);
+  assert.ok(Math.abs(scaledRows[0].effective_chord_mm - 96.0) < 1e-6);
+  assert.ok(Math.abs(scaledRows[10].effective_chord_mm - 54.0) < 1e-6);
+
+  // 4. Airfoil profile switcher (SG6043 and parametric NACA 4-digit thickness)
+  const sgDesign = updatePrimaryAirfoil(scaled, { type: "named", name: "SG6043" });
+  assert.equal(sgDesign.airfoils[0].airfoil.type, "named");
+  assert.equal(sgDesign.airfoils[0].airfoil.name, "SG6043");
+
+  const thickNaca = updatePrimaryAirfoil(sgDesign, {
+    type: "naca4",
+    max_camber: 0.04,
+    camber_position: 0.4,
+    thickness_ratio: 0.18,
+  });
+
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  if (fs.existsSync(gluePath)) {
+    const require = createRequire(import.meta.url);
+    const { build_mesh } = require(gluePath);
+    const thinMesh = build_mesh(JSON.stringify(scaled), "{}");
+    const thickMesh = build_mesh(JSON.stringify(thickNaca), "{}");
+    assert.ok(thickMesh.volume_mm3 > thinMesh.volume_mm3 * 1.3);
+  }
 });
