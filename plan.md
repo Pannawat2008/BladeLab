@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 57**
-> **LAST_UPDATED: 2026-11-06 14:40 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 58**
+> **LAST_UPDATED: 2026-11-06 14:47 (UTC+7) by geom-1**
 
 ---
 
@@ -791,4 +791,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T12:50+07:00 agent=geom-1 mem=v55 note="added round pins / rectangular keys + sockets on split faces with clearance, extra depth, min wall and tube bore tolerance; generic cap-with-holes triangulator; alignment_report/fabrication_report placement warnings; 6 mesh fabrication tests + 9 Node tests, fmt/clippy/tsc clean; F-geom1-035 recorded"
 [RE-ACK] 2026-11-06T14:22:00+07:00 agent=geom-1 mem=v55 last_entry=F-geom1-035 task=T-401 note="lead: 'go to phase 4' -> populated Phase 4 (T-401..T-404) and claimed T-401 (Automated chord & twist optimizer + Web UI) under D-geom1-026"
 [END] 2026-11-06T14:40+07:00 agent=geom-1 mem=v57 note="Phase 4 (T-401..T-404) done: blade-aero optimize.rs + neuralfoil.rs, blade-cad occt.rs (apply_root_fillet + OcctKernel), blade-server /api/v1/teams + team-scoped designs, blade-wasm optimize_blade_wasm, and web Phase 4 Auto-Optimizer + Team Cloud Workspace UI; 153 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-036, H-geom1-026 recorded"
+[RE-ACK] 2026-11-06T14:47:00+07:00 agent=geom-1 mem=v57 last_entry=H-geom1-026 task=T-005 note="lead reported: switching to other airfoil profiles (SG6043/SD7062/E387) triggers 'could not triangulate the cap polygon of section 0'; fixing cap-with-holes triangulation and .dat trailing-edge contour"
 ```
