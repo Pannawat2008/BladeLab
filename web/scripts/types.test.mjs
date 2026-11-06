@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import {
   applyBezierCurve,
   buildCosinePlateauExpr,
+  parseCosinePlateauExpr,
+  readSections,
+  applySectionAirfoils,
   evalFormulaPreview,
   planformZones,
   applyBoundRootChord,
@@ -191,7 +194,7 @@ test("live 3D model updates via wasm on Layer 1 & Layer 3 edits and Undo/Redo wi
   assert.deepEqual(Array.from(restored.positions), Array.from(baseline.positions));
 });
 
-test("Layer 2 Bézier curve editor and Formula helpers match Rust wasm evaluation (T-205)", () => {
+test("Layer 2 BÃ©zier curve editor and Formula helpers match Rust wasm evaluation (T-205)", () => {
   const cleared = clearAllOverrides(initialDesign);
   const withBezier = applyBezierCurve(cleared, "chord_mm", defaultChordBezierPoints(80, 40));
   const withTwistBezier = applyBezierCurve(
@@ -234,7 +237,7 @@ test("Layer 2 Bézier curve editor and Formula helpers match Rust wasm evaluatio
 });
 
 test("value scrubbing, station locking, and taper binding conform to UI interaction rules (T-205)", () => {
-  // 1. Value scrubbing: normal (1×), Shift (10×), Alt (0.1×), and min/max clamping
+  // 1. Value scrubbing: normal (1Ã—), Shift (10Ã—), Alt (0.1Ã—), and min/max clamping
   assert.equal(applyScrubDelta(600, 16, 10), 640); // 16 px / 4 px per step = +4 steps * 10 = +40
   assert.equal(applyScrubDelta(600, 16, 10, { shiftKey: true }), 1000); // +4 * 100 = +400
   assert.equal(applyScrubDelta(600, 16, 10, { altKey: true }), 604); // +4 * 1 = +4
@@ -352,7 +355,7 @@ test("blade length L, pitch-axis pivot, global chord width shift/scale, and airf
   const withPitchAxis = updatePitchAxisRatio(withLen, 0.35);
   assert.equal(withPitchAxis.rotor.pitch_axis_ratio, 0.35);
 
-  // 3. Global chord shift (+10 mm) and scale (1.2×)
+  // 3. Global chord shift (+10 mm) and scale (1.2Ã—)
   const shifted = shiftAllChordsMm(clearAllOverrides(initialDesign), 10);
   const shiftedRows = resolveStationsPreview(shifted);
   assert.ok(Math.abs(shiftedRows[0].effective_chord_mm - 80.0) < 1e-6);
@@ -510,4 +513,31 @@ test("smooth cosine planform: root, plateau and tip values", () => {
     assert.ok(v <= prev + 1e-9, "monotonic non-increasing");
     prev = v;
   }
+});
+
+test("three-section planform: explicit mid chord/twist, parse round-trip and airfoil stations", () => {
+  const rotor = { radius_mm: 600, hub_radius_mm: 60, blade_count: 3, design_tsr: 4.5 };
+  const expr = buildCosinePlateauExpr(45, 22, 0.45, 0.25, 90);
+  const at = (s) => evalFormulaPreview(expr, rotor, s, s);
+  assert.ok(Math.abs(at(0) - 45) < 1e-6);
+  assert.ok(Math.abs(at(0.45) - 90) < 1e-6);
+  assert.ok(Math.abs(at(1) - 22) < 1e-6);
+  const parsed = parseCosinePlateauExpr(expr);
+  assert.ok(parsed && Math.abs(parsed.center - 0.45) < 1e-4 && Math.abs(parsed.width - 0.25) < 1e-4);
+  assert.equal(parseCosinePlateauExpr("70 - 35 * s"), null);
+
+  const design = structuredClone(initialDesign);
+  design.overrides = [];
+  design.distributions.chord_mm = { type: "formula", expr };
+  design.distributions.twist_deg = { type: "linear", root: 24, tip: 1.5 };
+  const secs = readSections(design, 0.45);
+  assert.ok(Math.abs(secs.root.chord_mm - 45) < 1e-6);
+  assert.ok(Math.abs(secs.mid.chord_mm - 90) < 1e-6);
+  assert.ok(Math.abs(secs.tip.chord_mm - 22) < 1e-6);
+  secs.tip.airfoil = { type: "named", name: "SG6043" };
+  const next = applySectionAirfoils(design, secs, 0.45);
+  assert.equal(next.airfoils.length, 3);
+  assert.equal(next.airfoils[0].span_ratio, 0);
+  assert.equal(next.airfoils[2].airfoil.name, "SG6043");
+  assert.ok(next.airfoils[1].span_ratio > 0.1 && next.airfoils[1].span_ratio < 1);
 });

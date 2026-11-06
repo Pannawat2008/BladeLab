@@ -954,6 +954,103 @@
         display: none;
       }
 
+      /* Blade Sections */
+      .sec-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+        padding: 4px;
+        margin-bottom: 12px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+      }
+      .sec-tab {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        height: auto;
+        padding: 8px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--radius-tag);
+        color: var(--text-muted);
+        text-align: left;
+      }
+      .sec-tab:hover {
+        background: var(--bg-card);
+        color: var(--text-primary);
+      }
+      .sec-tab.active {
+        background: var(--bg-raised);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
+        box-shadow: var(--top-highlight);
+      }
+      .sec-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 500;
+      }
+      .sec-sum {
+        font: 400 11px/16px var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--text-muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .dot-root { background: #f6b94d; }
+      .dot-mid { background: #8ea6ff; }
+      .dot-tip { background: #6fd6a6; }
+      .sec-num {
+        width: 64px;
+        height: 28px;
+        padding: 0 8px;
+        text-align: right;
+        font: 500 12px/16px var(--font-mono);
+        color: var(--text-primary);
+        background: var(--bg-deep);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-tag);
+      }
+      .sec-num:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .sec-num:disabled,
+      #sec-thick:disabled {
+        opacity: 0.45;
+      }
+      #sec-stack {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin-top: 12px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+      }
+      #layer2-sections .field {
+        margin-bottom: 8px;
+      }
+      #layer2-sections .row input[type="range"] {
+        background: linear-gradient(
+          to right,
+          var(--accent) 0%,
+          var(--accent) var(--fill, 50%),
+          var(--bg-raised) var(--fill, 50%),
+          var(--bg-raised) 100%
+        );
+      }
+
       /* Station Table (Right-aligned numeric columns, uniform 32px rows) */
       .table-wrap {
         width: 100%;
@@ -1523,6 +1620,60 @@
               <span id="planform-pin-text"></span>
               <button id="btn-planform-unpin" class="btn-mini" type="button">Clear overrides</button>
             </div>
+          </div>
+        </section>
+
+        <!-- Blade Sections: Root / Mid-span / Tip -->
+        <section id="layer2-sections">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L2</span>
+              <span>Blade sections</span>
+            </button>
+          </div>
+          <div class="planform-card">
+            <div class="sec-tabs" role="tablist" aria-label="Blade section">
+              <button id="sec-tab-root" class="sec-tab active" type="button" role="tab" aria-selected="true" data-sec="root">
+                <span class="sec-name"><i class="dot dot-root"></i>Root</span>
+                <span class="sec-sum" id="sec-sum-root">70 mm / 20°</span>
+              </button>
+              <button id="sec-tab-mid" class="sec-tab" type="button" role="tab" aria-selected="false" data-sec="mid">
+                <span class="sec-name"><i class="dot dot-mid"></i>Mid</span>
+                <span class="sec-sum" id="sec-sum-mid">52 mm / 11°</span>
+              </button>
+              <button id="sec-tab-tip" class="sec-tab" type="button" role="tab" aria-selected="false" data-sec="tip">
+                <span class="sec-name"><i class="dot dot-tip"></i>Tip</span>
+                <span class="sec-sum" id="sec-sum-tip">35 mm / 3°</span>
+              </button>
+            </div>
+            <div class="planform-label" id="sec-role">Structural and hub attachment</div>
+
+            <div class="field">
+              <label for="sec-airfoil">Airfoil family</label>
+              <select id="sec-airfoil">
+                <option value="naca4">NACA 4-digit (parametric)</option>
+                <option value="SG6043">SG6043 (high lift, low Re)</option>
+                <option value="SD7062">SD7062 (thick, low Re)</option>
+                <option value="E387">E387 (Eppler, low Re)</option>
+              </select>
+            </div>
+            <div class="row">
+              <label for="sec-chord">Chord width <span><input id="sec-chord-num" class="sec-num" type="number" min="10" max="150" step="1" aria-label="Chord width in millimetres" /> mm</span></label>
+              <input id="sec-chord" type="range" min="10" max="150" step="1" value="50" />
+            </div>
+            <div class="row">
+              <label for="sec-twist">Twist angle <span><input id="sec-twist-num" class="sec-num" type="number" min="-10" max="45" step="0.5" aria-label="Twist angle in degrees" /> °</span></label>
+              <input id="sec-twist" type="range" min="-10" max="45" step="0.5" value="10" />
+            </div>
+            <div class="row">
+              <label for="sec-thick">Thickness ratio t/c <span><input id="sec-thick-num" class="sec-num" type="number" min="6" max="30" step="0.5" aria-label="Thickness ratio in percent" /> %</span></label>
+              <input id="sec-thick" type="range" min="6" max="30" step="0.5" value="12" />
+            </div>
+            <div class="zone-ranges" id="sec-note"></div>
+
+            <svg id="sec-stack" viewBox="0 0 320 150" role="img" aria-label="Root, mid and tip sections overlaid to scale with twist"></svg>
+            <div class="zone-ranges">Drawn to scale, aligned on the pitch axis, rotated by twist.</div>
           </div>
         </section>
 

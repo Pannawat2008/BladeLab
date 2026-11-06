@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 75**
-> **LAST_UPDATED: 2026-11-06 22:36 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 76**
+> **LAST_UPDATED: 2026-11-06 22:45 (UTC+7) by geom-1**
 
 ---
 
@@ -456,6 +456,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Gotcha: chord widths did not match controls because the web default design (`web/src/designs/naca4412-linear.json`) carried a Layer-3 station override at span 1.0 (chord 32 mm, twist 2 deg) that pins the tip station over every Layer 1/2 chord control (measured via wasm: tip chord extent stayed 31.98 mm for tip 35 or 70 mm; all other stations matched exactly). Removed the override from the web default only (fixtures/ untouched, tests depend on it) and added a planform-panel warning with Clear overrides when any station override pins chord.
   refs: web/src/designs/naca4412-linear.json, web/src/main.ts, web/index.html
 
+- **F-geom1-046** | 2026-11-06 22:45 | geom-1 | T-105
+  Added "Blade sections" panel (`#layer2-sections`): Root / Mid / Tip tabs with live chord/twist summaries, per-section airfoil family, chord width, twist angle and thickness t/c (number + range), and a to-scale section-stack SVG (pitch-axis aligned, rotated by twist). Frontend-only: chord and twist are baked into 3-zone cosine-plateau formulas (`buildCosinePlateauExpr` now takes an explicit mid value; `parseCosinePlateauExpr` recovers center/width so sliders stay in sync after undo); airfoils are written as 3 stations (root 0, mid at plateau center, tip 1.0) via `applySectionAirfoils`. Verified through wasm build_mesh. Gotcha: NREL S833 is not in the kernel library (only SG6043, SD7062, E387 + NACA 4), so it is not offered; named profiles have fixed thickness (t/c field disabled).
+  refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -844,3 +848,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T22:30+07:00 agent=geom-1 mem=v74 note="added Planform & span transitions panel (Linear taper / Smooth cosine, center + plateau sliders, Root/Mid/Tip zone bar) via chord formula; 10 Node tests + tsc + vite build clean; F-geom1-044 recorded"
 [RE-ACK] 2026-11-06T22:31:00+07:00 agent=geom-1 mem=v74 last_entry=F-geom1-044 task=T-105 note="lead reported chord width not matching value; root-caused to pinned tip station override"
 [END] 2026-11-06T22:37+07:00 agent=geom-1 mem=v75 note="fixed chord width mismatch: removed pinned tip override from web default design, added override warning with Clear in planform panel; tsc + 10 tests + build clean; F-geom1-045 recorded"
+[RE-ACK] 2026-11-06T22:37:00+07:00 agent=geom-1 mem=v75 last_entry=F-geom1-045 task=T-105 note="lead requested Root/Mid/Tip per-section editor (airfoil, chord, twist, thickness)"
+[END] 2026-11-06T22:46+07:00 agent=geom-1 mem=v76 note="added Blade sections panel with per-section airfoil/chord/twist/thickness and to-scale section stack; 11 tests + tsc + build clean; F-geom1-046 recorded"

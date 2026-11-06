@@ -27,8 +27,13 @@ import {
   applyBezierCurve,
   buildCosinePlateauExpr,
   planformZones,
-  applyBoundRootChord,
-  applyFormulaCurve,
+  parseCosinePlateauExpr,
+  applySectionAirfoils,
+  airfoilShapeParams,
+  readSections,
+  renderSectionStackSvgMarkup,
+  type SectionKey,
+  applyBoundRootChord,  applyFormulaCurve,
   applyLinearLayer1,
   applySchmitzLayer1,
   applyScrubDelta,
@@ -189,6 +194,17 @@ const planformZoneRanges = document.getElementById("planform-zone-ranges")!;
 const planformPin = document.getElementById("planform-pin")!;
 const planformPinText = document.getElementById("planform-pin-text")!;
 const btnPlanformUnpin = document.getElementById("btn-planform-unpin") as HTMLButtonElement;
+const secTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".sec-tab"));
+const secRole = document.getElementById("sec-role")!;
+const secAirfoil = document.getElementById("sec-airfoil") as HTMLSelectElement;
+const secChord = document.getElementById("sec-chord") as HTMLInputElement;
+const secChordNum = document.getElementById("sec-chord-num") as HTMLInputElement;
+const secTwist = document.getElementById("sec-twist") as HTMLInputElement;
+const secTwistNum = document.getElementById("sec-twist-num") as HTMLInputElement;
+const secThick = document.getElementById("sec-thick") as HTMLInputElement;
+const secThickNum = document.getElementById("sec-thick-num") as HTMLInputElement;
+const secNote = document.getElementById("sec-note")!;
+const secStack = document.getElementById("sec-stack") as unknown as SVGSVGElement;
 const btnModeLinear = document.getElementById("mode-linear") as HTMLButtonElement;
 const btnModeSchmitz = document.getElementById("mode-schmitz") as HTMLButtonElement;
 const btnModeBezier = document.getElementById("mode-bezier") as HTMLButtonElement;
@@ -283,6 +299,7 @@ const expFitSummary = document.getElementById("exp-fit-summary")!;
 
 let bezierTarget: "chord_mm" | "twist_deg" = "chord_mm";
 let planformCosine = false;
+let activeSection: SectionKey = "root";
 const lockedSpanRatios: number[] = [];
 let baselineBundleA: AeroSimulationBundle | null = null;
 let latestBundleB: AeroSimulationBundle | null = null;
@@ -915,9 +932,16 @@ function activeDistributionMode(design: Design): "linear" | "schmitz" | "bezier"
   return "linear";
 }
 
-function renderPlanformPanel(design: Design) {
+function renderPlanformPanel(design: Design, adoptFromExpr = true) {
   const chord = design.distributions.chord_mm;
   planformCosine = chord.type === "formula" && chord.expr.includes("cos(pi");
+  if (adoptFromExpr && chord.type === "formula") {
+    const parsed = parseCosinePlateauExpr(chord.expr);
+    if (parsed) {
+      sliderPlanformCenter.value = String(Math.round(parsed.center * 100));
+      sliderPlanformWidth.value = String(Math.round(parsed.width * 100));
+    }
+  }
   const bladeLenMm = Math.max(0, design.rotor.radius_mm - design.rotor.hub_radius_mm);
   const center = Number.parseFloat(sliderPlanformCenter.value) / 100;
   const width = Number.parseFloat(sliderPlanformWidth.value) / 100;
@@ -951,6 +975,119 @@ function renderPlanformPanel(design: Design) {
     planformPinText.textContent = `Station override pins chord at ${where} of span`;
   }
 }
+
+const SECTION_ROLES: Record<SectionKey, string> = {
+  root: "Structural and hub attachment",
+  mid: "Primary power production",
+  tip: "Low drag and vortex relief",
+};
+
+function sectionCenterFrac(): number {
+  return (Number.parseFloat(sliderPlanformCenter.value) || 45) / 100;
+}
+
+function setRangeFill(input: HTMLInputElement) {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  input.style.setProperty("--fill", `${((Number(input.value) - min) / (max - min)) * 100}%`);
+}
+
+function renderSectionsPanel(design: Design) {
+  const sections = readSections(design, sectionCenterFrac());
+  for (const tab of secTabs) {
+    const key = tab.dataset.sec as SectionKey;
+    const on = key === activeSection;
+    tab.classList.toggle("active", on);
+    tab.setAttribute("aria-selected", String(on));
+    const sum = document.getElementById(`sec-sum-${key}`)!;
+    sum.textContent = `${sections[key].chord_mm.toFixed(0)} mm / ${sections[key].twist_deg.toFixed(1).replace(/\.0$/, "")}°`;
+  }
+  secRole.textContent = SECTION_ROLES[activeSection];
+
+  const sec = sections[activeSection];
+  const shape = airfoilShapeParams(sec.airfoil);
+  secAirfoil.value = sec.airfoil.type === "named" ? sec.airfoil.name : "naca4";
+  secChord.value = String(Math.round(sec.chord_mm));
+  secChordNum.value = String(Math.round(sec.chord_mm));
+  secTwist.value = String(Number(sec.twist_deg.toFixed(1)));
+  secTwistNum.value = String(Number(sec.twist_deg.toFixed(1)));
+  secThick.value = String(Number((shape.t * 100).toFixed(1)));
+  secThickNum.value = String(Number((shape.t * 100).toFixed(1)));
+  const fixedProfile = sec.airfoil.type === "named";
+  secThick.disabled = fixedProfile;
+  secThickNum.disabled = fixedProfile;
+  secNote.textContent =
+    sec.airfoil.type === "named"
+      ? `${sec.airfoil.name} has a fixed profile; t/c is nominal. Switch to NACA to tune thickness.`
+      : "";
+  for (const r of [secChord, secTwist, secThick]) setRangeFill(r);
+
+  secStack.innerHTML = renderSectionStackSvgMarkup(sections, activeSection);
+}
+
+function commitSectionAirfoil() {
+  const center = sectionCenterFrac();
+  const sections = readSections(workingDesign, center);
+  const prev = sections[activeSection].airfoil;
+  const thickness = (Number.parseFloat(secThickNum.value) || 12) / 100;
+  sections[activeSection].airfoil =
+    secAirfoil.value === "naca4"
+      ? {
+          type: "naca4",
+          max_camber: prev.type === "naca4" ? prev.max_camber : 0.04,
+          camber_position: prev.type === "naca4" ? prev.camber_position : 0.4,
+          thickness_ratio: Math.min(0.3, Math.max(0.06, thickness)),
+        }
+      : { type: "named", name: secAirfoil.value };
+  commitDesign(applySectionAirfoils(workingDesign, sections, center));
+}
+
+function commitSectionCurve(target: "chord_mm" | "twist_deg", value: number) {
+  const center = sectionCenterFrac();
+  const width = (Number.parseFloat(sliderPlanformWidth.value) || 25) / 100;
+  const sections = readSections(workingDesign, center);
+  const field = target === "chord_mm" ? "chord_mm" : "twist_deg";
+  sections[activeSection][field] = value;
+  const expr = buildCosinePlateauExpr(
+    sections.root[field],
+    sections.tip[field],
+    center,
+    width,
+    sections.mid[field],
+  );
+  commitDesign(applyFormulaCurve(workingDesign, target, expr, lockedSpanRatios));
+}
+
+function syncSectionPair(range: HTMLInputElement, num: HTMLInputElement, commit: (v: number) => void) {
+  range.addEventListener("input", () => {
+    num.value = range.value;
+    setRangeFill(range);
+  });
+  range.addEventListener("change", () => commit(Number(range.value)));
+  num.addEventListener("change", () => {
+    const min = Number(num.min);
+    const max = Number(num.max);
+    const v = Math.min(max, Math.max(min, Number.parseFloat(num.value)));
+    if (!Number.isFinite(v)) {
+      renderSectionsPanel(workingDesign);
+      return;
+    }
+    range.value = String(v);
+    num.value = String(v);
+    commit(v);
+  });
+}
+
+for (const tab of secTabs) {
+  tab.addEventListener("click", () => {
+    activeSection = tab.dataset.sec as SectionKey;
+    renderSectionsPanel(workingDesign);
+  });
+}
+secAirfoil.addEventListener("change", commitSectionAirfoil);
+syncSectionPair(secChord, secChordNum, (v) => commitSectionCurve("chord_mm", v));
+syncSectionPair(secTwist, secTwistNum, (v) => commitSectionCurve("twist_deg", v));
+syncSectionPair(secThick, secThickNum, () => commitSectionAirfoil());
 
 function syncControlsFromDesign(design: Design) {
   const { rotor, distributions } = design;
@@ -1033,6 +1170,7 @@ function syncControlsFromDesign(design: Design) {
   btnBezierTargetTwist.setAttribute("aria-selected", String(bezierTarget === "twist_deg"));
   renderBezierEditor(design);
   renderPlanformPanel(design);
+  renderSectionsPanel(design);
 
   const counts = history.counts();
   btnUndo.disabled = !history.canUndo();
@@ -1672,18 +1810,31 @@ function planformEndpoints(design: Design): { root: number; tip: number } {
   };
 }
 
+function cosineCenterOf(design: Design, target: "chord_mm" | "twist_deg"): number | null {
+  const curve = design.distributions[target];
+  return curve.type === "formula" ? (parseCosinePlateauExpr(curve.expr)?.center ?? null) : null;
+}
+
 function applyPlanformCosine() {
-  const { root, tip } = planformEndpoints(workingDesign);
   const center = Number.parseFloat(sliderPlanformCenter.value) / 100;
   const width = Number.parseFloat(sliderPlanformWidth.value) / 100;
-  commitDesign(
-    applyFormulaCurve(
-      workingDesign,
-      "chord_mm",
-      buildCosinePlateauExpr(root, tip, center, width),
+  let next = workingDesign;
+  for (const target of ["chord_mm", "twist_deg"] as const) {
+    const oldCenter = cosineCenterOf(workingDesign, target);
+    if (oldCenter === null && target === "twist_deg") continue;
+    const field = target;
+    const secs = readSections(workingDesign, oldCenter ?? center);
+    const root = secs.root[field];
+    const tip = secs.tip[field];
+    const mid = oldCenter === null ? 0.5 * (root + tip) : secs.mid[field];
+    next = applyFormulaCurve(
+      next,
+      target,
+      buildCosinePlateauExpr(root, tip, center, width, mid),
       lockedSpanRatios,
-    ),
-  );
+    );
+  }
+  commitDesign(next);
 }
 
 btnPlanformLinear.addEventListener("click", () => {
@@ -1704,7 +1855,7 @@ btnPlanformCosine.addEventListener("click", () => {
 });
 
 for (const slider of [sliderPlanformCenter, sliderPlanformWidth]) {
-  slider.addEventListener("input", () => renderPlanformPanel(workingDesign));
+  slider.addEventListener("input", () => renderPlanformPanel(workingDesign, false));
   slider.addEventListener("change", () => {
     if (planformCosine) applyPlanformCosine();
   });

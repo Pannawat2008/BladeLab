@@ -476,13 +476,174 @@ export function buildCosinePlateauExpr(
   tipMm: number,
   center: number,
   width: number,
+  midMm: number = 0.5 * (rootMm + tipMm),
 ): string {
   const { rootEnd, tipStart } = planformZones(center, width);
   const f = (n: number) => n.toFixed(4);
   const clamp01 = (u: string) => `((abs(${u}) - abs((${u}) - 1) + 1) / 2)`;
   const h1 = `(1 - cos(pi * ${clamp01(`s / ${f(rootEnd)}`)})) / 2`;
   const h2 = `(1 - cos(pi * ${clamp01(`(s - ${f(tipStart)}) / ${f(1 - tipStart)}`)})) / 2`;
-  return `${f(rootMm)} + (${f(tipMm - rootMm)}) * 0.5 * ((${h1}) + (${h2}))`;
+  return `${f(rootMm)} + (${f(midMm - rootMm)}) * (${h1}) + (${f(tipMm - midMm)}) * (${h2})`;
+}
+
+export type SectionKey = "root" | "mid" | "tip";
+
+/**
+ * Recovers plateau `center` and `width` (span fractions) from an expression
+ * produced by `buildCosinePlateauExpr`, or `null` for any other expression.
+ */
+export function parseCosinePlateauExpr(expr: string): { center: number; width: number } | null {
+  if (!expr.includes("cos(pi")) return null;
+  const a = /abs\(s \/ ([0-9.]+)\)/.exec(expr);
+  const b = /\(\(s - ([0-9.]+)\) \//.exec(expr);
+  if (!a || !b) return null;
+  const rootEnd = Number.parseFloat(a[1]!);
+  const tipStart = Number.parseFloat(b[1]!);
+  if (!Number.isFinite(rootEnd) || !Number.isFinite(tipStart) || tipStart <= rootEnd) return null;
+  return { center: 0.5 * (rootEnd + tipStart), width: tipStart - rootEnd };
+}
+
+export interface SectionState {
+  chord_mm: number;
+  twist_deg: number;
+  airfoil: AirfoilSpec;
+}
+
+/** Span ratio `r / R` of the mid-span section at plateau `center` (fraction of blade span). */
+export function midSpanRatio(rotor: Rotor, center: number): number {
+  const hub = rotor.hub_radius_mm / rotor.radius_mm;
+  return hub + (1 - hub) * center;
+}
+
+function airfoilAt(design: Design, spanRatio: number): AirfoilSpec {
+  let chosen = design.airfoils[0]?.airfoil;
+  for (const st of design.airfoils) {
+    if (st.span_ratio <= spanRatio + RATIO_EPS) chosen = st.airfoil;
+  }
+  return (
+    chosen ?? { type: "naca4", max_camber: 0.04, camber_position: 0.4, thickness_ratio: 0.12 }
+  );
+}
+
+/** Reads effective Root / Mid / Tip section values from any distribution mode. */
+export function readSections(design: Design, center: number): Record<SectionKey, SectionState> {
+  const { rotor, distributions } = design;
+  const hub = rotor.hub_radius_mm / rotor.radius_mm;
+  const at = (key: SectionKey): SectionState => {
+    const s = key === "root" ? 0 : key === "tip" ? 1 : center;
+    const sr = key === "root" ? hub : key === "tip" ? 1 : midSpanRatio(rotor, center);
+    const airfoil =
+      key === "root"
+        ? (design.airfoils[0]?.airfoil ?? airfoilAt(design, sr))
+        : key === "tip"
+          ? (design.airfoils[design.airfoils.length - 1]?.airfoil ?? airfoilAt(design, sr))
+          : airfoilAt(design, sr);
+    return {
+      chord_mm: evalChordCurve(distributions.chord_mm, rotor, sr, s),
+      twist_deg: evalTwistCurve(distributions.twist_deg, rotor, sr, s),
+      airfoil: JSON.parse(JSON.stringify(airfoil)) as AirfoilSpec,
+    };
+  };
+  return { root: at("root"), mid: at("mid"), tip: at("tip") };
+}
+
+/** Writes three airfoil stations (root, mid-span, tip) into the design. */
+export function applySectionAirfoils(
+  design: Design,
+  sections: Record<SectionKey, SectionState>,
+  center: number,
+): Design {
+  const next = cloneDesign(design);
+  next.airfoils = [
+    { span_ratio: 0.0, airfoil: sections.root.airfoil },
+    { span_ratio: midSpanRatio(design.rotor, center), airfoil: sections.mid.airfoil },
+    { span_ratio: 1.0, airfoil: sections.tip.airfoil },
+  ].map((st) => ({
+    span_ratio: st.span_ratio,
+    airfoil: JSON.parse(JSON.stringify(st.airfoil)) as AirfoilSpec,
+  }));
+  return next;
+}
+
+export function airfoilShapeParams(spec: AirfoilSpec): {
+  m: number;
+  p: number;
+  t: number;
+  label: string;
+} {
+  if (spec.type === "named") {
+    const table: Record<string, [number, number, number]> = {
+      SG6043: [0.055, 0.42, 0.1],
+      SD7062: [0.038, 0.38, 0.14],
+      E387: [0.032, 0.4, 0.091],
+    };
+    const [m, p, t] = table[spec.name] ?? [0.04, 0.4, 0.12];
+    return { m, p, t, label: spec.name };
+  }
+  return {
+    m: spec.max_camber,
+    p: spec.camber_position > 0 ? spec.camber_position : 0.4,
+    t: spec.thickness_ratio,
+    label: `NACA t=${(spec.thickness_ratio * 100).toFixed(0)}%`,
+  };
+}
+
+/**
+ * Spanwise section stack: Root, Mid and Tip profiles drawn to a common scale,
+ * aligned on the pitch axis (25% chord) and rotated by their twist, so chord,
+ * thickness and twist differences are visible at once.
+ */
+export function renderSectionStackSvgMarkup(
+  sections: Record<SectionKey, SectionState>,
+  active: SectionKey,
+): string {
+  const w = 320;
+  const h = 150;
+  const cx = 96;
+  const cy = h / 2;
+  const maxChord = Math.max(1, sections.root.chord_mm, sections.mid.chord_mm, sections.tip.chord_mm);
+  const scale = 224 / maxChord;
+  const colors: Record<SectionKey, string> = { root: "#f6b94d", mid: "#8ea6ff", tip: "#6fd6a6" };
+  const samples = 40;
+
+  const outline = (key: SectionKey): string => {
+    const sec = sections[key];
+    const { m, p, t } = airfoilShapeParams(sec.airfoil);
+    const c = sec.chord_mm * scale;
+    const th = (sec.twist_deg * Math.PI) / 180;
+    const cosT = Math.cos(th);
+    const sinT = Math.sin(th);
+    const upper: [number, number][] = [];
+    const lower: [number, number][] = [];
+    for (let i = 0; i <= samples; i++) {
+      const xc = 0.5 * (1 - Math.cos((Math.PI * i) / samples));
+      const yt =
+        5 * t * (0.2969 * Math.sqrt(xc) - 0.126 * xc - 0.3516 * xc ** 2 + 0.2843 * xc ** 3 - 0.1015 * xc ** 4);
+      let yc = 0;
+      if (m > 0 && p > 0 && p < 1) {
+        yc = xc < p ? (m / (p * p)) * (2 * p * xc - xc * xc) : (m / ((1 - p) ** 2)) * (1 - 2 * p + 2 * p * xc - xc * xc);
+      }
+      upper.push([(xc - 0.25) * c, -(yc + yt) * c]);
+      lower.push([(xc - 0.25) * c, -(yc - yt) * c]);
+    }
+    const ring = [...upper, ...lower.reverse()];
+    return ring
+      .map(([x, y]) => `${(cx + x * cosT - y * sinT).toFixed(1)},${(cy + x * sinT + y * cosT).toFixed(1)}`)
+      .join(" ");
+  };
+
+  const order: SectionKey[] = ["root", "mid", "tip"];
+  const polys = order
+    .map((key) => {
+      const on = key === active;
+      return `<polygon points="${outline(key)}" fill="${colors[key]}" fill-opacity="${on ? 0.34 : 0.12}" stroke="${colors[key]}" stroke-width="${on ? 1.8 : 1}" stroke-opacity="${on ? 1 : 0.7}" />`;
+    })
+    .join("");
+  return `<line x1="${cx}" y1="14" x2="${cx}" y2="${h - 14}" stroke="rgba(238,240,245,0.16)" stroke-dasharray="3 3" />
+<line x1="12" y1="${cy}" x2="${w - 12}" y2="${cy}" stroke="rgba(238,240,245,0.08)" />
+${polys}
+<circle cx="${cx}" cy="${cy}" r="2.5" fill="#f59e0b" />
+<text x="${cx + 6}" y="22" font-size="10" fill="#8b93a7" font-family="IBM Plex Mono, monospace">pitch axis 25% c</text>`;
 }
 
 /**
