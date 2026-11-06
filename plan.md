@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 63**
-> **LAST_UPDATED: 2026-11-06 16:52 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 64**
+> **LAST_UPDATED: 2026-11-06 17:41 (UTC+7) by geom-1**
 
 ---
 
@@ -806,4 +806,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T15:45+07:00 agent=geom-1 mem=v61 note="added Interlocking Joints (Dovetail Butterfly, Cruciform + Cross-Beam, 3D Snap-Lock Barb, and 3D Tapered Wedge) in crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/mesh.rs, and web UI (#align-shape, 1-click Joint Presets, and 2D SVG preview); verified watertight manifold meshes across all 4 interlocking types; F-geom1-037 recorded"
 [RE-ACK] 2026-11-06T16:42:30+07:00 agent=geom-1 mem=v61 last_entry=F-geom1-037 task=T-005 note="lead reported 3D model preview not level / not clean; aligned via /grill-me on: (1) straight coaxial CF spar tube bore & rod along span, (2) 32-deg crease-angle normals for crisp flat caps/split faces/pins + smooth airfoil skin, (3) centered hub/blade mid-plane & straight Z pitch-axis alignment, and (4) smooth cubic Catmull-Rom .dat resampling + denser spanwise loft tessellation"
 [END] 2026-11-06T16:52+07:00 agent=geom-1 mem=v63 note="fixed 3D model preview leveling & cleanliness: coaxial straight SparTubeAxis + MIN_SEGMENT_STATIONS=14 in crates/blade-mesh/src/fabrication.rs, MeshData::tube_axis in blade-wasm, and 32-deg crease-angle normals + CAD feature edges + coaxial 3D rod + centered hub/pitch-axis in web/src/main.ts; F-geom1-038 recorded"
+[RE-ACK] 2026-11-06T17:41:30+07:00 agent=geom-1 mem=v63 last_entry=F-geom1-038 task=T-105 note="lead requested making the web UI appealing and responsive; applying frontend-design and ui-taste skills across web/index.html and web/src/main.ts"
 ```
