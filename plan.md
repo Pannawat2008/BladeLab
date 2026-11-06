@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 55**
-> **LAST_UPDATED: 2026-11-06 12:50 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 56**
+> **LAST_UPDATED: 2026-11-06 14:22 (UTC+7) by geom-1**
 
 ---
 
@@ -237,7 +237,13 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-303 | Generator matching (Kv, internal resistance, load curve) | aero | geom-1 | done | 2026-11-06 09:53 | T-302 | Accurately predicts voltage and output power |
 | T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | geom-1 | done | 2026-11-06 10:04 | T-302 | Successfully plots experimental data against simulation curves |
 
-Lead will populate Phase 4 (optimizers, NeuralFoil, OCCT, team accounts) upon completion of Phase 3.
+### Phase 4 — Optimization & Polish
+| ID | Task | Role | Owner | Status | Since | Depends | Acceptance Criteria |
+|---|---|---|---|---|---|---|---|
+| T-401 | Automated chord & twist optimizer (Nelder–Mead + coordinate search for max Cp with manufacturing constraints) + Web UI | aero | geom-1 | in-progress | 2026-11-06 14:22 | T-302, T-304 | Improves or matches Cp on suboptimal designs while respecting locked stations and min thickness/chord bounds |
+| T-402 | NeuralFoil-style arbitrary airfoil polar synthesis (thin-airfoil + viscous BL surrogate + Viterna across Re) | aero | - | todo | - | T-202, T-301 | Custom NACA / blended / .dat airfoils produce geometry-sensitive polars across ±180° and Re 20k–200k |
+| T-403 | Root structural fillet flare & OCCT CAD kernel adapter in blade-cad | cad | - | todo | - | T-006, T-203 | Root fillet reduces hub-root step discontinuity; OcctKernel implements CadKernel with STEP verification |
+| T-404 | Team accounts, workspace scoping & Cloud Design Library UI | server | - | todo | - | T-204, T-105 | Server supports team/user workspace scoping; Web UI saves, browses, loads, and versions cloud designs |
 
 ---
 
@@ -380,7 +386,7 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
 - **F-geom1-035** | 2026-11-06 12:50 | geom-1 | T-005
   Split faces now carry **alignment dowel pins / keys with custom tolerances**. `blade_mesh::{AlignmentSpec, AlignmentShape, alignment_report}` and `SparHoleSpec.tolerance_mm` (`crates/blade-mesh/src/fabrication.rs`): the lower segment gets integrated round pins or rectangular keys protruding +z, the upper segment gets matching blind sockets enlarged by `clearance_mm` per side and `depth_clearance_mm` extra depth; `tolerance_mm` widens the carbon tube bore diameter. Placement is fore/aft of the tube along the chord, shrunk (down to 55%) and as a last resort omitted when `min_wall_mm` to the skin cannot be kept, so `alignment_report` / wasm `fabrication_report` expose placed-vs-requested counts and the UI warns instead of dropping pins silently. Caps with several cavities use a generic bridge + ear-clip triangulator (`append_cap_with_holes`), replacing the tube-only strut method; no booleans. Web: `#align-*` controls, Tight/Standard/Loose fit presets, `#spar-hole-tolerance`, `#align-status`.
-  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/src/main.ts, web/index.html | supersedes: �
+  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/src/main.ts, web/index.html | supersedes: –
 - **F-geom1-023** | 2026-11-06 01:04 | geom-1 | T-201
   `blade_model::CurveSource` now supports `Bezier { points: Vec<BezierControlPoint> }` (`eval_bezier` solving `x(t) = s` via 48-iteration bisection over De Casteljau) and `Formula { expr: String }` (`eval_formula` via `evalexpr` 11.3.1 with bound variables `x = r/R`, `s`, `r`, `R`, `r_hub`, `B`, `tsr`, `pi` and math functions `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `abs`, `exp`, `ln`, `pow`, `deg`, `rad`). Malformed formulas, unknown variables, division by zero, `NaN`/`±∞`, and out-of-domain values are caught in `validate()` and reported as `ValidationIssue` entries without panicking.
   refs: crates/blade-model/src/{curve,schema,validate}.rs, web/src/types/blade-model.ts | supersedes: –
@@ -515,6 +521,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-025** | 2026-11-06 09:54 | geom-1 | T-304 | **Accepted**
   The lead's "lets do next" instruction in-session on 2026-11-06 approves the **T-304** takeover (`web` role: `crates/blade-wasm/` + `web/`). Scope: (1) expose `simulate_aero(design_json, options_json)` in `crates/blade-wasm` returning JSON with the design-point `AeroResult`, full `TsrSweepPoint` curve, and optional `GeneratorMatchResult`; (2) extend `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` with a live SVG $C_p$–TSR chart (`#cp-tsr-svg` with Betz limit reference), **A/B Design Comparison** (snapshotting Baseline A and plotting both A and B curves with $\Delta C_{p,\max}$ / $\Delta P$ metrics), and **Experimental Test Data Logging** (parsing/adding experimental `(tsr, cp, rpm, power_w)` measurements, overlaying them as scatter points on the $C_p$–TSR SVG chart, and computing residuals/RMSE against the BEM simulation curve). No §8 signatures are modified.
   refs: plan.md §7 T-304, §3, §6.2 | supersedes: –
+- **D-geom1-026** | 2026-11-06 14:22 | geom-1 | T-401 | **Accepted**
+  The lead's "go to phase 4" instruction in-session on 2026-11-06 populates **Phase 4 — Optimization & Polish** (`T-401`..`T-404`) in §7 and approves the **T-401** takeover (`aero` / `web` roles: `crates/blade-aero/src/optimize.rs`, `crates/blade-wasm/`, and `web/`). Scope for `T-401`: deterministic derivative-free blade chord & twist optimizer (`optimize_blade`) maximizing single-point design-TSR $C_p$ or broadband TSR-band weighted $C_p$ while respecting locked stations (`StationOverride.locked`), minimum root/tip chord bounds, and manufacturing trailing-edge / thickness constraints, exposed in `blade-wasm` (`optimize_blade_wasm`) and the Web UI (`#aero-dock` one-click Auto-Optimize panel). No §8 signatures are modified.
+  refs: plan.md §7 T-401..T-404, §8 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -773,4 +782,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T12:21+07:00 agent=geom-1 mem=v53 note="added crates/blade-mesh/src/fabrication.rs (SparHoleSpec, FabricationSpec, tessellate_fabricated) + blade-wasm export_fabricated_{stl,3mf}_bytes + web #layer-fabrication UI (CF tube hole diameter/depth/offset + presets + 3D rod preview + 2D bore circle + 1..4 part split model + exploded gap + Export All Split Parts .STL); 140 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-034 recorded"
 [RE-ACK] 2026-11-06T12:38:00+07:00 agent=geom-1 mem=v53 last_entry=F-geom1-034 task=T-005 note="lead requested alignment dowel pins/keys on split faces with custom tolerances"
 [END] 2026-11-06T12:50+07:00 agent=geom-1 mem=v55 note="added round pins / rectangular keys + sockets on split faces with clearance, extra depth, min wall and tube bore tolerance; generic cap-with-holes triangulator; alignment_report/fabrication_report placement warnings; 6 mesh fabrication tests + 9 Node tests, fmt/clippy/tsc clean; F-geom1-035 recorded"
+[RE-ACK] 2026-11-06T14:22:00+07:00 agent=geom-1 mem=v55 last_entry=F-geom1-035 task=T-401 note="lead: 'go to phase 4' -> populated Phase 4 (T-401..T-404) and claimed T-401 (Automated chord & twist optimizer + Web UI) under D-geom1-026"
 ```
