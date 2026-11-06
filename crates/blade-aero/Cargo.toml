@@ -1,0 +1,17 @@
+[package]
+name = "blade-aero"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Aerodynamic polar tables, Viterna 360-degree extrapolation, BEM solver, and generator matching for BladeLab"
+
+[dependencies]
+blade-model = { path = "../blade-model" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

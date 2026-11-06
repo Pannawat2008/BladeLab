@@ -1,0 +1,60 @@
+{
+  "name": "NACA4412",
+  "aspect_ratio": 12.0,
+  "sweeps": [
+    {
+      "reynolds": 30000.0,
+      "points": [
+        { "alpha_deg": -12.0, "cl": -0.52, "cd": 0.086 },
+        { "alpha_deg": -8.0, "cl": -0.28, "cd": 0.048 },
+        { "alpha_deg": -4.0, "cl": 0.02, "cd": 0.028 },
+        { "alpha_deg": -2.0, "cl": 0.22, "cd": 0.023 },
+        { "alpha_deg": 0.0, "cl": 0.42, "cd": 0.020 },
+        { "alpha_deg": 2.0, "cl": 0.63, "cd": 0.019 },
+        { "alpha_deg": 4.0, "cl": 0.84, "cd": 0.020 },
+        { "alpha_deg": 6.0, "cl": 1.04, "cd": 0.023 },
+        { "alpha_deg": 8.0, "cl": 1.21, "cd": 0.028 },
+        { "alpha_deg": 10.0, "cl": 1.34, "cd": 0.036 },
+        { "alpha_deg": 12.0, "cl": 1.41, "cd": 0.050 },
+        { "alpha_deg": 14.0, "cl": 1.38, "cd": 0.075 },
+        { "alpha_deg": 16.0, "cl": 1.28, "cd": 0.112 }
+      ]
+    },
+    {
+      "reynolds": 100000.0,
+      "points": [
+        { "alpha_deg": -12.0, "cl": -0.60, "cd": 0.068 },
+        { "alpha_deg": -8.0, "cl": -0.34, "cd": 0.035 },
+        { "alpha_deg": -4.0, "cl": 0.04, "cd": 0.018 },
+        { "alpha_deg": -2.0, "cl": 0.25, "cd": 0.015 },
+        { "alpha_deg": 0.0, "cl": 0.46, "cd": 0.0135 },
+        { "alpha_deg": 2.0, "cl": 0.68, "cd": 0.013 },
+        { "alpha_deg": 4.0, "cl": 0.89, "cd": 0.014 },
+        { "alpha_deg": 6.0, "cl": 1.10, "cd": 0.016 },
+        { "alpha_deg": 8.0, "cl": 1.28, "cd": 0.020 },
+        { "alpha_deg": 10.0, "cl": 1.42, "cd": 0.026 },
+        { "alpha_deg": 12.0, "cl": 1.50, "cd": 0.037 },
+        { "alpha_deg": 14.0, "cl": 1.48, "cd": 0.058 },
+        { "alpha_deg": 16.0, "cl": 1.38, "cd": 0.092 }
+      ]
+    },
+    {
+      "reynolds": 200000.0,
+      "points": [
+        { "alpha_deg": -12.0, "cl": -0.65, "cd": 0.060 },
+        { "alpha_deg": -8.0, "cl": -0.36, "cd": 0.030 },
+        { "alpha_deg": -4.0, "cl": 0.05, "cd": 0.015 },
+        { "alpha_deg": -2.0, "cl": 0.27, "cd": 0.0125 },
+        { "alpha_deg": 0.0, "cl": 0.48, "cd": 0.011 },
+        { "alpha_deg": 2.0, "cl": 0.70, "cd": 0.0105 },
+        { "alpha_deg": 4.0, "cl": 0.92, "cd": 0.0115 },
+        { "alpha_deg": 6.0, "cl": 1.13, "cd": 0.0135 },
+        { "alpha_deg": 8.0, "cl": 1.32, "cd": 0.017 },
+        { "alpha_deg": 10.0, "cl": 1.47, "cd": 0.022 },
+        { "alpha_deg": 12.0, "cl": 1.56, "cd": 0.032 },
+        { "alpha_deg": 14.0, "cl": 1.55, "cd": 0.050 },
+        { "alpha_deg": 16.0, "cl": 1.45, "cd": 0.082 }
+      ]
+    }
+  ]
+}

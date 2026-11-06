@@ -4,6 +4,7 @@ members = [
     "crates/blade-model",
     "crates/blade-geom",
     "crates/blade-mesh",
+    "crates/blade-aero",
     "crates/blade-cad",
     "crates/blade-wasm",
     "crates/blade-cli",

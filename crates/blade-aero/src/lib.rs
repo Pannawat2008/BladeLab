@@ -1,0 +1,15 @@
+//! `blade-aero` — Aerodynamic polar tables, Viterna–Corrigan 360-degree post-stall
+//! extrapolation (`T-301`), BEM solver (`T-302`), and generator matching (`T-303`).
+//!
+//! Pure `f64` computational crate: zero filesystem or network I/O, compiles cleanly
+//! to `wasm32-unknown-unknown` (`F-lead1-001`).
+
+#![forbid(unsafe_code)]
+
+pub mod error;
+pub mod polar;
+pub mod viterna;
+
+pub use error::AeroError;
+pub use polar::{PolarSet, PolarSweepSpec, PolarTable, PolarTableSpec, BUILTIN_POLAR_NAMES};
+pub use viterna::{viterna_cd_max, wrap_alpha_deg, PolarEval, PolarPoint, ViternaSweep};

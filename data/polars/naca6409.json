@@ -1,0 +1,34 @@
+{
+  "name": "NACA6409",
+  "aspect_ratio": 12.0,
+  "sweeps": [
+    {
+      "reynolds": 50000.0,
+      "points": [
+        { "alpha_deg": -12.0, "cl": -0.32, "cd": 0.092 },
+        { "alpha_deg": -8.0, "cl": -0.05, "cd": 0.052 },
+        { "alpha_deg": -4.0, "cl": 0.28, "cd": 0.028 },
+        { "alpha_deg": 0.0, "cl": 0.68, "cd": 0.019 },
+        { "alpha_deg": 4.0, "cl": 1.08, "cd": 0.020 },
+        { "alpha_deg": 8.0, "cl": 1.42, "cd": 0.028 },
+        { "alpha_deg": 10.0, "cl": 1.54, "cd": 0.038 },
+        { "alpha_deg": 12.0, "cl": 1.58, "cd": 0.056 },
+        { "alpha_deg": 14.0, "cl": 1.50, "cd": 0.088 }
+      ]
+    },
+    {
+      "reynolds": 150000.0,
+      "points": [
+        { "alpha_deg": -12.0, "cl": -0.38, "cd": 0.074 },
+        { "alpha_deg": -8.0, "cl": -0.08, "cd": 0.038 },
+        { "alpha_deg": -4.0, "cl": 0.32, "cd": 0.020 },
+        { "alpha_deg": 0.0, "cl": 0.72, "cd": 0.0135 },
+        { "alpha_deg": 4.0, "cl": 1.14, "cd": 0.0145 },
+        { "alpha_deg": 8.0, "cl": 1.50, "cd": 0.021 },
+        { "alpha_deg": 10.0, "cl": 1.63, "cd": 0.029 },
+        { "alpha_deg": 12.0, "cl": 1.68, "cd": 0.044 },
+        { "alpha_deg": 14.0, "cl": 1.60, "cd": 0.072 }
+      ]
+    }
+  ]
+}
