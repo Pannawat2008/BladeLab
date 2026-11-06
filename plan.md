@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 73**
-> **LAST_UPDATED: 2026-11-06 22:16 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 74**
+> **LAST_UPDATED: 2026-11-06 22:30 (UTC+7) by geom-1**
 
 ---
 
@@ -447,6 +447,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-043** | 2026-11-06 22:16 | geom-1 | T-105
   Executed a follow-up `/ui-taste` verification and polish pass (`reference/polish.md` + `reference/operate.md` + `reference/audit.md` + `reference/craft.md`) across `web/index.html` and `web/src/main.ts`: (1) **P0 Fixed `animation-fill-mode: both` CSS Cascade Defect:** removed `@keyframes dock-enter ... both` on `#panel`, `#top-dock`, and `#aero-dock` (per `operate.md` §States "Do not choreograph routine page loads" and CSS cascade rules where `animation-fill-mode: both` holds `transform`/`opacity` above normal author selectors, which previously blocked `body.hide-left-dock`, `body.hide-right-dock`, and `body[data-mobile-pane=...]` from visually hiding docks); (2) **P1 WCAG 2.1 AA Small-Text Contrast:** lifted `--text-muted` from `#7a8296` (`4.30:1` on `--bg-raised`) to `#8b93a7` (`5.36:1` on `--bg-raised`, `5.88:1` on `--bg-card`, `6.32:1` on `--bg-deep`), passing the `4.5:1` AA threshold across all surfaces; (3) **P1 WAI-ARIA `tablist` / `tab` & Toggle State Semantics:** added `role="tab"` + `aria-selected="true|false"` on `.mode-tabs` buttons (`#mode-linear`, `#mode-schmitz`, `#mode-bezier`, `#mode-formula`, `#bezier-target-chord`, `#bezier-target-twist`), `aria-pressed="true|false"` on 3D view toggles and `#mobile-workspace-nav` buttons, and `aria-current="true"` on `#panel-section-nav` pills; (4) **P2 Viewport Title-Block Centering:** anchored `#viewport-datum-hud` to the center of the open 3D canvas column (`calc(50% + (var(--panel-left-w) - var(--panel-right-w)) / 2)` with dynamic dock-collapse shifts and `<= 1280px` hide when both docks are open); and (5) **P3 Browser Palette Details:** styled `::selection`, `caret-color: var(--accent)`, and `text-underline-offset: 3px`.
   refs: web/index.html, web/src/main.ts, .agents/skills/ui-taste/SKILL.md | supersedes: F-geom1-042
+
+- **F-geom1-044** | 2026-11-06 22:30 | geom-1 | T-105
+  Added "Planform & span transitions" panel (`#layer2-planform`): Linear taper / Smooth cosine toggle, mid-span center and plateau-width sliders, live Root/Mid/Tip zone bar with metre ranges. Frontend-only: Smooth cosine bakes a chord `formula` curve via `buildCosinePlateauExpr` (state.ts) using only `cos`, `abs`, `pi` (supported by Rust curve.rs and TS evalFormulaPreview); mid plateau = mean(root, tip). No blade-model change. Cosine mode detected by `cos(pi` in chord formula expr. New test in types.test.mjs.
+  refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs
 
 ### 9.3 Decisions (D)
 
