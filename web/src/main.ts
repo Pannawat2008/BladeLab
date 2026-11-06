@@ -1050,11 +1050,15 @@ function renderBezierEditor(design: Design) {
       const onUp = () => {
         circle.removeEventListener("pointermove", onMove);
         circle.removeEventListener("pointerup", onUp);
+        circle.removeEventListener("pointercancel", onUp);
+        circle.removeEventListener("lostpointercapture", onUp);
         commitDesign(workingDesign);
       };
 
       circle.addEventListener("pointermove", onMove);
       circle.addEventListener("pointerup", onUp);
+      circle.addEventListener("pointercancel", onUp);
+      circle.addEventListener("lostpointercapture", onUp);
     });
 
     bezierSvg.appendChild(circle);
@@ -1185,7 +1189,7 @@ function renderStationTable(design: Design) {
       const clearBtn = document.createElement("button");
       clearBtn.type = "button";
       clearBtn.className = "btn-mini";
-      clearBtn.textContent = "Reset";
+      clearBtn.textContent = "Clear";
       clearBtn.title = "Clear station override";
       clearBtn.addEventListener("click", () => {
         commitDesign(clearStationOverride(workingDesign, row.span_ratio));
@@ -1744,13 +1748,17 @@ document.querySelectorAll<HTMLElement>("[data-scrub-for]").forEach((labelEl) => 
       inputEl.dispatchEvent(new Event("change"));
     };
 
-    const onUp = () => {
+    const onEnd = () => {
       labelEl.removeEventListener("pointermove", onMove);
-      labelEl.removeEventListener("pointerup", onUp);
+      labelEl.removeEventListener("pointerup", onEnd);
+      labelEl.removeEventListener("pointercancel", onEnd);
+      labelEl.removeEventListener("lostpointercapture", onEnd);
     };
 
     labelEl.addEventListener("pointermove", onMove);
-    labelEl.addEventListener("pointerup", onUp);
+    labelEl.addEventListener("pointerup", onEnd);
+    labelEl.addEventListener("pointercancel", onEnd);
+    labelEl.addEventListener("lostpointercapture", onEnd);
   });
 });
 
@@ -1855,10 +1863,7 @@ async function refreshCloudDesigns() {
     for (const item of items) {
       const row = document.createElement("div");
       row.className = "bind-row";
-      row.style.background = "#141922";
-      row.style.padding = "4px 6px";
-      row.style.borderRadius = "4px";
-      row.style.border = "1px solid #1e293b";
+      row.style.margin = "0";
 
       const info = document.createElement("span");
       info.style.fontSize = "11px";
@@ -1957,6 +1962,9 @@ btnReset.addEventListener("click", () => {
 });
 
 // ---- Responsive Workspace Switcher, Dock Toggles & Section Navigation ----
+const topDockEl = document.getElementById("top-dock");
+const panelEl = document.getElementById("panel");
+const aeroDockEl = document.getElementById("aero-dock");
 const btnToggleLeft = document.getElementById("btn-toggle-left") as HTMLButtonElement | null;
 const btnToggleRight = document.getElementById("btn-toggle-right") as HTMLButtonElement | null;
 const btnZen3d = document.getElementById("btn-zen-3d") as HTMLButtonElement | null;
@@ -1968,22 +1976,58 @@ const mobileNavButtons = document.querySelectorAll<HTMLButtonElement>(
   "#mobile-workspace-nav button[data-mobile-target]",
 );
 
-function syncDockToggleButtons() {
-  const leftHidden = document.body.classList.contains("hide-left-dock");
-  const rightHidden = document.body.classList.contains("hide-right-dock");
+// Measure #top-dock height dynamically so #aero-dock / #panel never collide when toolbar wraps
+function syncTopDockOffset() {
+  if (!topDockEl) return;
+  const h = Math.max(44, Math.ceil(topDockEl.getBoundingClientRect().height));
+  document.documentElement.style.setProperty("--top-dock-h", `${h}px`);
+}
+if (topDockEl && typeof ResizeObserver !== "undefined") {
+  const ro = new ResizeObserver(() => syncTopDockOffset());
+  ro.observe(topDockEl);
+}
+syncTopDockOffset();
+
+// Synchronize inert & aria-hidden on hidden docks so off-screen inputs never trap keyboard focus (ui-taste Audit §1)
+function syncDockAccessibilityState() {
+  const isMobileLayout = innerWidth <= 1180;
+  const mobilePane = document.body.getAttribute("data-mobile-pane") || "cad";
+  const leftHidden = isMobileLayout
+    ? mobilePane !== "cad"
+    : document.body.classList.contains("hide-left-dock");
+  const rightHidden = isMobileLayout
+    ? mobilePane !== "aero"
+    : document.body.classList.contains("hide-right-dock");
+
+  if (panelEl) {
+    panelEl.inert = leftHidden;
+    panelEl.setAttribute("aria-hidden", String(leftHidden));
+  }
+  if (aeroDockEl) {
+    aeroDockEl.inert = rightHidden;
+    aeroDockEl.setAttribute("aria-hidden", String(rightHidden));
+  }
+
   btnToggleLeft?.classList.toggle("active", !leftHidden);
+  btnToggleLeft?.setAttribute("aria-pressed", String(!leftHidden));
   btnToggleRight?.classList.toggle("active", !rightHidden);
-  btnZen3d?.classList.toggle("active", leftHidden && rightHidden);
+  btnToggleRight?.setAttribute("aria-pressed", String(!rightHidden));
+  const bothHidden =
+    document.body.classList.contains("hide-left-dock") &&
+    document.body.classList.contains("hide-right-dock");
+  btnZen3d?.classList.toggle("active", bothHidden);
+  btnZen3d?.setAttribute("aria-pressed", String(bothHidden));
 }
 
 btnToggleLeft?.addEventListener("click", () => {
   document.body.classList.toggle("hide-left-dock");
-  syncDockToggleButtons();
+  syncDockAccessibilityState();
+  syncTopDockOffset();
 });
 
 btnToggleRight?.addEventListener("click", () => {
   document.body.classList.toggle("hide-right-dock");
-  syncDockToggleButtons();
+  syncDockAccessibilityState();
 });
 
 btnZen3d?.addEventListener("click", () => {
@@ -1995,7 +2039,8 @@ btnZen3d?.addEventListener("click", () => {
   } else {
     document.body.classList.add("hide-left-dock", "hide-right-dock");
   }
-  syncDockToggleButtons();
+  syncDockAccessibilityState();
+  syncTopDockOffset();
 });
 
 // Quick Section Jump Pills inside Left CAD Dock
@@ -2006,6 +2051,8 @@ sectionNavButtons.forEach((btn) => {
     const sectionEl = document.getElementById(targetId);
     if (!sectionEl) return;
     sectionEl.classList.remove("collapsed");
+    const toggleBtn = sectionEl.querySelector<HTMLButtonElement>("[data-collapse-section]");
+    toggleBtn?.setAttribute("aria-expanded", "true");
     sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
     sectionNavButtons.forEach((b) => b.classList.toggle("active", b === btn));
   });
@@ -2028,17 +2075,13 @@ panelScrollContainer?.addEventListener("scroll", () => {
   });
 });
 
-// Collapsible section headers (ignoring clicks on buttons inside headers)
-document.querySelectorAll<HTMLElement>("[data-collapse-section]").forEach((headerEl) => {
-  headerEl.addEventListener("click", (ev) => {
-    const target = ev.target as HTMLElement | null;
-    if (target && target.closest("button, input, select")) {
-      return;
-    }
-    const sec = headerEl.closest("section");
-    if (sec) {
-      sec.classList.toggle("collapsed");
-    }
+// Collapsible section toggle buttons with aria-expanded state
+document.querySelectorAll<HTMLButtonElement>("button[data-collapse-section]").forEach((toggleBtn) => {
+  toggleBtn.addEventListener("click", () => {
+    const sec = toggleBtn.closest("section");
+    if (!sec) return;
+    const isCollapsed = sec.classList.toggle("collapsed");
+    toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
   });
 });
 
@@ -2048,11 +2091,14 @@ mobileNavButtons.forEach((btn) => {
     const targetPane = btn.dataset.mobileTarget || "cad";
     document.body.setAttribute("data-mobile-pane", targetPane);
     mobileNavButtons.forEach((b) => b.classList.toggle("active", b === btn));
+    syncDockAccessibilityState();
   });
 });
 
+syncDockAccessibilityState();
+
 addEventListener("keydown", (event) => {
-  const tag = ( document.activeElement?.tagName || "" ).toLowerCase();
+  const tag = (document.activeElement?.tagName || "").toLowerCase();
   const isTyping = tag === "input" || tag === "textarea" || tag === "select";
 
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
@@ -2069,10 +2115,11 @@ addEventListener("keydown", (event) => {
   } else if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
     if (event.key === "[") {
       document.body.classList.toggle("hide-left-dock");
-      syncDockToggleButtons();
+      syncDockAccessibilityState();
+      syncTopDockOffset();
     } else if (event.key === "]") {
       document.body.classList.toggle("hide-right-dock");
-      syncDockToggleButtons();
+      syncDockAccessibilityState();
     }
   }
 });
@@ -2098,6 +2145,8 @@ addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  syncTopDockOffset();
+  syncDockAccessibilityState();
 });
 
 syncControlsFromDesign(workingDesign);

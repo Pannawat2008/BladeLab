@@ -7,32 +7,40 @@
     <style>
       :root {
         color-scheme: dark;
+        /* One Cool-Slate Grey Family (ui-taste Anti-Slop Law #3) */
         --bg-canvas: #090d14;
-        --bg-panel: rgba(14, 19, 28, 0.88);
-        --bg-panel-header: rgba(11, 15, 23, 0.94);
-        --bg-well: rgba(20, 27, 39, 0.86);
-        --bg-well-hover: rgba(28, 37, 52, 0.95);
-        --bg-input: #0c1119;
-        --border-subtle: rgba(148, 163, 184, 0.14);
-        --border-strong: rgba(148, 163, 184, 0.26);
-        --border-highlight: rgba(255, 255, 255, 0.07);
+        --bg-panel: #111722;
+        --bg-panel-header: #0d121b;
+        --bg-well: #161e2c;
+        --bg-well-hover: #1e293b;
+        --bg-input: #0b0f17;
+        --border-subtle: #1e293b;
+        --border-strong: #334155;
         --text-primary: #f1f5f9;
         --text-secondary: #cbd5e1;
-        --text-muted: #8b9bb4;
+        --text-muted: #94a3b8;
         --fg: #f1f5f9;
+
+        /* One Locked Primary Accent: Sky Cyan (ui-taste Anti-Slop Law #2) */
         --accent: #0ea5e9;
         --accent-bright: #38bdf8;
-        --accent-deep: #0284c7;
         --accent-dim: rgba(14, 165, 233, 0.16);
-        --accent-glow: rgba(56, 189, 248, 0.25);
+
+        /* Semantic Status Tokens Only (Success, Warning/Datum, Error) */
         --datum: #f59e0b;
         --status-ok: #10b981;
         --status-err: #ef4444;
+
+        /* Shape Lock: Strict 3-Step Corner-Radius Scale (ui-taste Anti-Slop Law #4)
+           12px = Floating Docks, 8px = Section Cards/Wells, 6px = Inputs/Buttons, 999px = Status Pills */
         --radius-panel: 12px;
         --radius-well: 8px;
         --radius-control: 6px;
+        --radius-pill: 999px;
+
         --panel-left-w: 400px;
         --panel-right-w: 382px;
+        --top-dock-h: 52px;
         --dock-gap: 12px;
       }
 
@@ -45,16 +53,38 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: radial-gradient(circle at 52% 44%, #131c2b 0%, #090d14 72%);
+        background: var(--bg-canvas);
         color: var(--text-primary);
         font: 12.5px/1.45 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         -webkit-font-smoothing: antialiased;
       }
 
+      /* Keyboard Focus Visibility (WCAG 2.2 AA) */
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 2px solid var(--accent-bright);
+        outline-offset: 1px;
+      }
+
+      /* Reduced Motion Support (ui-taste Motion Law) */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
       /* Subtle sleek scrollbars */
       * {
         scrollbar-width: thin;
-        scrollbar-color: rgba(148, 163, 184, 0.25) transparent;
+        scrollbar-color: var(--border-strong) transparent;
       }
       *::-webkit-scrollbar {
         width: 6px;
@@ -64,11 +94,11 @@
         background: transparent;
       }
       *::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.24);
-        border-radius: 999px;
+        background: var(--border-strong);
+        border-radius: var(--radius-pill);
       }
       *::-webkit-scrollbar-thumb:hover {
-        background: rgba(56, 189, 248, 0.5);
+        background: var(--accent);
       }
 
       #app {
@@ -90,17 +120,13 @@
         background: var(--bg-panel);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-panel);
-        backdrop-filter: blur(16px) saturate(140%);
-        -webkit-backdrop-filter: blur(16px) saturate(140%);
-        box-shadow:
-          0 20px 48px rgba(0, 0, 0, 0.62),
-          inset 0 1px 0 var(--border-highlight);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
         overflow: hidden;
         z-index: 10;
         transition:
-          transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-          opacity 0.2s ease,
-          width 0.22s ease;
+          transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+          opacity 0.18s ease,
+          width 0.2s ease;
       }
 
       /* Top-Right Viewport & CAD Export Bar */
@@ -113,24 +139,22 @@
         flex-wrap: wrap;
         align-items: center;
         justify-content: space-between;
-        gap: 8px 12px;
+        gap: 6px 10px;
         padding: 8px 12px;
         background: var(--bg-panel);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-panel);
-        backdrop-filter: blur(16px) saturate(140%);
-        -webkit-backdrop-filter: blur(16px) saturate(140%);
-        box-shadow:
-          0 12px 32px rgba(0, 0, 0, 0.5),
-          inset 0 1px 0 var(--border-highlight);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.48);
         z-index: 12;
-        transition: left 0.24s cubic-bezier(0.22, 1, 0.36, 1), right 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+        transition:
+          left 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+          right 0.22s cubic-bezier(0.23, 1, 0.32, 1);
       }
 
-      /* Right Aerodynamics & Telemetry Dock */
+      /* Right Aerodynamics & Telemetry Dock (dynamically positioned below #top-dock) */
       #aero-dock {
         position: fixed;
-        top: 68px;
+        top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
         right: var(--dock-gap);
         bottom: var(--dock-gap);
         width: var(--panel-right-w);
@@ -140,18 +164,14 @@
         background: var(--bg-panel);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-panel);
-        backdrop-filter: blur(16px) saturate(140%);
-        -webkit-backdrop-filter: blur(16px) saturate(140%);
-        box-shadow:
-          0 20px 48px rgba(0, 0, 0, 0.62),
-          inset 0 1px 0 var(--border-highlight);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
         overflow: hidden;
         z-index: 10;
         transition:
-          transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-          opacity 0.2s ease,
-          width 0.22s ease,
-          top 0.2s ease;
+          transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+          opacity 0.18s ease,
+          width 0.2s ease,
+          top 0.15s ease;
       }
 
       /* Desktop Dock Collapse States */
@@ -169,13 +189,13 @@
         pointer-events: none;
       }
 
-      /* Panel Header & Brand Badge */
+      /* Panel Header & Brand Indicator */
       .panel-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        padding: 11px 14px;
+        padding: 10px 14px;
         border-bottom: 1px solid var(--border-subtle);
         background: var(--bg-panel-header);
       }
@@ -186,17 +206,16 @@
         min-width: 0;
       }
       .brand-dot {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, var(--accent-bright), #10b981);
-        box-shadow: 0 0 10px var(--accent-glow);
+        width: 8px;
+        height: 8px;
+        border-radius: var(--radius-pill);
+        background: var(--accent);
         flex-shrink: 0;
       }
       .panel-header h1,
       .panel-header h2 {
         font-size: 13px;
-        font-weight: 650;
+        font-weight: 600;
         margin: 0;
         letter-spacing: -0.01em;
         color: var(--text-primary);
@@ -205,21 +224,33 @@
         text-overflow: ellipsis;
       }
 
+      /* SVG Icon Alignment */
+      .ui-icon {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+        flex-shrink: 0;
+      }
+
       /* Quick Section Jump Bar inside #panel */
       .section-nav {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 4px;
         padding: 6px 12px;
-        background: rgba(10, 14, 21, 0.78);
+        background: var(--bg-panel-header);
         border-bottom: 1px solid var(--border-subtle);
       }
       .section-nav button {
         padding: 4px 6px;
         font-size: 11px;
         font-weight: 600;
-        border-radius: 5px;
-        background: rgba(25, 34, 48, 0.65);
+        border-radius: var(--radius-control);
+        background: var(--bg-well);
         border: 1px solid transparent;
         color: var(--text-muted);
         text-align: center;
@@ -227,13 +258,13 @@
       }
       .section-nav button:hover {
         color: var(--text-primary);
-        background: rgba(38, 52, 73, 0.85);
+        background: var(--bg-well-hover);
         border-color: var(--border-strong);
       }
       .section-nav button.active {
-        color: #e0f2fe;
-        background: rgba(14, 165, 233, 0.22);
-        border-color: rgba(56, 189, 248, 0.45);
+        color: var(--text-primary);
+        background: var(--accent-dim);
+        border-color: var(--accent);
       }
 
       .toolbar {
@@ -244,7 +275,7 @@
       }
       .toolbar-label {
         font-size: 10.5px;
-        font-weight: 650;
+        font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         color: var(--text-muted);
@@ -254,26 +285,29 @@
         width: 1px;
         height: 18px;
         background: var(--border-subtle);
-        margin: 0 3px;
+        margin: 0 2px;
       }
 
-      /* Buttons */
+      /* Buttons (Press feedback 100ms scale(0.97) per ui-taste Motion Law) */
       button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
         background: var(--bg-well);
         color: var(--text-primary);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-control);
         padding: 4px 9px;
         font-size: 11.5px;
-        font-weight: 550;
+        font-weight: 500;
         font-family: inherit;
         cursor: pointer;
         transition:
-          background 0.14s ease,
-          border-color 0.14s ease,
-          color 0.14s ease,
-          box-shadow 0.14s ease,
-          transform 0.08s ease;
+          background 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+          border-color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+          color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+          transform 0.1s cubic-bezier(0.23, 1, 0.32, 1);
       }
       button:hover:not(:disabled) {
         background: var(--bg-well-hover);
@@ -281,28 +315,25 @@
         color: #ffffff;
       }
       button:active:not(:disabled) {
-        transform: translateY(0.5px) scale(0.98);
+        transform: scale(0.97);
       }
       button.active {
-        background: rgba(14, 165, 233, 0.24);
+        background: var(--accent-dim);
         border-color: var(--accent-bright);
         color: #f0f9ff;
-        box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.22);
       }
       button.btn-primary {
-        background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
-        border-color: rgba(56, 189, 248, 0.55);
+        background: var(--accent);
+        border-color: var(--accent-bright);
         color: #ffffff;
         font-weight: 600;
-        box-shadow: 0 2px 8px rgba(2, 132, 199, 0.32);
       }
       button.btn-primary:hover:not(:disabled) {
-        background: linear-gradient(180deg, var(--accent-bright) 0%, var(--accent) 100%);
-        border-color: #7dd3fc;
-        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.45);
+        background: var(--accent-bright);
+        color: #090d14;
       }
       button:disabled {
-        opacity: 0.38;
+        opacity: 0.4;
         cursor: not-allowed;
       }
 
@@ -314,18 +345,17 @@
         scroll-behavior: smooth;
       }
 
-      /* Elevated Engineering Section Cards */
+      /* Engineering Section Cards (8px --radius-well) */
       section {
         margin-bottom: 10px;
         padding: 10px 11px;
-        background: rgba(17, 23, 34, 0.65);
+        background: var(--bg-well);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-well);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-        transition: border-color 0.16s ease, background 0.16s ease;
+        transition: border-color 0.15s ease;
       }
       section:hover {
-        border-color: rgba(148, 163, 184, 0.24);
+        border-color: var(--border-strong);
       }
       section:last-child {
         margin-bottom: 0;
@@ -337,23 +367,37 @@
         justify-content: space-between;
         gap: 8px;
         font-size: 11.5px;
-        font-weight: 650;
-        letter-spacing: 0.01em;
-        color: #e2e8f0;
+        font-weight: 600;
+        color: var(--text-primary);
         margin-bottom: 9px;
-        cursor: pointer;
-        user-select: none;
       }
-      .section-title-left {
+      .section-toggle-btn {
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        background: transparent;
+        border: none;
+        padding: 2px 4px;
+        margin: -2px -4px;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--text-primary);
+        border-radius: var(--radius-control);
+        cursor: pointer;
+        text-align: left;
+      }
+      .section-toggle-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--accent-bright);
+        border-color: transparent;
       }
       .section-chevron {
-        display: inline-block;
-        font-size: 10px;
-        color: var(--accent-bright);
-        transition: transform 0.18s ease;
+        width: 12px;
+        height: 12px;
+        stroke: var(--accent-bright);
+        stroke-width: 2;
+        fill: none;
+        transition: transform 0.18s cubic-bezier(0.23, 1, 0.32, 1);
       }
       section.collapsed .section-chevron {
         transform: rotate(-90deg);
@@ -370,12 +414,12 @@
 
       .section-meta {
         font-size: 10.5px;
-        font-weight: 550;
+        font-weight: 600;
         color: var(--accent-bright);
-        background: rgba(14, 165, 233, 0.12);
-        border: 1px solid rgba(56, 189, 248, 0.24);
-        padding: 1px 7px;
-        border-radius: 999px;
+        background: var(--accent-dim);
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        padding: 1px 8px;
+        border-radius: var(--radius-pill);
         font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
@@ -387,7 +431,7 @@
         gap: 8px 10px;
       }
 
-      /* Telemetry KPI Cards */
+      /* Telemetry KPI Cards (Locked single accent + clean neutral border) */
       .kpi-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -395,7 +439,7 @@
         margin-bottom: 10px;
       }
       .kpi-card {
-        background: linear-gradient(180deg, rgba(24, 33, 47, 0.92) 0%, rgba(16, 22, 32, 0.92) 100%);
+        background: var(--bg-input);
         border: 1px solid var(--border-subtle);
         border-top: 2px solid var(--accent);
         border-radius: var(--radius-well);
@@ -403,15 +447,6 @@
         display: flex;
         flex-direction: column;
         gap: 2px;
-      }
-      .kpi-card:nth-child(2) {
-        border-top-color: #10b981;
-      }
-      .kpi-card:nth-child(3) {
-        border-top-color: #f59e0b;
-      }
-      .kpi-card:nth-child(4) {
-        border-top-color: #a855f7;
       }
       .kpi-label {
         font-size: 10px;
@@ -421,8 +456,8 @@
         color: var(--text-muted);
       }
       .kpi-val {
-        font-size: 13.5px;
-        font-weight: 700;
+        font-size: 13px;
+        font-weight: 600;
         color: var(--text-primary);
         font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-variant-numeric: tabular-nums;
@@ -449,7 +484,8 @@
       .scrub-label {
         cursor: ew-resize;
         user-select: none;
-        border-bottom: 1px dashed rgba(148, 163, 184, 0.35);
+        touch-action: none;
+        border-bottom: 1px dashed var(--border-strong);
         transition: color 0.12s ease, border-color 0.12s ease;
       }
       .scrub-label:hover {
@@ -470,7 +506,7 @@
         font-size: 12px;
         font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, sans-serif;
         font-variant-numeric: tabular-nums;
-        transition: border-color 0.14s ease, box-shadow 0.14s ease;
+        transition: border-color 0.12s ease;
       }
       .field select,
       .compact-select,
@@ -487,9 +523,7 @@
       .field select:focus,
       .compact-select:focus,
       #opt-objective:focus {
-        outline: none;
         border-color: var(--accent-bright);
-        box-shadow: 0 0 0 2px var(--accent-dim);
       }
 
       .bind-row {
@@ -500,7 +534,7 @@
         gap: 6px 8px;
         margin: 6px 0 8px;
         padding: 6px 9px;
-        background: var(--bg-well);
+        background: var(--bg-panel-header);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-well);
         font-size: 11.5px;
@@ -534,7 +568,7 @@
       #cp-tsr-svg {
         width: 100%;
         height: 152px;
-        background: radial-gradient(circle at 50% 50%, #101723 0%, #0a0f17 100%);
+        background: var(--bg-input);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-well);
         display: block;
@@ -544,7 +578,7 @@
       #airfoil-preview-svg {
         width: 100%;
         height: 96px;
-        background: radial-gradient(circle at 50% 50%, #101723 0%, #0a0f17 100%);
+        background: var(--bg-input);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-well);
         display: block;
@@ -568,13 +602,13 @@
       .swatch {
         width: 8px;
         height: 8px;
-        border-radius: 50%;
+        border-radius: var(--radius-pill);
         display: inline-block;
       }
       .aero-subbox {
         margin-top: 8px;
         padding: 8px 10px;
-        background: rgba(13, 18, 27, 0.78);
+        background: var(--bg-panel-header);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-well);
         font-size: 11px;
@@ -592,9 +626,7 @@
         resize: vertical;
       }
       .field textarea:focus {
-        outline: none;
         border-color: var(--accent-bright);
-        box-shadow: 0 0 0 2px var(--accent-dim);
       }
 
       .lock-btn {
@@ -605,7 +637,7 @@
         color: var(--text-muted);
       }
       .lock-btn.locked {
-        background: rgba(245, 158, 11, 0.18);
+        background: rgba(245, 158, 11, 0.16);
         border-color: var(--datum);
         color: var(--datum);
       }
@@ -633,10 +665,9 @@
         appearance: none;
         width: 100%;
         height: 6px;
-        background: #172131;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 999px;
-        outline: none;
+        background: var(--bg-input);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-pill);
         cursor: pointer;
       }
       .row input[type="range"]::-webkit-slider-thumb {
@@ -644,24 +675,21 @@
         appearance: none;
         width: 14px;
         height: 14px;
-        border-radius: 50%;
+        border-radius: var(--radius-pill);
         background: var(--accent-bright);
-        border: 2px solid #090d14;
-        box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+        border: 2px solid var(--bg-canvas);
         cursor: grab;
         transition: transform 0.1s ease, background 0.12s ease;
       }
       .row input[type="range"]::-webkit-slider-thumb:hover {
-        transform: scale(1.14);
-        background: #7dd3fc;
+        transform: scale(1.12);
       }
       .row input[type="range"]::-moz-range-thumb {
         width: 14px;
         height: 14px;
-        border-radius: 50%;
+        border-radius: var(--radius-pill);
         background: var(--accent-bright);
-        border: 2px solid #090d14;
-        box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+        border: 2px solid var(--bg-canvas);
         cursor: grab;
       }
 
@@ -683,21 +711,20 @@
         padding: 4px 6px;
         font-size: 11px;
         font-weight: 600;
-        border-radius: 5px;
+        border-radius: var(--radius-control);
       }
       .mode-tabs button:hover:not(:disabled) {
         color: var(--text-primary);
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--bg-well);
         border-color: transparent;
       }
       .mode-tabs button.active {
         background: var(--bg-well-hover);
         color: var(--accent-bright);
-        border-color: rgba(56, 189, 248, 0.35);
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        border-color: var(--accent);
       }
 
-      /* Station Table */
+      /* Station Table (List rows highlight background only, never scale per ui-taste Motion Law) */
       .table-wrap {
         width: 100%;
         overflow-x: auto;
@@ -720,10 +747,10 @@
       }
       table.station-table td {
         padding: 3.5px 4px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        border-bottom: 1px solid var(--border-subtle);
       }
       table.station-table tr:hover td {
-        background: rgba(255, 255, 255, 0.025);
+        background: rgba(255, 255, 255, 0.03);
       }
       table.station-table tr.overridden {
         background: var(--accent-dim);
@@ -733,7 +760,7 @@
         background: var(--bg-input);
         color: var(--text-primary);
         border: 1px solid var(--border-strong);
-        border-radius: 4px;
+        border-radius: var(--radius-control);
         padding: 2px 5px;
         font-size: 11px;
         font-family: inherit;
@@ -741,7 +768,7 @@
       }
       table.station-table tr.overridden input[type="number"] {
         border-color: var(--accent-bright);
-        color: #7dd3fc;
+        color: var(--accent-bright);
         font-weight: 600;
       }
 
@@ -755,9 +782,9 @@
         font-weight: 600;
         color: var(--status-ok);
         background: rgba(16, 185, 129, 0.12);
-        border: 1px solid rgba(16, 185, 129, 0.3);
+        border: 1px solid rgba(16, 185, 129, 0.32);
         padding: 2px 8px;
-        border-radius: 999px;
+        border-radius: var(--radius-pill);
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
       }
@@ -798,15 +825,15 @@
         margin-top: 6px;
         padding: 6px 9px;
         font: 11px/1.4 "JetBrains Mono", ui-monospace, monospace;
-        color: #93c5fd;
-        background: rgba(14, 165, 233, 0.09);
-        border: 1px solid rgba(56, 189, 248, 0.24);
-        border-radius: 6px;
+        color: var(--text-secondary);
+        background: var(--bg-input);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-control);
       }
       .fit-badge.warn {
         color: #fcd34d;
         background: rgba(245, 158, 11, 0.12);
-        border-color: rgba(245, 158, 11, 0.42);
+        border-color: var(--datum);
       }
 
       /* Mobile & Tablet Bottom Workspace Switcher */
@@ -817,17 +844,15 @@
         bottom: 12px;
         transform: translateX(-50%);
         z-index: 30;
-        background: rgba(11, 15, 23, 0.94);
+        background: var(--bg-panel-header);
         border: 1px solid var(--border-strong);
-        border-radius: 999px;
+        border-radius: var(--radius-pill);
         padding: 4px;
         gap: 4px;
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.72);
       }
       #mobile-workspace-nav button {
-        border-radius: 999px;
+        border-radius: var(--radius-pill);
         padding: 6px 14px;
         font-size: 11.5px;
         font-weight: 600;
@@ -837,10 +862,9 @@
         white-space: nowrap;
       }
       #mobile-workspace-nav button.active {
-        background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
+        background: var(--accent);
         color: #ffffff;
-        border-color: rgba(125, 211, 252, 0.5);
-        box-shadow: 0 2px 10px rgba(14, 165, 233, 0.4);
+        border-color: var(--accent-bright);
       }
 
       /* Responsive Breakpoint 1: Compact Laptop (1180px - 1440px) */
@@ -858,13 +882,9 @@
           left: var(--dock-gap);
           right: var(--dock-gap);
         }
-        #panel {
-          top: 68px;
-          bottom: 62px;
-          width: min(420px, calc(100vw - 20px));
-        }
+        #panel,
         #aero-dock {
-          top: 68px;
+          top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
           bottom: 62px;
           width: min(420px, calc(100vw - 20px));
         }
@@ -878,7 +898,7 @@
         /* On <= 1180px, switch cleanly between Geometry, 3D Canvas, and Telemetry */
         body[data-mobile-pane="canvas"] #panel,
         body[data-mobile-pane="canvas"] #aero-dock {
-          transform: translateY(16px);
+          transform: translateY(12px);
           opacity: 0;
           pointer-events: none;
         }
@@ -902,7 +922,6 @@
         #top-dock {
           padding: 6px 8px;
           gap: 6px;
-          max-height: 92px;
           overflow-x: auto;
           flex-wrap: nowrap;
         }
@@ -912,7 +931,6 @@
         }
         #panel,
         #aero-dock {
-          top: 62px;
           left: 8px;
           right: 8px;
           width: auto;
@@ -933,17 +951,20 @@
     <div id="app"></div>
 
     <!-- Top-Right 3D Viewport Mode & CAD Export Bar -->
-    <div id="top-dock">
+    <header id="top-dock" role="banner" aria-label="Viewport and CAD Export Toolbar">
       <div class="toolbar">
         <div class="toolbar" id="dock-toggles-desktop">
-          <button id="btn-toggle-left" class="btn-mini active" type="button" title="Toggle Left CAD &amp; Geometry Dock ([)">
-            ◧ CAD Dock
+          <button id="btn-toggle-left" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Left CAD &amp; Geometry Dock ([)">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+            CAD Dock
           </button>
-          <button id="btn-toggle-right" class="btn-mini active" type="button" title="Toggle Right BEM Telemetry Dock (])">
-            ◨ Aero Dock
+          <button id="btn-toggle-right" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Right BEM Telemetry Dock (])">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+            Aero Dock
           </button>
-          <button id="btn-zen-3d" class="btn-mini" type="button" title="Maximize 3D Viewport (Z)">
-            ⛶ Full 3D
+          <button id="btn-zen-3d" class="btn-mini" type="button" aria-pressed="false" title="Maximize 3D Viewport">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+            Full 3D
           </button>
           <span class="toolbar-divider"></span>
         </div>
@@ -961,7 +982,7 @@
 
       <div class="toolbar" id="export-bar">
         <span class="toolbar-label">Export:</span>
-        <select id="export-part" class="compact-select" title="Select part to export">
+        <select id="export-part" class="compact-select" aria-label="Select part to export" title="Select part to export">
           <option value="blade">Blade Only</option>
           <option value="assembly">Full Assembly (Blade + Hub)</option>
           <option value="hub">Hub Only</option>
@@ -969,38 +990,41 @@
         <button id="btn-export-stl" class="btn-primary" type="button" title="Download watertight binary STL">Export STL</button>
         <button id="btn-export-3mf" class="btn-primary" type="button" title="Download 3MF package (mm units)">Export 3MF</button>
         <button id="btn-export-step" class="btn-primary" type="button" title="Download ISO-10303-21 B-rep STEP solid">Export STEP</button>
-        <button id="btn-export-json" type="button" title="Download Design JSON">Save JSON</button>
-        <span id="export-status">Ready</span>
+        <button id="btn-export-json" type="button" title="Download Design JSON">Export JSON</button>
+        <span id="export-status" role="status" aria-live="polite">Ready</span>
       </div>
-    </div>
+    </header>
 
     <!-- Left Geometry & Airfoil Engineering Dock -->
-    <div id="panel">
+    <aside id="panel" aria-label="CAD Geometry and Fabrication Dock">
       <div class="panel-header">
         <div class="brand-title">
-          <span class="brand-dot"></span>
+          <span class="brand-dot" aria-hidden="true"></span>
           <h1>BladeLab · CAD &amp; Fabrication</h1>
         </div>
         <div class="toolbar">
-          <button id="btn-undo" class="btn-mini" title="Undo (Ctrl+Z)" disabled>Undo</button>
-          <button id="btn-redo" class="btn-mini" title="Redo (Ctrl+Y)" disabled>Redo</button>
-          <button id="btn-reset" class="btn-mini" title="Reset to initial fixture">Reset</button>
+          <button id="btn-undo" class="btn-mini" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button id="btn-redo" class="btn-mini" type="button" title="Redo (Ctrl+Y)" disabled>Redo</button>
+          <button id="btn-reset" class="btn-mini" type="button" title="Reset to initial fixture">Reset</button>
         </div>
       </div>
 
       <!-- Quick Section Jump Pills -->
-      <div class="section-nav" id="panel-section-nav">
+      <nav class="section-nav" id="panel-section-nav" aria-label="CAD Section Navigation">
         <button type="button" class="active" data-scroll-target="layer1-rotor">Rotor</button>
         <button type="button" data-scroll-target="layer1-distributions">Airfoil</button>
         <button type="button" data-scroll-target="layer-fabrication">Split &amp; Joint</button>
         <button type="button" data-scroll-target="layer3-stations">Stations</button>
-      </div>
+      </nav>
 
       <div class="panel-scroll" id="panel-scroll-container">
         <!-- Layer 1: Global Rotor Parameters -->
         <section id="layer1-rotor">
-          <div class="section-title" data-collapse-section>
-            <span class="section-title-left"><i class="section-chevron">▾</i>Layer 1 · Rotor Parameters</span>
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
+              <span>Layer 1 · Rotor Parameters</span>
+            </button>
             <span id="rotor-summary" class="section-meta">R=600 mm · L=540 mm · B=3</span>
           </div>
           <div class="grid-2">
@@ -1057,10 +1081,13 @@
 
         <!-- Layer 1 / 2: Spanwise Distribution Mode & Airfoil Profile -->
         <section id="layer1-distributions">
-          <div class="section-title" data-collapse-section>
-            <span class="section-title-left"><i class="section-chevron">▾</i>Layer 1/2 · Chord, Twist &amp; Airfoil</span>
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
+              <span>Layer 1/2 · Chord, Twist &amp; Airfoil</span>
+            </button>
           </div>
-          <div class="mode-tabs">
+          <div class="mode-tabs" role="tablist" aria-label="Spanwise Distribution Mode">
             <button id="mode-linear" class="active" type="button">Linear</button>
             <button id="mode-schmitz" type="button">Schmitz</button>
             <button id="mode-bezier" type="button">Bézier</button>
@@ -1072,7 +1099,7 @@
               <input id="bind-taper" type="checkbox" />
               Bind Tip = Root × Taper
             </label>
-            <input id="taper-ratio" type="number" min="0.1" max="2.0" step="0.05" value="0.5" title="Tip-to-root chord taper ratio" />
+            <input id="taper-ratio" type="number" min="0.1" max="2.0" step="0.05" value="0.5" aria-label="Tip-to-root chord taper ratio" title="Tip-to-root chord taper ratio" />
           </div>
 
           <div class="bind-row">
@@ -1124,7 +1151,7 @@
               <button id="bezier-target-chord" class="active" type="button">Chord (mm)</button>
               <button id="bezier-target-twist" type="button">Twist (°)</button>
             </div>
-            <svg id="bezier-svg" viewBox="0 0 320 150"></svg>
+            <svg id="bezier-svg" viewBox="0 0 320 150" role="img" aria-label="Interactive Bezier curve editor"></svg>
             <table class="station-table">
               <thead>
                 <tr>
@@ -1168,14 +1195,17 @@
                 <input id="airfoil-camber" type="number" min="0" max="9.5" step="0.5" value="4" />
               </div>
             </div>
-            <svg id="airfoil-preview-svg" viewBox="0 0 320 92"></svg>
+            <svg id="airfoil-preview-svg" viewBox="0 0 320 92" role="img" aria-label="2D Airfoil Cross-Section Preview"></svg>
           </div>
         </section>
 
         <!-- Fabrication: Carbon Fiber Tube Hole & Split Model -->
         <section id="layer-fabrication">
-          <div class="section-title" data-collapse-section>
-            <span class="section-title-left"><i class="section-chevron">▾</i>Fabrication · Carbon Tube &amp; Split Model</span>
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
+              <span>Fabrication · Carbon Tube &amp; Split Model</span>
+            </button>
             <span id="fab-summary" class="section-meta">Solid · 1 Part</span>
           </div>
 
@@ -1345,8 +1375,11 @@
 
         <!-- Layer 3: Per-Station Override Table -->
         <section id="layer3-stations">
-          <div class="section-title" data-collapse-section>
-            <span class="section-title-left"><i class="section-chevron">▾</i>Layer 3 · Per-Station Table</span>
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.25L6 7.75L9.5 4.25"/></svg>
+              <span>Layer 3 · Per-Station Table</span>
+            </button>
             <button id="btn-clear-overrides" class="btn-mini" type="button">Clear Overrides</button>
           </div>
           <div class="table-wrap">
@@ -1368,20 +1401,20 @@
         </section>
       </div>
 
-      <div id="error-banner"></div>
+      <div id="error-banner" role="alert"></div>
 
       <div id="stats">
         <span>mesh: <span id="ms" class="ok">–</span></span>
         <span><span id="tris">–</span> tris</span>
         <span><span id="vol">–</span> mm³</span>
       </div>
-    </div>
+    </aside>
 
     <!-- Right Aerodynamics, Telemetry & Test Data Dock -->
-    <div id="aero-dock">
+    <aside id="aero-dock" aria-label="BEM Aerodynamics and Telemetry Dock">
       <div class="panel-header">
         <div class="brand-title">
-          <span class="brand-dot" style="background: linear-gradient(135deg, #10b981, #38bdf8)"></span>
+          <span class="brand-dot" aria-hidden="true"></span>
           <h2>Phase 3/4 · BEM Telemetry &amp; Cloud</h2>
         </div>
         <span id="aero-summary" class="section-meta">Cp=– · P=– W</span>
@@ -1414,19 +1447,19 @@
             <span><i class="swatch" style="background: #f59e0b"></i>Exp Data</span>
             <span><i class="swatch" style="background: #ef4444"></i>Betz 0.593</span>
           </div>
-          <svg id="cp-tsr-svg" viewBox="0 0 320 155"></svg>
+          <svg id="cp-tsr-svg" viewBox="0 0 320 155" role="img" aria-label="Cp vs Tip-Speed Ratio Chart"></svg>
 
           <div class="bind-row">
             <div class="toolbar">
               <button id="btn-snapshot-a" class="btn-mini" type="button">Snapshot Baseline A</button>
               <button id="btn-clear-a" class="btn-mini" type="button" disabled>Clear A</button>
             </div>
-            <span id="ab-delta-summary" class="section-meta" style="color: #93c5fd">No Baseline A</span>
+            <span id="ab-delta-summary" class="section-meta">No Baseline A</span>
           </div>
 
-          <div class="bind-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(148, 163, 184, 0.14)">
-            <span style="font-weight: 600; color: #e2e8f0">Phase 4 · Auto-Optimizer</span>
-            <select id="opt-objective" title="Optimization objective">
+          <div class="bind-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle)">
+            <span style="font-weight: 600; color: var(--text-primary)">Phase 4 · Auto-Optimizer</span>
+            <select id="opt-objective" aria-label="Optimization objective" title="Optimization objective">
               <option value="design_tsr" selected>Max Cp at Design TSR</option>
               <option value="broadband_tsr">Broadband TSR (±20%)</option>
             </select>
@@ -1464,8 +1497,8 @@
           </div>
           <div id="exp-fit-summary" class="aero-subbox">Exp log: 0 pts</div>
 
-          <div class="bind-row" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148, 163, 184, 0.14)">
-            <span style="font-weight: 600; color: #e2e8f0">Phase 4 · Team &amp; Cloud Workspace</span>
+          <div class="bind-row" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-subtle)">
+            <span style="font-weight: 600; color: var(--text-primary)">Phase 4 · Team &amp; Cloud Workspace</span>
             <button id="btn-cloud-refresh" class="btn-mini" type="button" title="Refresh team designs from blade-server">Refresh</button>
           </div>
           <div class="grid-2" style="margin-top: 4px">
@@ -1495,13 +1528,22 @@
           <div id="cloud-designs-list" style="margin-top: 6px; display: flex; flex-direction: column; gap: 4px"></div>
         </section>
       </div>
-    </div>
+    </aside>
 
     <!-- Responsive Bottom Workspace Switcher (Tablet & Mobile <= 1180px) -->
     <nav id="mobile-workspace-nav" aria-label="Workspace Switcher">
-      <button id="btn-mob-cad" type="button" class="active" data-mobile-target="cad">◧ CAD &amp; Joint</button>
-      <button id="btn-mob-canvas" type="button" data-mobile-target="canvas">⛶ 3D Viewport</button>
-      <button id="btn-mob-aero" type="button" data-mobile-target="aero">◨ BEM &amp; Cloud</button>
+      <button id="btn-mob-cad" type="button" class="active" data-mobile-target="cad">
+        <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+        CAD &amp; Joint
+      </button>
+      <button id="btn-mob-canvas" type="button" data-mobile-target="canvas">
+        <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+        3D Viewport
+      </button>
+      <button id="btn-mob-aero" type="button" data-mobile-target="aero">
+        <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2 12 6 7 9.5 9.5 14 4"/></svg>
+        BEM &amp; Cloud
+      </button>
     </nav>
 
     <script type="module" src="/src/main.ts"></script>

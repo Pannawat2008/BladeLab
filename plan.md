@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 66**
-> **LAST_UPDATED: 2026-11-06 18:21 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 67**
+> **LAST_UPDATED: 2026-11-06 18:28 (UTC+7) by geom-1**
 
 ---
 
@@ -435,6 +435,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-039** | 2026-11-06 17:47 | geom-1 | T-105
   Upgraded `web/index.html` and `web/src/main.ts` with a responsive, precision-CAD & wind-tunnel telemetry aesthetic (`frontend-design` + `ui-taste` skills): (1) refined glassmorphic floating docks (`backdrop-filter: blur(16px) saturate(140%)`), specular top hairlines, color-coded KPI telemetry cards, custom range sliders, segmented mode tabs, and tabular monospace numeric inputs; (2) added desktop dock toggles (`#btn-toggle-left`, `#btn-toggle-right`, `#btn-zen-3d`, plus `[` / `]` keyboard shortcuts) so users can collapse either dock or enter full-screen 3D mode; (3) added a quick-jump section navigation bar (`#panel-section-nav`: `Rotor` · `Airfoil` · `Split & Joint` · `Stations`) with scroll-spy highlighting and collapsible `<section>` headers (`data-collapse-section`); and (4) added responsive breakpoints (`<= 1440px`, `<= 1180px`, `<= 720px`) with a pill-style bottom Workspace Switcher (`#mobile-workspace-nav`: `CAD & Joint` | `3D Viewport` | `BEM & Cloud`) so docks never collide on laptop, tablet, or mobile screens.
   refs: web/index.html, web/src/main.ts | supersedes: –
+- **F-geom1-040** | 2026-11-06 18:28 | geom-1 | T-105
+  Executed a full 5-dimension `/ui-taste` audit (`reference/audit.md` + `reference/anti-slop-craft.md` + `reference/craft.md`) and fixed all identified web issues in `web/index.html` and `web/src/main.ts`: (1) **Dynamic `#top-dock` height tracking (`ResizeObserver` -> `--top-dock-h`)** so `#aero-dock` and `#panel` never overlap `#top-dock` when the toolbar wraps onto 2 rows at intermediate widths (`900px–1380px`); (2) **Keyboard focus trap prevention (`inert` + `aria-hidden`)** on off-screen docks (`syncDockAccessibilityState`) plus semantic `<button class="section-toggle-btn" aria-expanded="true">` disclosure headers and visible `:focus-visible` rings; (3) **Pointer capture cleanup & touch scrubbing** (`touch-action: none` on `.scrub-label` plus `pointercancel` and `lostpointercapture` listeners on both value-scrubbing labels and SVG Bézier handles); (4) **Performance & Reduced Motion** (removed heavy `backdrop-filter: blur(16px)` over the 60fps WebGL canvas and added `@media (prefers-reduced-motion: reduce)`); and (5) **Strict Anti-Slop Pre-Flight Compliance** (1 locked accent `#0ea5e9`, 1 cool-slate grey family, strict 4-step radius scale `12px/8px/6px/999px`, 0 Unicode/emoji icons in UI chrome replaced with crisp inline SVG icons, and unified `Export` / `Clear` terminology).
+  refs: web/index.html, web/src/main.ts, .agents/skills/ui-taste/SKILL.md | supersedes: F-geom1-039
 
 ### 9.3 Decisions (D)
 
@@ -812,4 +815,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T17:41:30+07:00 agent=geom-1 mem=v63 last_entry=F-geom1-038 task=T-105 note="lead requested making the web UI appealing and responsive; applying frontend-design and ui-taste skills across web/index.html and web/src/main.ts"
 [END] 2026-11-06T17:47+07:00 agent=geom-1 mem=v65 note="upgraded web/index.html and web/src/main.ts for appealing CAD/telemetry styling and full responsiveness: glassmorphic docks, color-coded KPI cards, custom range sliders, desktop dock toggles (#btn-toggle-left, #btn-toggle-right, #btn-zen-3d + [ / ] shortcuts), quick-jump section nav pills with scroll-spy, collapsible section headers, and <=1180px / <=720px mobile/tablet workspace switcher (#mobile-workspace-nav); 9 Node tests + tsc + vite build clean; F-geom1-039 recorded"
 [RE-ACK] 2026-11-06T18:21:30+07:00 agent=geom-1 mem=v65 last_entry=F-geom1-039 task=T-105 note="lead requested: web check, fix any UI/layout/interaction problems found, and apply strict /ui-taste audit & anti-slop craft (reference/audit.md + reference/anti-slop-craft.md)"
+[END] 2026-11-06T18:28+07:00 agent=geom-1 mem=v67 note="completed /ui-taste 5-dimension web audit & fixes in web/index.html and web/src/main.ts: ResizeObserver --top-dock-h prevents toolbar wrap overlap, inert/aria-hidden prevents hidden dock tab traps, semantic button[data-collapse-section] + focus-visible, pointercancel/lostpointercapture + touch-action:none on scrubbers, removed WebGL-taxing backdrop-filter blur, and passed all 9 Anti-Slop pre-flight checks (1 accent, 1 grey family, 4-step radius lock, inline SVG icons, unified labels); F-geom1-040 recorded"
 ```
