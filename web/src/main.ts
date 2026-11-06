@@ -367,15 +367,16 @@ interface AlignmentPlaneReport {
 function updateAlignmentStatus(design: Design) {
   const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
   const shape = selectAlignShape.value;
-  const isKey = shape === "key";
-  inputAlignKeyLength.disabled = !isKey;
+  const usesLength =
+    shape === "key" || shape === "dovetail" || shape === "cruciform" || shape === "tapered";
+  inputAlignKeyLength.disabled = !usesLength;
   if (shape === "none") {
-    alignStatus.textContent = "Alignment off";
+    alignStatus.textContent = "Alignment / interlocking joints off";
     alignStatus.classList.remove("warn");
     return;
   }
   if (splitParts < 2) {
-    alignStatus.textContent = "Choose 2+ split parts to place alignment features";
+    alignStatus.textContent = "Choose 2+ split parts (or click a Joint Preset) to place interlocking joints";
     return;
   }
   try {
@@ -385,7 +386,15 @@ function updateAlignmentStatus(design: Design) {
     const short = rows.filter((r) => r.placed < r.requested);
     const placedTotal = rows.reduce((n, r) => n + r.placed, 0);
     const requestedTotal = rows.reduce((n, r) => n + r.requested, 0);
-    const label = isKey ? "keys" : "pins";
+    const labelMap: Record<string, string> = {
+      dovetail: "dovetail interlocks",
+      cruciform: "cruciform (+) interlocks",
+      snaplock: "3D snap-lock joints",
+      tapered: "tapered wedge locks",
+      key: "keys",
+      round: "dowel pins",
+    };
+    const label = labelMap[shape] ?? "joints";
     const first = rows[0];
     const dims = first
       ? ` · height ${first.pin_height_mm.toFixed(1)} mm, socket depth ${first.socket_depth_mm.toFixed(1)} mm`
@@ -451,22 +460,33 @@ function updateFabricationStatus(design: Design) {
 
   const holeTag = holeEnabled ? `CF Ø${effDia.toFixed(1)}×${depth.toFixed(0)}mm` : "Solid";
   const splitTag = splitParts > 1 ? `${splitParts} Parts` : "1 Part";
+  const tagMap: Record<string, string> = {
+    dovetail: " · Dovetail Lock",
+    cruciform: " · Cruciform +",
+    snaplock: " · 3D Snap-Lock",
+    tapered: " · Taper Wedge",
+    key: " · Keys",
+    round: " · Pins",
+  };
   const alignTag =
     splitParts > 1 && selectAlignShape.value !== "none"
-      ? selectAlignShape.value === "key"
-        ? " · Keys"
-        : " · Pins"
+      ? (tagMap[selectAlignShape.value] ?? " · Joint")
       : "";
   fabSummary.textContent = `${holeTag} · ${splitTag}${alignTag}`;
   updateAlignmentStatus(design);
 
+  const jointActive = splitParts > 1 && selectAlignShape.value !== "none";
   airfoilPreviewSvg.innerHTML = renderAirfoilSectionSvgMarkup(
     design,
-    holeEnabled
+    holeEnabled || jointActive
       ? {
-          diameterMm: reqDia,
+          diameterMm: holeEnabled ? reqDia : 0,
           offsetXMm: Number.parseFloat(inputSparHoleOffsetX.value) || 0,
           offsetYMm: Number.parseFloat(inputSparHoleOffsetY.value) || 0,
+          jointShape: jointActive ? selectAlignShape.value : "none",
+          jointCount: Number.parseInt(selectAlignCount.value, 10) || 2,
+          jointSizeMm: Number.parseFloat(inputAlignSize.value) || 3.0,
+          jointLengthMm: Number.parseFloat(inputAlignKeyLength.value) || 6.0,
         }
       : undefined,
   );
@@ -1228,6 +1248,25 @@ for (const [btn, clearance, tubeTol] of [
   btn.addEventListener("click", () => {
     inputAlignClearance.value = clearance.toFixed(2);
     inputSparHoleTolerance.value = tubeTol.toFixed(2);
+    rebuild3D(workingDesign);
+  });
+}
+
+for (const [btnId, shapeVal, sizeMm, lenMm] of [
+  ["btn-joint-dovetail", "dovetail", 3.2, 6.5],
+  ["btn-joint-cruciform", "cruciform", 3.6, 6.5],
+  ["btn-joint-snaplock", "snaplock", 3.4, 6.0],
+  ["btn-joint-tapered", "tapered", 3.2, 6.0],
+  ["btn-joint-round", "round", 3.0, 6.0],
+] as const) {
+  const el = document.getElementById(btnId);
+  el?.addEventListener("click", () => {
+    if ((Number.parseInt(selectSplitParts.value, 10) || 1) < 2) {
+      selectSplitParts.value = "2";
+    }
+    selectAlignShape.value = shapeVal;
+    inputAlignSize.value = sizeMm.toFixed(1);
+    inputAlignKeyLength.value = lenMm.toFixed(1);
     rebuild3D(workingDesign);
   });
 }

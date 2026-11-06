@@ -46,13 +46,27 @@ pub struct SparHoleSpec {
     pub tolerance_mm: f64,
 }
 
-/// Cross-section shape of an alignment feature.
+/// Cross-section / 3D geometry of an alignment or interlocking joint feature on a split face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlignmentShape {
     /// Round dowel pin (integrated cylinder) and matching round socket.
     Round,
     /// Rectangular key / tenon (long axis along the chord) and matching slot.
     Key,
+    /// Butterfly / double-dovetail interlocking key (flared ends with a narrow
+    /// waist along the chord) that mechanically locks against chordwise shear
+    /// and peel.
+    Dovetail,
+    /// Orthogonal `+` cruciform cross-rib tenon and matching cross socket that
+    /// resists both flapwise bending, lead-lag bending, and torsion.
+    Cruciform,
+    /// 3D self-centering tapered wedge / frustum tenon (`100%` at base tapering
+    /// to `72%` at tip) and matching tapered socket for zero-backlash lock.
+    Tapered,
+    /// 3D axial snap-lock / barbed retention tenon with a necked base, flared
+    /// retention ridge at `70%` height, and tapered lead-in tip, paired with a
+    /// matching undercut socket cavity to resist spanwise pull-out.
+    SnapLock,
 }
 
 /// Alignment pins / keys placed on every split face.
@@ -340,18 +354,22 @@ fn ring_points(circle: &TubeCircle) -> Vec<Point3> {
 }
 
 // ---------------------------------------------------------------------------
-// Alignment pin / key planning
+// Alignment & interlocking joint planning
 // ---------------------------------------------------------------------------
 
-/// One pin (lower part) and its matching socket (upper part) outline, both
-/// counter-clockwise in the `x`/`y` plane.
+/// One pin/tenon (lower part) and its matching socket/mortise (upper part).
+///
+/// Each is stored as an ordered stack of `(z_fraction, ring_xy)` stages from
+/// `z_fraction = 0.0` (on the split plane) to `z_fraction = 1.0` (at the pin
+/// tip or socket ceiling). All rings in a stack have the same vertex count and
+/// counter-clockwise winding in the `x`/`y` plane.
 #[derive(Debug, Clone)]
 struct Feature {
-    pin: Vec<[f64; 2]>,
-    socket: Vec<[f64; 2]>,
+    pin_rings: Vec<(f64, Vec<[f64; 2]>)>,
+    socket_rings: Vec<(f64, Vec<[f64; 2]>)>,
 }
 
-/// All alignment features of one split face.
+/// All alignment / interlocking features of one split face.
 #[derive(Debug, Clone)]
 struct PlaneFeatures {
     features: Vec<Feature>,
@@ -359,41 +377,125 @@ struct PlaneFeatures {
     socket_depth: f64,
 }
 
-/// Counter-clockwise outline of a round pin or rectangular key.
-fn outline(
+/// Counter-clockwise 2D outline of a pin/tenon or socket at a given stage scale.
+///
+/// `base_half_l` and `base_half_w` are the nominal pin half-dimensions (already
+/// scaled by `stage_scale`), while `clearance` is `0.0` for the pin and
+/// `spec.clearance_mm` for the socket so non-convex features (`Dovetail`,
+/// `Cruciform`) receive uniform per-side clearance on every inner and outer wall.
+fn outline_with_clearance(
     shape: AlignmentShape,
     center: [f64; 2],
     u: [f64; 2],
-    half_l: f64,
-    half_w: f64,
+    base_half_l: f64,
+    base_half_w: f64,
+    clearance: f64,
 ) -> Vec<[f64; 2]> {
+    let half_l = (base_half_l + clearance).max(0.25);
+    let half_w = (base_half_w + clearance).max(0.25);
+    let v = [-u[1], u[0]];
+    let pt = |du: f64, dv: f64| {
+        [
+            center[0] + du * u[0] + dv * v[0],
+            center[1] + du * u[1] + dv * v[1],
+        ]
+    };
+
     match shape {
-        AlignmentShape::Round => (0..PIN_CIRCLE_SEGMENTS)
+        AlignmentShape::Round | AlignmentShape::SnapLock => (0..PIN_CIRCLE_SEGMENTS)
             .map(|k| {
                 let a = 2.0 * PI * (k as f64) / (PIN_CIRCLE_SEGMENTS as f64);
                 [center[0] + half_w * a.cos(), center[1] + half_w * a.sin()]
             })
             .collect(),
-        AlignmentShape::Key => {
-            let v = [-u[1], u[0]];
-            let corner = |sl: f64, sw: f64| {
-                [
-                    center[0] + sl * half_l * u[0] + sw * half_w * v[0],
-                    center[1] + sl * half_l * u[1] + sw * half_w * v[1],
-                ]
-            };
+        AlignmentShape::Key | AlignmentShape::Tapered => vec![
+            pt(half_l, -half_w),
+            pt(half_l, half_w),
+            pt(-half_l, half_w),
+            pt(-half_l, -half_w),
+        ],
+        AlignmentShape::Dovetail => {
+            // Butterfly / double-dovetail: narrow waist at u=0, flared wings at ±half_l.
+            let waist_w = (0.52 * base_half_w + clearance).clamp(0.2, (0.88 * half_w).max(0.22));
             vec![
-                corner(1.0, -1.0),
-                corner(1.0, 1.0),
-                corner(-1.0, 1.0),
-                corner(-1.0, -1.0),
+                pt(0.0, -waist_w),
+                pt(half_l, -half_w),
+                pt(half_l, half_w),
+                pt(0.0, waist_w),
+                pt(-half_l, half_w),
+                pt(-half_l, -half_w),
+            ]
+        }
+        AlignmentShape::Cruciform => {
+            // 12-vertex orthogonal '+' cross-rib tenon / mortise.
+            let tl = (0.38 * base_half_l + clearance).clamp(0.18, (0.78 * half_l).max(0.20));
+            let tw = (0.42 * base_half_w + clearance).clamp(0.18, (0.78 * half_w).max(0.20));
+            vec![
+                pt(tl, -half_w),
+                pt(tl, -tw),
+                pt(half_l, -tw),
+                pt(half_l, tw),
+                pt(tl, tw),
+                pt(tl, half_w),
+                pt(-tl, half_w),
+                pt(-tl, tw),
+                pt(-half_l, tw),
+                pt(-half_l, -tw),
+                pt(-tl, -tw),
+                pt(-tl, -half_w),
             ]
         }
     }
 }
 
-/// Places pins on a split face. Features that cannot keep `min_wall_mm` to the
-/// skin (on every checked contour) are shrunk and, as a last resort, skipped.
+/// Builds the multi-stage `(z_fraction, ring_xy)` stacks for a pin and its
+/// matching socket.
+fn build_feature_rings(
+    shape: AlignmentShape,
+    center: [f64; 2],
+    u: [f64; 2],
+    half_l: f64,
+    half_w: f64,
+    clearance: f64,
+) -> Feature {
+    let stages: &[(f64, f64)] = match shape {
+        AlignmentShape::Tapered => &[(0.0, 1.00), (0.50, 0.86), (1.0, 0.72)],
+        AlignmentShape::SnapLock => &[(0.0, 0.85), (0.42, 0.85), (0.70, 1.00), (1.0, 0.74)],
+        AlignmentShape::Round
+        | AlignmentShape::Key
+        | AlignmentShape::Dovetail
+        | AlignmentShape::Cruciform => &[(0.0, 1.0), (1.0, 1.0)],
+    };
+
+    let pin_rings = stages
+        .iter()
+        .map(|&(zf, scale)| {
+            (
+                zf,
+                outline_with_clearance(shape, center, u, half_l * scale, half_w * scale, 0.0),
+            )
+        })
+        .collect();
+
+    let socket_rings = stages
+        .iter()
+        .map(|&(zf, scale)| {
+            (
+                zf,
+                outline_with_clearance(shape, center, u, half_l * scale, half_w * scale, clearance),
+            )
+        })
+        .collect();
+
+    Feature {
+        pin_rings,
+        socket_rings,
+    }
+}
+
+/// Places pins / interlocking joints on a split face. Features that cannot keep
+/// `min_wall_mm` to the skin (on every checked contour) are shrunk and, as a
+/// last resort, skipped.
 fn plan_features(
     contours: &[Vec<Point3>],
     tube: Option<TubeCircle>,
@@ -419,18 +521,26 @@ fn plan_features(
         for shrink in FIT_SHRINK_STEPS {
             let half_w = (0.5 * spec.size_mm * shrink).max(0.3);
             let half_l = match spec.shape {
-                AlignmentShape::Round => half_w,
-                AlignmentShape::Key => (0.5 * spec.key_length_mm * shrink).max(0.3),
+                AlignmentShape::Round | AlignmentShape::SnapLock => half_w,
+                AlignmentShape::Key
+                | AlignmentShape::Dovetail
+                | AlignmentShape::Cruciform
+                | AlignmentShape::Tapered => (0.5 * spec.key_length_mm * shrink).max(0.3),
             };
             let sock_w = half_w + clearance;
             let sock_l = half_l + clearance;
             let bound = match spec.shape {
-                AlignmentShape::Round => sock_w,
-                AlignmentShape::Key => sock_l.hypot(sock_w),
+                AlignmentShape::Round | AlignmentShape::SnapLock => sock_w,
+                AlignmentShape::Key
+                | AlignmentShape::Dovetail
+                | AlignmentShape::Cruciform
+                | AlignmentShape::Tapered => sock_l.hypot(sock_w),
             };
             let min_spacing = br + bound + 0.8;
             let spacing = if spec.spacing_mm > 0.0 {
                 spec.spacing_mm.max(min_spacing)
+            } else if sign == 0.0 {
+                0.0
             } else {
                 min_spacing + 0.4
             };
@@ -441,10 +551,9 @@ fn plan_features(
                     && distance_to_contour(c, center[0], center[1]) - bound >= wall
             });
             if fits {
-                out.push(Feature {
-                    pin: outline(spec.shape, center, u, half_l, half_w),
-                    socket: outline(spec.shape, center, u, sock_l, sock_w),
-                });
+                out.push(build_feature_rings(
+                    spec.shape, center, u, half_l, half_w, clearance,
+                ));
                 break;
             }
         }
@@ -761,6 +870,32 @@ fn push_disc(triangles: &mut Vec<Triangle>, start: usize, n: usize, up: bool) {
     }
 }
 
+/// Ear-clips a simple planar ring (convex or non-convex, such as `Dovetail` or
+/// `Cruciform`) at `vertices[start..start + n]` with `+z` (`up = true`) or `-z`
+/// (`up = false`) normal.
+fn push_polygon_cap(
+    vertices: &[Point3],
+    triangles: &mut Vec<Triangle>,
+    start: usize,
+    n: usize,
+    up: bool,
+    section_id: usize,
+) -> Result<(), MeshError> {
+    let local = triangulate_cap(&vertices[start..(start + n)], section_id)?;
+    let offset = start as u32;
+    for [a, b, c] in local {
+        let ia = a as u32 + offset;
+        let ib = b as u32 + offset;
+        let ic = c as u32 + offset;
+        if up {
+            triangles.push(Triangle::new(ia, ib, ic));
+        } else {
+            triangles.push(Triangle::new(ia, ic, ib));
+        }
+    }
+    Ok(())
+}
+
 /// Appends one closed watertight segment mesh over `seg_spans` into
 /// `vertices` and `triangles`.
 fn append_segment_mesh(
@@ -854,33 +989,51 @@ fn append_segment_mesh(
         }
     }
 
-    // Alignment sockets cut into the bottom face (blind cavities).
+    // Alignment / interlocking sockets cut into the bottom face (blind cavities).
     if let Some(plane) = ctx.bottom {
         let z0 = seg_spans[0] + ctx.z_shift;
         for feature in &plane.features {
-            let n = feature.socket.len();
-            let base = push_ring(vertices, &feature.socket, z0);
-            let ceiling = push_ring(vertices, &feature.socket, z0 + plane.socket_depth);
-            push_wall(triangles, base, ceiling, n, false);
-            push_disc(triangles, ceiling, n, false);
+            if feature.socket_rings.len() < 2 {
+                continue;
+            }
+            let n = feature.socket_rings[0].1.len();
+            let mut starts = Vec::with_capacity(feature.socket_rings.len());
+            for (zf, ring) in &feature.socket_rings {
+                starts.push(push_ring(vertices, ring, z0 + zf * plane.socket_depth));
+            }
+            for w in starts.windows(2) {
+                push_wall(triangles, w[0], w[1], n, false);
+            }
+            if let Some(&ceiling) = starts.last() {
+                push_polygon_cap(vertices, triangles, ceiling, n, false, 0)?;
+            }
             bottom_holes.push(CapHole {
-                start: base,
+                start: starts[0],
                 len: n,
             });
         }
     }
 
-    // Alignment pins growing from the top face (closed solid protrusions).
+    // Alignment / interlocking pins growing from the top face (closed solid protrusions).
     if let Some(plane) = ctx.top {
         let z1 = seg_spans[sec_count - 1] + ctx.z_shift;
         for feature in &plane.features {
-            let n = feature.pin.len();
-            let base = push_ring(vertices, &feature.pin, z1);
-            let tip = push_ring(vertices, &feature.pin, z1 + plane.pin_height);
-            push_wall(triangles, base, tip, n, true);
-            push_disc(triangles, tip, n, true);
+            if feature.pin_rings.len() < 2 {
+                continue;
+            }
+            let n = feature.pin_rings[0].1.len();
+            let mut starts = Vec::with_capacity(feature.pin_rings.len());
+            for (zf, ring) in &feature.pin_rings {
+                starts.push(push_ring(vertices, ring, z1 + zf * plane.pin_height));
+            }
+            for w in starts.windows(2) {
+                push_wall(triangles, w[0], w[1], n, true);
+            }
+            if let Some(&tip) = starts.last() {
+                push_polygon_cap(vertices, triangles, tip, n, true, sec_count - 1)?;
+            }
             top_holes.push(CapHole {
-                start: base,
+                start: starts[0],
                 len: n,
             });
         }
@@ -1320,6 +1473,51 @@ mod tests {
             assert!(
                 check_mesh(&with_keys).is_valid_solid(),
                 "{name} split+keys solid"
+            );
+        }
+    }
+
+    #[test]
+    fn interlocking_joints_dovetail_cruciform_tapered_snaplock_are_watertight() {
+        let surface = fixture_surface();
+        let baseline_p0 = volume_of(&surface, &two_part(None, Some(0)));
+        let baseline_p1 = volume_of(&surface, &two_part(None, Some(1)));
+
+        for shape in [
+            AlignmentShape::Dovetail,
+            AlignmentShape::Cruciform,
+            AlignmentShape::Tapered,
+            AlignmentShape::SnapLock,
+        ] {
+            let align = AlignmentSpec {
+                shape,
+                count: 2,
+                size_mm: 3.0,
+                key_length_mm: 5.5,
+                height_mm: 6.0,
+                clearance_mm: 0.2,
+                depth_clearance_mm: 0.5,
+                min_wall_mm: 0.8,
+                ..AlignmentSpec::default()
+            };
+            let full = two_part(Some(align), None);
+            let rep = alignment_report(&surface, &full).unwrap();
+            assert_eq!(rep.len(), 1);
+            assert!(
+                rep[0].placed >= 1,
+                "{shape:?} should place at least 1 joint"
+            );
+
+            let _ = volume_of(&surface, &full);
+            let p0 = volume_of(&surface, &two_part(Some(align), Some(0)));
+            let p1 = volume_of(&surface, &two_part(Some(align), Some(1)));
+            assert!(
+                p0 > baseline_p0 + 1.0,
+                "{shape:?} lower part must gain tenon volume: {p0} vs {baseline_p0}"
+            );
+            assert!(
+                p1 < baseline_p1 - 1.0,
+                "{shape:?} upper part must lose mortise volume: {p1} vs {baseline_p1}"
             );
         }
     }

@@ -792,15 +792,29 @@
             </div>
 
             <div class="bind-row" style="margin-top: 8px">
-              <span style="font-weight: 600; color: var(--fg)">Alignment Pins / Keys on Split Faces</span>
+              <span style="font-weight: 600; color: var(--fg)">Interlocking Joints &amp; Alignment on Split Faces</span>
+            </div>
+            <div class="bind-row">
+              <span>Joint Presets:</span>
+              <div class="toolbar">
+                <button id="btn-joint-dovetail" class="btn-mini" type="button" title="2-part split with Butterfly / Double-Dovetail interlocking keys">Dovetail</button>
+                <button id="btn-joint-cruciform" class="btn-mini" type="button" title="2-part split with Cruciform (+) orthogonal cross-rib interlock">Cruciform +</button>
+                <button id="btn-joint-snaplock" class="btn-mini" type="button" title="2-part split with 3D barbed axial snap-lock / retention pocket">3D Snap-Lock</button>
+                <button id="btn-joint-tapered" class="btn-mini" type="button" title="2-part split with 3D self-centering tapered wedge interlock">Taper Wedge</button>
+                <button id="btn-joint-round" class="btn-mini" type="button" title="2-part split with round dowel pins">Dowel Pins</button>
+              </div>
             </div>
             <div class="grid-2">
               <div class="field">
-                <label for="align-shape">Alignment Type</label>
+                <label for="align-shape">Joint / Alignment Type</label>
                 <select id="align-shape">
-                  <option value="none">None</option>
-                  <option value="round">Dowel Pins (round)</option>
-                  <option value="key">Keys (rectangular)</option>
+                  <option value="none">None (Flat Split Face)</option>
+                  <option value="dovetail">Interlocking Dovetail (Butterfly)</option>
+                  <option value="cruciform">Interlocking Cruciform (+ Cross)</option>
+                  <option value="snaplock">Interlocking 3D Snap-Lock (Barb)</option>
+                  <option value="tapered">Interlocking Tapered Wedge (3D)</option>
+                  <option value="round">Dowel Pins (Round)</option>
+                  <option value="key">Straight Keys (Rectangular)</option>
                 </select>
               </div>
               <div class="field">

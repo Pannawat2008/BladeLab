@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 60**
-> **LAST_UPDATED: 2026-11-06 15:36 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 61**
+> **LAST_UPDATED: 2026-11-06 15:45 (UTC+7) by geom-1**
 
 ---
 
@@ -426,6 +426,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-036** | 2026-11-06 14:40 | geom-1 | T-401
   Completed **Phase 4 — Optimization & Polish** (`T-401`..`T-404`): (1) `crates/blade-aero/src/optimize.rs` (`optimize_blade`, `OptimizerConfig`, `OptimizationObjective::{DesignTsr, BroadbandTsr}`) seeds stations from the local maximum-$L/D$ Glauert–Schmitz analytical optimum and refines via multi-pass coordinate pattern search while respecting `locked_span_ratios`, minimum trailing-edge thickness, and monotonic spanwise taper/twist, raising `naca4412-linear.json` $C_p$ by `> +0.03` in `< 150` BEM evaluations; (2) `crates/blade-aero/src/neuralfoil.rs` (`features_from_naca4`, `extract_geometry_features`, `synthesize_naca4_polar`, `synthesize_contour_polar`) computes 32-point Gauss–Chebyshev Glauert zero-lift/moment integrals and a viscous boundary-layer + laminar-separation-bubble surrogate across `Re ∈ [20k, 50k, 100k, 200k]` with Viterna 360° continuation; (3) `crates/blade-cad/src/occt.rs` (`apply_root_fillet`, `OcctKernel`) adds a $C^2$ quintic root-to-hub structural fillet flare and implements `CadKernel` producing valid boolean-free STEP solids; and (4) `crates/blade-server` (`/api/v1/teams`, team/author-scoped `/api/v1/designs?team_id=..`) and `web/` (`#btn-auto-optimize`, `#cloud-team`, `#btn-cloud-save`, `#cloud-designs-list`) provide in-browser WASM blade optimization and team cloud workspace persistence.
   refs: crates/blade-aero/src/{optimize,neuralfoil,polar}.rs, crates/blade-cad/src/occt.rs, crates/blade-server/src/{lib,store}.rs, crates/blade-wasm/src/lib.rs, web/src/main.ts, web/index.html | supersedes: –
+- **F-geom1-037** | 2026-11-06 15:45 | geom-1 | T-005
+  `crates/blade-mesh/src/fabrication.rs` (`AlignmentShape::{Dovetail, Cruciform, Tapered, SnapLock, Round, Key}`, `outline_with_clearance`, `build_feature_rings`, `push_polygon_cap`) and `crates/blade-wasm` implement 2D and 3D **Interlocking Joints** on split blade faces: (1) `Dovetail` generates a 6-vertex butterfly / double-dovetail tenon and mortise along the chord (`waist = 0.52 * half_w + clearance`) that mechanically interlocks against chordwise shear and peel; (2) `Cruciform` generates a 12-vertex orthogonal `+` cross-beam tenon and mortise (`tl = 0.38 * half_l`, `tw = 0.42 * half_w`) that resists flapwise bending, lead-lag bending, and torsion simultaneously; (3) `Tapered` extrudes a 3-stage 3D frustum wedge (`1.00 -> 0.86 -> 0.72` along `z`) for self-centering zero-backlash locking; (4) `SnapLock` extrudes a 4-stage 3D axial barbed tenon and undercut socket (`0.85` neck -> `0.85` ramp -> `1.00` retention barb at `70%` height -> `0.74` lead-in tip) to resist spanwise pull-out; and (5) `web/` (`#align-shape`, `#btn-joint-*`, `renderAirfoilSectionSvgMarkup`) provides 1-click joint presets and live 2D cross-section SVG overlays.
+  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/mesh.rs, web/src/{state,main}.ts, web/index.html | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -797,4 +800,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T14:47:00+07:00 agent=geom-1 mem=v57 last_entry=H-geom1-026 task=T-005 note="lead reported: switching to other airfoil profiles (SG6043/SD7062/E387) triggers 'could not triangulate the cap polygon of section 0'; fixing cap-with-holes triangulation and .dat trailing-edge contour"
 [END] 2026-11-06T14:53+07:00 agent=geom-1 mem=v59 note="fixed section 0 cap triangulation on SG6043/SD7062/E387 in crates/blade-mesh/src/tessellate.rs (collinear .dat facet pass + keyhole-bridge ear validation); verified plain, spar-hole, round-pin, and rectangular-key meshes across all 3 library airfoils; rebuilt wasm; L-geom1-016 recorded"
 [RE-ACK] 2026-11-06T15:36:00+07:00 agent=geom-1 mem=v59 last_entry=L-geom1-016 task=T-005 note="lead requested: Interlocking Joint for split blade fabrication; adding interlocking joint geometries (Dovetail/Butterfly, Cruciform Cross-Lock, and Tapered Self-Centering Lock) to blade-mesh, blade-wasm, and web UI"
+[END] 2026-11-06T15:45+07:00 agent=geom-1 mem=v61 note="added Interlocking Joints (Dovetail Butterfly, Cruciform + Cross-Beam, 3D Snap-Lock Barb, and 3D Tapered Wedge) in crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/mesh.rs, and web UI (#align-shape, 1-click Joint Presets, and 2D SVG preview); verified watertight manifold meshes across all 4 interlocking types; F-geom1-037 recorded"
 ```

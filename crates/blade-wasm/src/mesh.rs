@@ -99,6 +99,10 @@ impl Overrides {
         let shape = match self.align_shape.as_deref() {
             Some("round") => Some(AlignmentShape::Round),
             Some("key") => Some(AlignmentShape::Key),
+            Some("dovetail") | Some("interlock") => Some(AlignmentShape::Dovetail),
+            Some("cruciform") | Some("cross") => Some(AlignmentShape::Cruciform),
+            Some("tapered") | Some("wedge") => Some(AlignmentShape::Tapered),
+            Some("snaplock") | Some("snap") => Some(AlignmentShape::SnapLock),
             _ => None,
         };
         let defaults = AlignmentSpec::default();

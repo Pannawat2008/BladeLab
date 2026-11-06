@@ -1047,6 +1047,10 @@ export interface AirfoilPreviewHoleOptions {
   diameterMm: number;
   offsetXMm?: number;
   offsetYMm?: number;
+  jointShape?: string;
+  jointCount?: number;
+  jointSizeMm?: number;
+  jointLengthMm?: number;
 }
 
 /**
@@ -1146,20 +1150,86 @@ export function renderAirfoilSectionSvgMarkup(
     `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" />`,
   ];
 
+  const rootChordMm = Math.max(resolveStationsPreview(design)[0]?.effective_chord_mm ?? 70, 5);
+  const maxThickMm = t * rootChordMm;
+  let coreXc = 0.3;
+  let coreYc = 0.75 * m;
+  let effRadiusMm = 0;
+
   if (holeSpec && holeSpec.diameterMm > 0.1) {
-    const rootChordMm = Math.max(resolveStationsPreview(design)[0]?.effective_chord_mm ?? 70, 5);
-    const maxThickMm = t * rootChordMm;
-    const effRadiusMm = Math.min(0.5 * holeSpec.diameterMm, 0.38 * maxThickMm);
+    effRadiusMm = Math.min(0.5 * holeSpec.diameterMm, 0.38 * maxThickMm);
     const oxMm = Math.max(-0.15 * maxThickMm, Math.min(0.15 * maxThickMm, holeSpec.offsetXMm ?? 0));
     const oyMm = Math.max(-0.15 * maxThickMm, Math.min(0.15 * maxThickMm, holeSpec.offsetYMm ?? 0));
-    const coreXc = 0.3 + oxMm / rootChordMm;
-    const coreYc = 0.75 * m + oyMm / rootChordMm;
+    coreXc = 0.3 + oxMm / rootChordMm;
+    coreYc = 0.75 * m + oyMm / rootChordMm;
     const holeCx = (padX + coreXc * scale).toFixed(1);
     const holeCy = (midY - coreYc * scale * 1.35).toFixed(1);
     const holeR = Math.max(2.2, (effRadiusMm / rootChordMm) * scale * 1.35).toFixed(1);
     elements.push(
       `<circle class="spar-hole-circle" cx="${holeCx}" cy="${holeCy}" r="${holeR}" fill="rgba(16, 185, 129, 0.25)" stroke="#10b981" stroke-width="1.6" />`,
     );
+  }
+
+  if (holeSpec?.jointShape && holeSpec.jointShape !== "none") {
+    const shape = holeSpec.jointShape;
+    const count = Math.max(1, Math.min(2, holeSpec.jointCount ?? 2));
+    const halfW = Math.max(0.8, 0.5 * (holeSpec.jointSizeMm ?? 3.0));
+    const halfL =
+      shape === "round" || shape === "snaplock"
+        ? halfW
+        : Math.max(1.2, 0.5 * (holeSpec.jointLengthMm ?? 6.0));
+    const signs = count === 2 ? [-1, 1] : effRadiusMm > 0 ? [1] : [0];
+    const spacingMm = effRadiusMm + Math.hypot(halfL, halfW) + 1.2;
+
+    for (const sgn of signs) {
+      const jx = padX + (coreXc + (sgn * spacingMm) / rootChordMm) * scale;
+      const jy = midY - coreYc * scale * 1.35;
+      const rx = Math.max(2.0, (halfL / rootChordMm) * scale);
+      const ry = Math.max(1.8, (halfW / rootChordMm) * scale * 1.35);
+
+      if (shape === "round" || shape === "snaplock") {
+        elements.push(
+          `<circle class="joint-preview" cx="${jx.toFixed(1)}" cy="${jy.toFixed(1)}" r="${ry.toFixed(1)}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+        );
+      } else if (shape === "dovetail") {
+        const wy = ry * 0.52;
+        const pts = [
+          `${jx.toFixed(1)},${(jy + wy).toFixed(1)}`,
+          `${(jx + rx).toFixed(1)},${(jy + ry).toFixed(1)}`,
+          `${(jx + rx).toFixed(1)},${(jy - ry).toFixed(1)}`,
+          `${jx.toFixed(1)},${(jy - wy).toFixed(1)}`,
+          `${(jx - rx).toFixed(1)},${(jy - ry).toFixed(1)}`,
+          `${(jx - rx).toFixed(1)},${(jy + ry).toFixed(1)}`,
+        ].join(" ");
+        elements.push(
+          `<polygon class="joint-preview" points="${pts}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+        );
+      } else if (shape === "cruciform") {
+        const tl = rx * 0.38;
+        const tw = ry * 0.42;
+        const pts = [
+          `${(jx + tl).toFixed(1)},${(jy + ry).toFixed(1)}`,
+          `${(jx + tl).toFixed(1)},${(jy + tw).toFixed(1)}`,
+          `${(jx + rx).toFixed(1)},${(jy + tw).toFixed(1)}`,
+          `${(jx + rx).toFixed(1)},${(jy - tw).toFixed(1)}`,
+          `${(jx + tl).toFixed(1)},${(jy - tw).toFixed(1)}`,
+          `${(jx + tl).toFixed(1)},${(jy - ry).toFixed(1)}`,
+          `${(jx - tl).toFixed(1)},${(jy - ry).toFixed(1)}`,
+          `${(jx - tl).toFixed(1)},${(jy - tw).toFixed(1)}`,
+          `${(jx - rx).toFixed(1)},${(jy - tw).toFixed(1)}`,
+          `${(jx - rx).toFixed(1)},${(jy + tw).toFixed(1)}`,
+          `${(jx - tl).toFixed(1)},${(jy + tw).toFixed(1)}`,
+          `${(jx - tl).toFixed(1)},${(jy + ry).toFixed(1)}`,
+        ].join(" ");
+        elements.push(
+          `<polygon class="joint-preview" points="${pts}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+        );
+      } else {
+        elements.push(
+          `<rect class="joint-preview" x="${(jx - rx).toFixed(1)}" y="${(jy - ry).toFixed(1)}" width="${(2 * rx).toFixed(1)}" height="${(2 * ry).toFixed(1)}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+        );
+      }
+    }
   }
 
   elements.push(
