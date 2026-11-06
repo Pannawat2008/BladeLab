@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 58**
-> **LAST_UPDATED: 2026-11-06 14:47 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 59**
+> **LAST_UPDATED: 2026-11-06 14:53 (UTC+7) by geom-1**
 
 ---
 
@@ -587,6 +587,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **L-geom1-015** | 2026-11-06 00:20 | geom-1 | T-106
   `ts-rs` 10.1.0 attribute notes: (1) combining `#[serde(default, skip_serializing_if = "Option::is_none")]` triggers a macro warning (`failed to parse serde attribute`) and emits a non-optional field `field: number | null`; use `#[serde(default)]` + `#[ts(optional = nullable)]` so `ts-rs` generates `field?: number | null` cleanly with zero warnings. (2) In `web/src/vite-env.d.ts`, `declare module "../pkg/blade_wasm.js"` is rejected by `tsc` (`TS7016`) when the relative `.js` file exists on disk without a sibling `.d.ts`; use a wildcard ambient module pattern `declare module "*blade_wasm.js"` instead.
   refs: crates/blade-model/src/schema.rs, web/src/vite-env.d.ts | supersedes: –
+- **L-geom1-016** | 2026-11-06 14:53 | geom-1 | T-005
+  Resampled `.dat` airfoil cap triangulation: `DatAirfoil::surface` resamples 26–35 `.dat` knots (`SG6043.dat`, `SD7062.dat`, `E387.dat`) onto 65 cosine-spaced stations via piecewise-linear interpolation, producing consecutive strictly collinear vertices (`cross == 0`) along each facet, combined with a concave reflex lower surface on high-camber airfoils (`SG6043`) and twin keyhole-bridge vertices when holes (`append_cap_with_holes`) are present. A single-pass ear-clipper that demands `cross > epsilon` runs out of ears once convex corners are clipped. `triangulate_cap` must use a multi-pass ear selector (strictly convex ears first, then collinear forward steps `cross >= -1e-9 * scale^2 && dot > 0.0`) and ignore twin bridge vertices sharing `(x, y)` coordinates with the candidate ear's vertices when checking point-in-triangle and segment-crossing validity (`ear_is_valid`).
+  refs: crates/blade-mesh/src/tessellate.rs, crates/blade-mesh/src/fabrication.rs | supersedes: –
 
 *(Add new entries above this line; do not delete existing ones.)*
 
@@ -792,4 +795,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T14:22:00+07:00 agent=geom-1 mem=v55 last_entry=F-geom1-035 task=T-401 note="lead: 'go to phase 4' -> populated Phase 4 (T-401..T-404) and claimed T-401 (Automated chord & twist optimizer + Web UI) under D-geom1-026"
 [END] 2026-11-06T14:40+07:00 agent=geom-1 mem=v57 note="Phase 4 (T-401..T-404) done: blade-aero optimize.rs + neuralfoil.rs, blade-cad occt.rs (apply_root_fillet + OcctKernel), blade-server /api/v1/teams + team-scoped designs, blade-wasm optimize_blade_wasm, and web Phase 4 Auto-Optimizer + Team Cloud Workspace UI; 153 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-036, H-geom1-026 recorded"
 [RE-ACK] 2026-11-06T14:47:00+07:00 agent=geom-1 mem=v57 last_entry=H-geom1-026 task=T-005 note="lead reported: switching to other airfoil profiles (SG6043/SD7062/E387) triggers 'could not triangulate the cap polygon of section 0'; fixing cap-with-holes triangulation and .dat trailing-edge contour"
+[END] 2026-11-06T14:53+07:00 agent=geom-1 mem=v59 note="fixed section 0 cap triangulation on SG6043/SD7062/E387 in crates/blade-mesh/src/tessellate.rs (collinear .dat facet pass + keyhole-bridge ear validation); verified plain, spar-hole, round-pin, and rectangular-key meshes across all 3 library airfoils; rebuilt wasm; L-geom1-016 recorded"
 ```

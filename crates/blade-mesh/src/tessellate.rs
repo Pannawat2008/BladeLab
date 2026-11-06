@@ -169,11 +169,14 @@ pub(crate) fn triangulate_cap(
         scale.max(point.x.abs()).max(point.y.abs())
     });
     let epsilon = 1e-12 * scale * scale;
+    let pt_tol2 = 1e-16 * scale * scale;
 
     let mut triangles = Vec::with_capacity(count.saturating_sub(2));
     while order.len() > 3 {
         let remaining = order.len();
         let mut clipped = false;
+
+        // Pass 1: standard convex ear clipping (cross > epsilon, no vertex inside/on ear).
         for position in 0..remaining {
             let previous = order[(position + remaining - 1) % remaining];
             let current = order[position];
@@ -186,18 +189,7 @@ pub(crate) fn triangulate_cap(
             if cross <= epsilon {
                 continue;
             }
-
-            let mut blocked = false;
-            for &candidate in &order {
-                if candidate == previous || candidate == current || candidate == next {
-                    continue;
-                }
-                if point_inside(points[candidate], a, b, c, epsilon) {
-                    blocked = true;
-                    break;
-                }
-            }
-            if blocked {
+            if !ear_is_valid(points, &order, previous, current, next, epsilon, pt_tol2) {
                 continue;
             }
 
@@ -206,9 +198,61 @@ pub(crate) fn triangulate_cap(
             clipped = true;
             break;
         }
-        if !clipped {
-            return Err(MeshError::CapTriangulation { section });
+        if clipped {
+            continue;
         }
+
+        // Pass 2: collinear / near-collinear ear on piecewise-linear contours (.dat airfoils).
+        for position in 0..remaining {
+            let previous = order[(position + remaining - 1) % remaining];
+            let current = order[position];
+            let next = order[(position + 1) % remaining];
+
+            let a = points[previous];
+            let b = points[current];
+            let c = points[next];
+            let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+            let dot = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
+            if cross >= -1e-9 * scale * scale && dot > 0.0 {
+                triangles.push([previous, current, next]);
+                order.remove(position);
+                clipped = true;
+                break;
+            }
+        }
+        if clipped {
+            continue;
+        }
+
+        // Pass 3: pick the valid ear with the largest cross product.
+        let mut best_pos = None;
+        let mut best_cross = f64::NEG_INFINITY;
+        for position in 0..remaining {
+            let previous = order[(position + remaining - 1) % remaining];
+            let current = order[position];
+            let next = order[(position + 1) % remaining];
+            let a = points[previous];
+            let b = points[current];
+            let c = points[next];
+            let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+            if cross > -1e-7 * scale * scale
+                && ear_is_valid(points, &order, previous, current, next, -epsilon, pt_tol2)
+                && cross > best_cross
+            {
+                best_cross = cross;
+                best_pos = Some(position);
+            }
+        }
+        if let Some(position) = best_pos {
+            let previous = order[(position + remaining - 1) % remaining];
+            let current = order[position];
+            let next = order[(position + 1) % remaining];
+            triangles.push([previous, current, next]);
+            order.remove(position);
+            continue;
+        }
+
+        return Err(MeshError::CapTriangulation { section });
     }
 
     if order.len() == 3 {
@@ -217,7 +261,75 @@ pub(crate) fn triangulate_cap(
     Ok(triangles)
 }
 
-/// Strictly-inside test for a counter-clockwise triangle.
+fn same_xy(p: Point3, q: Point3, tol2: f64) -> bool {
+    let dx = p.x - q.x;
+    let dy = p.y - q.y;
+    dx * dx + dy * dy <= tol2
+}
+
+fn orient_2d(a: Point3, b: Point3, c: Point3) -> f64 {
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+}
+
+fn segments_properly_cross(a: Point3, b: Point3, c: Point3, d: Point3, eps: f64) -> bool {
+    let o1 = orient_2d(a, b, c);
+    let o2 = orient_2d(a, b, d);
+    let o3 = orient_2d(c, d, a);
+    let o4 = orient_2d(c, d, b);
+    ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps))
+        && ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps))
+}
+
+fn ear_is_valid(
+    points: &[Point3],
+    order: &[usize],
+    previous: usize,
+    current: usize,
+    next: usize,
+    epsilon: f64,
+    pt_tol2: f64,
+) -> bool {
+    let a = points[previous];
+    let b = points[current];
+    let c = points[next];
+    if same_xy(a, c, pt_tol2) {
+        return false;
+    }
+
+    for &candidate in order {
+        if candidate == previous || candidate == current || candidate == next {
+            continue;
+        }
+        let p = points[candidate];
+        if same_xy(p, a, pt_tol2) || same_xy(p, b, pt_tol2) || same_xy(p, c, pt_tol2) {
+            continue;
+        }
+        if point_inside(p, a, b, c, -epsilon.abs()) {
+            return false;
+        }
+    }
+
+    let n = order.len();
+    for i in 0..n {
+        let u = order[i];
+        let v = order[(i + 1) % n];
+        let pu = points[u];
+        let pv = points[v];
+        if same_xy(pu, a, pt_tol2)
+            || same_xy(pu, c, pt_tol2)
+            || same_xy(pv, a, pt_tol2)
+            || same_xy(pv, c, pt_tol2)
+        {
+            continue;
+        }
+        if segments_properly_cross(a, c, pu, pv, epsilon.abs()) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Inside test for a counter-clockwise triangle.
 fn point_inside(point: Point3, a: Point3, b: Point3, c: Point3, epsilon: f64) -> bool {
     let d1 = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
     let d2 = (c.x - b.x) * (point.y - b.y) - (c.y - b.y) * (point.x - b.x);

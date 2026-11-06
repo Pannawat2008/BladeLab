@@ -1262,4 +1262,65 @@ mod tests {
             let _ = volume_of(&surface, &single);
         }
     }
+
+    #[test]
+    fn library_airfoils_sg6043_sd7062_e387_tessellate_with_spar_hole_and_splits() {
+        use blade_model::AirfoilSpec;
+        let json = include_str!("../../../fixtures/naca4412-linear.json");
+        for name in ["SG6043", "SD7062", "E387"] {
+            let mut design = Design::from_json(json).unwrap();
+            for st in &mut design.airfoils {
+                st.airfoil = AirfoilSpec::Named {
+                    name: name.to_string(),
+                };
+            }
+            let blade = resolve(&design).unwrap();
+            let sections = blade_geom::build_sections(&blade).unwrap();
+            let surface = blade_geom::loft(&sections).unwrap();
+
+            // 1. Plain tessellation
+            let plain = tessellate(&surface, &MeshOptions::default())
+                .unwrap_or_else(|e| panic!("{name} plain tessellate failed: {e}"));
+            assert!(check_mesh(&plain).is_valid_solid(), "{name} plain solid");
+
+            // 2. With default UI spar hole (5 mm diameter, 180 mm depth)
+            let spec_hole = FabricationSpec {
+                spar_hole: Some(tube(180.0)),
+                split_parts: 1,
+                ..FabricationSpec::default()
+            };
+            let with_hole = tessellate_fabricated(&surface, &spec_hole)
+                .unwrap_or_else(|e| panic!("{name} spar hole failed: {e}"));
+            assert!(
+                check_mesh(&with_hole).is_valid_solid(),
+                "{name} spar hole solid"
+            );
+
+            // 3. With 2-part split + round alignment pins
+            let spec_split = two_part(Some(AlignmentSpec::default()), None);
+            let with_split = tessellate_fabricated(&surface, &spec_split)
+                .unwrap_or_else(|e| panic!("{name} split+pins failed: {e}"));
+            assert!(
+                check_mesh(&with_split).is_valid_solid(),
+                "{name} split+pins solid"
+            );
+
+            // 4. With 2-part split + rectangular alignment keys
+            let spec_keys = two_part(
+                Some(AlignmentSpec {
+                    shape: AlignmentShape::Key,
+                    size_mm: 2.5,
+                    key_length_mm: 5.0,
+                    ..AlignmentSpec::default()
+                }),
+                None,
+            );
+            let with_keys = tessellate_fabricated(&surface, &spec_keys)
+                .unwrap_or_else(|e| panic!("{name} split+keys failed: {e}"));
+            assert!(
+                check_mesh(&with_keys).is_valid_solid(),
+                "{name} split+keys solid"
+            );
+        }
+    }
 }
