@@ -383,10 +383,11 @@ test("blade length L, pitch-axis pivot, global chord width shift/scale, and airf
 });
 
 test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm bytes work end-to-end", () => {
-  const nacaSvg = renderAirfoilSectionSvgMarkup(initialDesign);
+  const nacaSvg = renderAirfoilSectionSvgMarkup(initialDesign, { diameterMm: 5.0 });
   assert.ok(nacaSvg.includes('class="airfoil-contour"'));
   assert.ok(nacaSvg.includes('class="airfoil-camber"'));
   assert.ok(nacaSvg.includes('class="pitch-axis-dot"'));
+  assert.ok(nacaSvg.includes('class="spar-hole-circle"'));
 
   const sgDesign = updatePrimaryAirfoil(initialDesign, { type: "named", name: "SG6043" });
   const sgSvg = renderAirfoilSectionSvgMarkup(sgDesign);
@@ -395,7 +396,13 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
   assert.ok(fs.existsSync(gluePath), "blade_wasm.js node glue must exist");
   const require = createRequire(import.meta.url);
-  const { export_stl_bytes, export_3mf_bytes } = require(gluePath);
+  const {
+    build_mesh,
+    export_stl_bytes,
+    export_3mf_bytes,
+    export_fabricated_stl_bytes,
+    export_fabricated_3mf_bytes,
+  } = require(gluePath);
 
   const stlBytes = export_stl_bytes(JSON.stringify(initialDesign));
   assert.equal(stlBytes.byteLength, 84 + 50 * 3538);
@@ -405,4 +412,32 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   // 3MF is a ZIP archive starting with 'PK\x03\x04'
   assert.equal(threemfBytes[0], 0x50);
   assert.equal(threemfBytes[1], 0x4b);
+
+  // Verify carbon-fiber base hole + 2-part split model build & STL/3MF export
+  const fabJson = JSON.stringify({
+    spar_hole_diameter_mm: 5.0,
+    spar_hole_depth_mm: 360.0,
+    split_parts: 2,
+    split_ratio: 0.5,
+    explode_gap_mm: 24.0,
+  });
+  const fabMesh = build_mesh(JSON.stringify(initialDesign), fabJson);
+  assert.ok(fabMesh.triangle_count > 3538);
+  assert.ok(fabMesh.volume_mm3 < 126493.7);
+
+  const part0Stl = export_fabricated_stl_bytes(
+    JSON.stringify(initialDesign),
+    JSON.stringify({
+      spar_hole_diameter_mm: 5.0,
+      spar_hole_depth_mm: 360.0,
+      split_parts: 2,
+      split_ratio: 0.5,
+      active_part: 0,
+    }),
+  );
+  assert.ok(part0Stl.byteLength > 50000);
+
+  const fab3mf = export_fabricated_3mf_bytes(JSON.stringify(initialDesign), fabJson);
+  assert.equal(fab3mf[0], 0x50);
+  assert.equal(fab3mf[1], 0x4b);
 });

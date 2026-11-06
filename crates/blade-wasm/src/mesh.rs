@@ -5,7 +5,9 @@
 //! thin wasm bindings live in `lib.rs`.
 
 use blade_geom::{build_sections, loft};
-use blade_mesh::{check_mesh, tessellate, write_3mf, write_stl, Mesh, MeshOptions};
+use blade_mesh::{
+    check_mesh, tessellate_fabricated, write_3mf, write_stl, FabricationSpec, Mesh, SparHoleSpec,
+};
 use blade_model::{resolve, CurveSource, Design};
 
 /// A ready-to-render triangle mesh in millimetres.
@@ -41,6 +43,45 @@ pub struct Overrides {
     pub tip_twist_deg: Option<f64>,
     /// Replace the number of resolved cross-sections.
     pub station_count: Option<u32>,
+    /// Optional carbon-fiber spar tube hole diameter at the blade root base in mm.
+    pub spar_hole_diameter_mm: Option<f64>,
+    /// Optional carbon-fiber spar tube hole depth along the blade span in mm.
+    pub spar_hole_depth_mm: Option<f64>,
+    /// Optional chordwise offset of the spar hole from the root core center in mm.
+    pub spar_hole_offset_x_mm: Option<f64>,
+    /// Optional thickness-direction offset of the spar hole from the root core center in mm.
+    pub spar_hole_offset_y_mm: Option<f64>,
+    /// Number of spanwise printable segments (`1..=8`, `1` = unsplit).
+    pub split_parts: Option<usize>,
+    /// Optional split span ratio in `[0.12, 0.88]` for 2+ part splits.
+    pub split_ratio: Option<f64>,
+    /// Optional 0-based segment index (`0..split_parts`) to isolate a single part.
+    pub active_part: Option<usize>,
+    /// Optional exploded preview/export gap in mm along `+z` between split segments.
+    pub explode_gap_mm: Option<f64>,
+}
+
+impl Overrides {
+    /// Converts the fabrication fields on [`Overrides`] into a [`FabricationSpec`].
+    #[must_use]
+    pub fn fabrication_spec(&self) -> FabricationSpec {
+        let spar_hole = match (self.spar_hole_diameter_mm, self.spar_hole_depth_mm) {
+            (Some(d), Some(depth)) if d > 0.1 && depth > 0.1 => Some(SparHoleSpec {
+                diameter_mm: d,
+                depth_mm: depth,
+                offset_x_mm: self.spar_hole_offset_x_mm.unwrap_or(0.0),
+                offset_y_mm: self.spar_hole_offset_y_mm.unwrap_or(0.0),
+            }),
+            _ => None,
+        };
+        FabricationSpec {
+            spar_hole,
+            split_parts: self.split_parts.unwrap_or(1).clamp(1, 8),
+            split_ratio: self.split_ratio,
+            active_part: self.active_part,
+            explode_gap_mm: self.explode_gap_mm.unwrap_or(0.0),
+        }
+    }
 }
 
 /// Runs the full `Design → resolve → build_sections → loft → tessellate`
@@ -51,6 +92,15 @@ pub struct Overrides {
 /// Returns a human-readable message (as `String`) when the JSON is invalid,
 /// an override produces an unbuildable design, or the geometry is degenerate.
 pub fn build_mesh(design_json: &str, overrides: &Overrides) -> Result<MeshOutput, String> {
+    let mesh = build_validated_blade_mesh_with_overrides(design_json, overrides)?;
+    Ok(output(&mesh))
+}
+
+/// Builds a validated watertight blade [`Mesh`] from `design_json` and [`Overrides`].
+pub fn build_validated_blade_mesh_with_overrides(
+    design_json: &str,
+    overrides: &Overrides,
+) -> Result<Mesh, String> {
     let mut design = Design::from_json(design_json).map_err(as_string)?;
     if let Some(chord) = overrides.tip_chord_mm {
         design.distributions.chord_mm = with_tip_value(design.distributions.chord_mm, chord);
@@ -65,22 +115,18 @@ pub fn build_mesh(design_json: &str, overrides: &Overrides) -> Result<MeshOutput
     let blade = resolve(&design).map_err(as_string)?;
     let sections = build_sections(&blade).map_err(as_string)?;
     let surface = loft(&sections).map_err(as_string)?;
-    let mesh = tessellate(&surface, &MeshOptions { cap_ends: true }).map_err(as_string)?;
-    Ok(output(&mesh))
-}
-
-/// Builds a validated watertight blade [`Mesh`] from `design_json`.
-pub fn build_validated_blade_mesh(design_json: &str) -> Result<Mesh, String> {
-    let design = Design::from_json(design_json).map_err(as_string)?;
-    let blade = resolve(&design).map_err(as_string)?;
-    let sections = build_sections(&blade).map_err(as_string)?;
-    let surface = loft(&sections).map_err(as_string)?;
-    let mesh = tessellate(&surface, &MeshOptions { cap_ends: true }).map_err(as_string)?;
+    let fab = overrides.fabrication_spec();
+    let mesh = tessellate_fabricated(&surface, &fab).map_err(as_string)?;
     let report = check_mesh(&mesh);
     if !report.is_valid_solid() {
         return Err("generated blade mesh is not a valid watertight solid".into());
     }
     Ok(mesh)
+}
+
+/// Builds a validated watertight blade [`Mesh`] from `design_json`.
+pub fn build_validated_blade_mesh(design_json: &str) -> Result<Mesh, String> {
+    build_validated_blade_mesh_with_overrides(design_json, &Overrides::default())
 }
 
 /// Serializes the blade mesh to binary STL bytes (`84 + 50 × tris`).
@@ -89,9 +135,27 @@ pub fn export_stl(design_json: &str) -> Result<Vec<u8>, String> {
     Ok(write_stl(&mesh))
 }
 
+/// Serializes the blade mesh (with fabrication overrides) to binary STL bytes.
+pub fn export_stl_with_overrides(
+    design_json: &str,
+    overrides: &Overrides,
+) -> Result<Vec<u8>, String> {
+    let mesh = build_validated_blade_mesh_with_overrides(design_json, overrides)?;
+    Ok(write_stl(&mesh))
+}
+
 /// Serializes the blade mesh to a 3MF archive (`.3mf` OPC ZIP in mm units).
 pub fn export_3mf(design_json: &str) -> Result<Vec<u8>, String> {
     let mesh = build_validated_blade_mesh(design_json)?;
+    Ok(write_3mf(&mesh))
+}
+
+/// Serializes the blade mesh (with fabrication overrides) to a 3MF archive.
+pub fn export_3mf_with_overrides(
+    design_json: &str,
+    overrides: &Overrides,
+) -> Result<Vec<u8>, String> {
+    let mesh = build_validated_blade_mesh_with_overrides(design_json, overrides)?;
     Ok(write_3mf(&mesh))
 }
 

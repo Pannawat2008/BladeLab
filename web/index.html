@@ -684,6 +684,101 @@
           </div>
         </section>
 
+        <!-- Fabrication: Carbon Fiber Tube Hole & Split Model -->
+        <section id="layer-fabrication">
+          <div class="section-title">
+            <span>Fabrication · Carbon Tube &amp; Split Model</span>
+            <span id="fab-summary" class="section-meta">Solid · 1 Part</span>
+          </div>
+
+          <div class="aero-subbox">
+            <div class="bind-row" style="margin-top: 0">
+              <label for="spar-hole-enabled" style="font-weight: 600; color: var(--fg)">
+                <input id="spar-hole-enabled" type="checkbox" />
+                Add Base Hole (Carbon Fiber Tube)
+              </label>
+              <label for="spar-show-rod" title="Show 3D carbon-fiber tube preview rod">
+                <input id="spar-show-rod" type="checkbox" checked />
+                3D Tube Preview
+              </label>
+            </div>
+
+            <div class="bind-row">
+              <span>CF Tube Presets:</span>
+              <div class="toolbar">
+                <button id="btn-cf-4" class="btn-mini" type="button" title="4.0 mm carbon tube hole">Ø4 mm</button>
+                <button id="btn-cf-5" class="btn-mini" type="button" title="5.0 mm carbon tube hole">Ø5 mm</button>
+                <button id="btn-cf-6" class="btn-mini" type="button" title="6.0 mm carbon tube hole">Ø6 mm</button>
+                <button id="btn-cf-8" class="btn-mini" type="button" title="8.0 mm carbon tube hole">Ø8 mm</button>
+                <button id="btn-spar-full-span" class="btn-mini" type="button" title="Extend hole through 85% of blade span">85% Span</button>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="spar-hole-diameter" class="scrub-label" data-scrub-for="spar-hole-diameter">Tube Hole Ø (mm)</label>
+                <input id="spar-hole-diameter" type="number" min="1.0" max="25.0" step="0.2" value="5.0" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-depth" class="scrub-label" data-scrub-for="spar-hole-depth">Hole Depth (mm)</label>
+                <input id="spar-hole-depth" type="number" min="10" max="2400" step="10" value="240" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-offset-x" class="scrub-label" data-scrub-for="spar-hole-offset-x">Hole Offset X (mm)</label>
+                <input id="spar-hole-offset-x" type="number" min="-15" max="15" step="0.2" value="0.0" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-offset-y" class="scrub-label" data-scrub-for="spar-hole-offset-y">Hole Offset Y (mm)</label>
+                <input id="spar-hole-offset-y" type="number" min="-10" max="10" step="0.2" value="0.0" />
+              </div>
+            </div>
+
+            <div class="row" style="margin-top: 6px">
+              <label for="spar-hole-depth-slider">Hole Depth <span id="spar-hole-depth-val">240 mm</span></label>
+              <input id="spar-hole-depth-slider" type="range" min="15" max="1200" step="5" value="240" />
+            </div>
+            <div id="spar-hole-status" class="fit-badge">Base hole off — enable to bore root for carbon tube</div>
+          </div>
+
+          <div class="aero-subbox" style="margin-top: 8px">
+            <div class="grid-2">
+              <div class="field">
+                <label for="split-parts">Split Blade Into</label>
+                <select id="split-parts">
+                  <option value="1">1 Part (Unsplit Full Blade)</option>
+                  <option value="2">2 Parts (Root + Tip)</option>
+                  <option value="3">3 Parts (Root + Mid + Tip)</option>
+                  <option value="4">4 Printable Segments</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="split-active-part">View / Export Segment</label>
+                <select id="split-active-part">
+                  <option value="all">All Segments</option>
+                  <option value="0">Part 1 (Root Base)</option>
+                  <option value="1">Part 2</option>
+                  <option value="2">Part 3</option>
+                  <option value="3">Part 4 (Tip)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top: 6px">
+              <label for="split-ratio-slider">Primary Split Position <span id="split-ratio-val">50% (r=330 mm)</span></label>
+              <input id="split-ratio-slider" type="range" min="15" max="85" step="1" value="50" />
+            </div>
+
+            <div class="row">
+              <label for="split-explode-gap">Exploded Preview Gap <span id="split-explode-val">24 mm</span></label>
+              <input id="split-explode-gap" type="range" min="0" max="80" step="2" value="24" />
+            </div>
+
+            <div class="toolbar" style="margin-top: 6px">
+              <button id="btn-export-split-all" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STL)</button>
+            </div>
+          </div>
+        </section>
+
         <!-- Layer 3: Per-Station Override Table -->
         <section id="layer3-stations">
           <div class="section-title">

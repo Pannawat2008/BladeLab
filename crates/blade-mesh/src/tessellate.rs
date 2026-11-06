@@ -155,7 +155,10 @@ fn signed_area(points: &[Point3]) -> f64 {
 /// Ear-clips a simple polygon in the `x`/`y` plane.
 ///
 /// Returns counter-clockwise triangles regardless of the input winding.
-fn triangulate_cap(points: &[Point3], section: usize) -> Result<Vec<[usize; 3]>, MeshError> {
+pub(crate) fn triangulate_cap(
+    points: &[Point3],
+    section: usize,
+) -> Result<Vec<[usize; 3]>, MeshError> {
     let count = points.len();
     let mut order: Vec<usize> = (0..count).collect();
     if signed_area(points) < 0.0 {

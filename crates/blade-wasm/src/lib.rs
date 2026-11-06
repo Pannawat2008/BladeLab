@@ -19,7 +19,10 @@ use wasm_bindgen::prelude::*;
 
 pub mod mesh;
 
-use mesh::{build_mesh as run_pipeline, export_3mf, export_stl, MeshOutput, Overrides};
+use mesh::{
+    build_mesh as run_pipeline, export_3mf, export_3mf_with_overrides, export_stl,
+    export_stl_with_overrides, MeshOutput, Overrides,
+};
 
 /// Live-edit overrides deserialised from the web UI (all fields optional).
 #[derive(Debug, Default, Deserialize)]
@@ -31,6 +34,22 @@ struct OverridesDto {
     tip_twist_deg: Option<f64>,
     /// Number of resolved cross-sections.
     station_count: Option<u32>,
+    /// Optional carbon-fiber spar tube hole diameter at the blade root base in mm.
+    spar_hole_diameter_mm: Option<f64>,
+    /// Optional carbon-fiber spar tube hole depth along the blade span in mm.
+    spar_hole_depth_mm: Option<f64>,
+    /// Optional chordwise offset of the spar hole from the root core center in mm.
+    spar_hole_offset_x_mm: Option<f64>,
+    /// Optional thickness-direction offset of the spar hole from the root core center in mm.
+    spar_hole_offset_y_mm: Option<f64>,
+    /// Number of spanwise printable segments (`1..=8`, `1` = unsplit).
+    split_parts: Option<usize>,
+    /// Optional split span ratio in `[0.12, 0.88]` for 2+ part splits.
+    split_ratio: Option<f64>,
+    /// Optional 0-based segment index (`0..split_parts`) to isolate a single part.
+    active_part: Option<usize>,
+    /// Optional exploded preview/export gap in mm along `+z` between split segments.
+    explode_gap_mm: Option<f64>,
 }
 
 impl From<OverridesDto> for Overrides {
@@ -39,7 +58,25 @@ impl From<OverridesDto> for Overrides {
             tip_chord_mm: dto.tip_chord_mm,
             tip_twist_deg: dto.tip_twist_deg,
             station_count: dto.station_count,
+            spar_hole_diameter_mm: dto.spar_hole_diameter_mm,
+            spar_hole_depth_mm: dto.spar_hole_depth_mm,
+            spar_hole_offset_x_mm: dto.spar_hole_offset_x_mm,
+            spar_hole_offset_y_mm: dto.spar_hole_offset_y_mm,
+            split_parts: dto.split_parts,
+            split_ratio: dto.split_ratio,
+            active_part: dto.active_part,
+            explode_gap_mm: dto.explode_gap_mm,
         }
+    }
+}
+
+fn parse_overrides_json(overrides_json: &str) -> Result<Overrides, JsValue> {
+    if overrides_json.trim().is_empty() {
+        Ok(Overrides::default())
+    } else {
+        serde_json::from_str::<OverridesDto>(overrides_json)
+            .map(Overrides::from)
+            .map_err(|error| JsValue::from_str(&format!("bad overrides JSON: {error}")))
     }
 }
 
@@ -108,13 +145,7 @@ impl MeshData {
 /// geometry is degenerate.
 #[wasm_bindgen]
 pub fn build_mesh(design_json: &str, overrides_json: &str) -> Result<MeshData, JsValue> {
-    let overrides: Overrides = if overrides_json.trim().is_empty() {
-        Overrides::default()
-    } else {
-        serde_json::from_str::<OverridesDto>(overrides_json)
-            .map(Overrides::from)
-            .map_err(|error| JsValue::from_str(&format!("bad overrides JSON: {error}")))?
-    };
+    let overrides = parse_overrides_json(overrides_json)?;
     run_pipeline(design_json, &overrides)
         .map(|output| MeshData { output })
         .map_err(|error| JsValue::from_str(&error))
@@ -251,10 +282,32 @@ pub fn export_stl_bytes(design_json: &str) -> Result<Vec<u8>, JsValue> {
     export_stl(design_json).map_err(|e| JsValue::from_str(&e))
 }
 
+/// Exports the current blade design with fabrication overrides (spar hole, split
+/// segments, or isolated part) as a binary STL byte buffer (`Uint8Array` in JS).
+#[wasm_bindgen]
+pub fn export_fabricated_stl_bytes(
+    design_json: &str,
+    overrides_json: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let overrides = parse_overrides_json(overrides_json)?;
+    export_stl_with_overrides(design_json, &overrides).map_err(|e| JsValue::from_str(&e))
+}
+
 /// Exports the current blade design as a 3MF archive byte buffer (`Uint8Array` in JS).
 #[wasm_bindgen]
 pub fn export_3mf_bytes(design_json: &str) -> Result<Vec<u8>, JsValue> {
     export_3mf(design_json).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports the current blade design with fabrication overrides (spar hole, split
+/// segments, or isolated part) as a 3MF archive byte buffer (`Uint8Array` in JS).
+#[wasm_bindgen]
+pub fn export_fabricated_3mf_bytes(
+    design_json: &str,
+    overrides_json: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let overrides = parse_overrides_json(overrides_json)?;
+    export_3mf_with_overrides(design_json, &overrides).map_err(|e| JsValue::from_str(&e))
 }
 
 #[cfg(test)]

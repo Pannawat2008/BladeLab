@@ -14,6 +14,8 @@ import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
 import init, {
   build_mesh,
   export_3mf_bytes,
+  export_fabricated_3mf_bytes,
+  export_fabricated_stl_bytes,
   export_stl_bytes,
   simulate_aero,
 } from "../pkg/blade_wasm.js";
@@ -200,6 +202,29 @@ const bezierPointsBody = document.getElementById("bezier-points-body")!;
 const inputFormulaChord = document.getElementById("formula-chord") as HTMLInputElement;
 const inputFormulaTwist = document.getElementById("formula-twist") as HTMLInputElement;
 
+const fabSummary = document.getElementById("fab-summary")!;
+const inputSparHoleEnabled = document.getElementById("spar-hole-enabled") as HTMLInputElement;
+const inputSparShowRod = document.getElementById("spar-show-rod") as HTMLInputElement;
+const btnCf4 = document.getElementById("btn-cf-4") as HTMLButtonElement;
+const btnCf5 = document.getElementById("btn-cf-5") as HTMLButtonElement;
+const btnCf6 = document.getElementById("btn-cf-6") as HTMLButtonElement;
+const btnCf8 = document.getElementById("btn-cf-8") as HTMLButtonElement;
+const btnSparFullSpan = document.getElementById("btn-spar-full-span") as HTMLButtonElement;
+const inputSparHoleDiameter = document.getElementById("spar-hole-diameter") as HTMLInputElement;
+const inputSparHoleDepth = document.getElementById("spar-hole-depth") as HTMLInputElement;
+const inputSparHoleOffsetX = document.getElementById("spar-hole-offset-x") as HTMLInputElement;
+const inputSparHoleOffsetY = document.getElementById("spar-hole-offset-y") as HTMLInputElement;
+const sliderSparHoleDepth = document.getElementById("spar-hole-depth-slider") as HTMLInputElement;
+const sparHoleDepthVal = document.getElementById("spar-hole-depth-val")!;
+const sparHoleStatus = document.getElementById("spar-hole-status")!;
+const selectSplitParts = document.getElementById("split-parts") as HTMLSelectElement;
+const selectSplitActivePart = document.getElementById("split-active-part") as HTMLSelectElement;
+const sliderSplitRatio = document.getElementById("split-ratio-slider") as HTMLInputElement;
+const splitRatioVal = document.getElementById("split-ratio-val")!;
+const sliderSplitExplodeGap = document.getElementById("split-explode-gap") as HTMLInputElement;
+const splitExplodeVal = document.getElementById("split-explode-val")!;
+const btnExportSplitAll = document.getElementById("btn-export-split-all") as HTMLButtonElement;
+
 const stationTableBody = document.getElementById("station-table-body")!;
 const errorBanner = document.getElementById("error-banner")!;
 
@@ -258,10 +283,115 @@ function applyMeshChordOffset() {
   });
 }
 
+function buildFabricationOverridesJson(overrideActivePart?: number | null): string {
+  const holeEnabled = inputSparHoleEnabled.checked;
+  const holeDiameter = Math.max(0.5, Number.parseFloat(inputSparHoleDiameter.value) || 5.0);
+  const holeDepth = Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240);
+  const holeOffsetX = Number.parseFloat(inputSparHoleOffsetX.value) || 0;
+  const holeOffsetY = Number.parseFloat(inputSparHoleOffsetY.value) || 0;
+
+  const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
+  const splitRatio = Math.max(0.12, Math.min(0.88, (sliderSplitRatio.valueAsNumber || 50) / 100));
+  const explodeGap = sliderSplitExplodeGap.valueAsNumber || 0;
+
+  let activePart: number | undefined;
+  if (overrideActivePart !== undefined) {
+    activePart = overrideActivePart === null ? undefined : overrideActivePart;
+  } else if (selectSplitActivePart.value !== "all") {
+    const idx = Number.parseInt(selectSplitActivePart.value, 10);
+    if (Number.isFinite(idx) && idx >= 0 && idx < splitParts) {
+      activePart = idx;
+    }
+  }
+
+  const dto: Record<string, unknown> = {};
+  if (holeEnabled) {
+    dto.spar_hole_diameter_mm = holeDiameter;
+    dto.spar_hole_depth_mm = holeDepth;
+    dto.spar_hole_offset_x_mm = holeOffsetX;
+    dto.spar_hole_offset_y_mm = holeOffsetY;
+  }
+  if (splitParts > 1) {
+    dto.split_parts = splitParts;
+    dto.split_ratio = splitRatio;
+    if (activePart !== undefined) {
+      dto.active_part = activePart;
+    } else if (explodeGap > 0) {
+      dto.explode_gap_mm = explodeGap;
+    }
+  }
+  return JSON.stringify(dto);
+}
+
+function updateFabricationStatus(design: Design) {
+  const rows = resolveStationsPreview(design);
+  const rootChord = rows[0]?.effective_chord_mm ?? 70;
+  const primary = design.airfoils[0]?.airfoil;
+  let tRatio = 0.12;
+  if (primary) {
+    if (primary.type === "naca4") {
+      tRatio = primary.thickness_ratio;
+    } else if (primary.name === "SG6043") {
+      tRatio = 0.1;
+    } else if (primary.name === "SD7062") {
+      tRatio = 0.14;
+    } else if (primary.name === "E387") {
+      tRatio = 0.091;
+    }
+  }
+  const rootThickMm = rootChord * tRatio;
+  const maxSafeDiaMm = 2 * 0.38 * rootThickMm;
+
+  const holeEnabled = inputSparHoleEnabled.checked;
+  const reqDia = Number.parseFloat(inputSparHoleDiameter.value) || 5.0;
+  const effDia = Math.min(reqDia, maxSafeDiaMm);
+  const depth = Number.parseFloat(inputSparHoleDepth.value) || 240;
+  const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
+  const splitRatio = (sliderSplitRatio.valueAsNumber || 50) / 100;
+  const splitRadiusMm =
+    design.rotor.hub_radius_mm +
+    splitRatio * (design.rotor.radius_mm - design.rotor.hub_radius_mm);
+
+  splitRatioVal.textContent = `${Math.round(splitRatio * 100)}% (r=${splitRadiusMm.toFixed(0)} mm)`;
+  splitExplodeVal.textContent = `${sliderSplitExplodeGap.valueAsNumber || 0} mm`;
+  sparHoleDepthVal.textContent = `${depth.toFixed(0)} mm`;
+
+  if (holeEnabled) {
+    const clampedNote =
+      reqDia > maxSafeDiaMm + 0.05 ? ` (clamped to safe Ø${effDia.toFixed(1)} mm)` : "";
+    sparHoleStatus.textContent = `Root thickness: ${rootThickMm.toFixed(
+      1,
+    )} mm (max safe Ø${maxSafeDiaMm.toFixed(1)} mm) · Bore: Ø${effDia.toFixed(
+      1,
+    )} × ${depth.toFixed(0)} mm${clampedNote}`;
+  } else {
+    sparHoleStatus.textContent = `Root thickness: ${rootThickMm.toFixed(
+      1,
+    )} mm (max safe Ø${maxSafeDiaMm.toFixed(1)} mm) · Base hole off`;
+  }
+
+  const holeTag = holeEnabled ? `CF Ø${effDia.toFixed(1)}×${depth.toFixed(0)}mm` : "Solid";
+  const splitTag = splitParts > 1 ? `${splitParts} Parts` : "1 Part";
+  fabSummary.textContent = `${holeTag} · ${splitTag}`;
+
+  airfoilPreviewSvg.innerHTML = renderAirfoilSectionSvgMarkup(
+    design,
+    holeEnabled
+      ? {
+          diameterMm: reqDia,
+          offsetXMm: Number.parseFloat(inputSparHoleOffsetX.value) || 0,
+          offsetYMm: Number.parseFloat(inputSparHoleOffsetY.value) || 0,
+        }
+      : undefined,
+  );
+}
+
 function rebuild3D(design: Design) {
   try {
+    updateFabricationStatus(design);
     const start = performance.now();
-    const data = build_mesh(JSON.stringify(design), "{}");
+    const overridesJson = buildFabricationOverridesJson();
+    const data = build_mesh(JSON.stringify(design), overridesJson);
     const elapsed = performance.now() - start;
 
     errorBanner.style.display = "none";
@@ -280,11 +410,16 @@ function rebuild3D(design: Design) {
     bladeGeo.setIndex(new THREE.BufferAttribute(data.indices as Uint32Array, 1));
     bladeGeo.computeVertexNormals();
 
+    const holeEnabled = inputSparHoleEnabled.checked;
+    const showRod = holeEnabled && inputSparShowRod.checked;
+
     const bladeMaterial = new THREE.MeshStandardMaterial({
       color: 0x3b82f6,
       metalness: 0.18,
       roughness: 0.42,
       wireframe: wireframeMode,
+      transparent: showRod,
+      opacity: showRod ? 0.86 : 1.0,
       side: THREE.DoubleSide,
     });
 
@@ -301,13 +436,18 @@ function rebuild3D(design: Design) {
     const lineGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
     const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b });
 
+    const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
+    const holeDia = Math.max(0.5, Number.parseFloat(inputSparHoleDiameter.value) || 5.0);
+    const holeDepth = Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240);
+    const holeOx = Number.parseFloat(inputSparHoleOffsetX.value) || 0;
+    const holeOy = Number.parseFloat(inputSparHoleOffsetY.value) || 0;
+
     const count = viewMode === "rotor" ? Math.max(1, design.rotor.blade_count) : 1;
     for (let i = 0; i < count; i++) {
       const branch = new THREE.Group();
       branch.userData.isBladeBranch = true;
       const inner = new THREE.Group();
       // Center the pitch axis at x=0 when assembling the multi-blade rotor
-      const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
       const pivotShift =
         viewMode === "rotor" ? -design.rotor.pitch_axis_ratio * rootChord : 0;
 
@@ -318,6 +458,26 @@ function rebuild3D(design: Design) {
 
       inner.add(bladeMesh);
       inner.add(axisLine);
+
+      if (showRod) {
+        const rodRadius = Math.max(0.5, holeDia * 0.48);
+        const stubOutMm = 18;
+        const totalRodLen = holeDepth + stubOutMm;
+        const rodGeo = new THREE.CylinderGeometry(rodRadius, rodRadius, totalRodLen, 24);
+        rodGeo.rotateX(Math.PI / 2);
+        const rodMat = new THREE.MeshStandardMaterial({
+          color: 0x10b981,
+          metalness: 0.65,
+          roughness: 0.25,
+        });
+        const rodMesh = new THREE.Mesh(rodGeo, rodMat);
+        const coreX = 0.3 * rootChord + holeOx + pivotShift;
+        const coreY = holeOy;
+        const centerZ = design.rotor.hub_radius_mm - stubOutMm + totalRodLen * 0.5;
+        rodMesh.position.set(coreX, coreY, centerZ);
+        inner.add(rodMesh);
+      }
+
       branch.add(inner);
 
       if (viewMode === "rotor") {
@@ -505,7 +665,7 @@ function syncControlsFromDesign(design: Design) {
       );
     }
   }
-  airfoilPreviewSvg.innerHTML = renderAirfoilSectionSvgMarkup(design);
+  updateFabricationStatus(design);
 
   const mode = activeDistributionMode(design);
   btnModeLinear.classList.toggle("active", mode === "linear");
@@ -858,19 +1018,32 @@ function triggerBlobDownload(bytes: Uint8Array | string, filename: string, mime:
 
 async function handleExport(format: "stl" | "3mf" | "step") {
   const part = selectExportPart.value as "blade" | "assembly" | "hub";
-  const baseName = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}-${part}`;
+  const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
+  const activePartSuffix =
+    splitParts > 1 && selectSplitActivePart.value !== "all"
+      ? `-part${Number.parseInt(selectSplitActivePart.value, 10) + 1}`
+      : "";
+  const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
+  const baseName = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}-${part}${holeSuffix}${activePartSuffix}`;
   exportStatus.textContent = `Exporting ${format.toUpperCase()}...`;
 
   try {
-    // Fast in-browser wasm export for single blade STL and 3MF
+    const fabJson = buildFabricationOverridesJson();
+    // Fast in-browser wasm export for blade STL and 3MF (including carbon tube hole & split parts)
     if (part === "blade" && format === "stl") {
-      const bytes = export_stl_bytes(JSON.stringify(workingDesign));
+      const bytes =
+        fabJson === "{}"
+          ? export_stl_bytes(JSON.stringify(workingDesign))
+          : export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
       triggerBlobDownload(bytes, `${baseName}.stl`, "model/stl");
       exportStatus.textContent = `Saved ${baseName}.stl (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
       return;
     }
     if (part === "blade" && format === "3mf") {
-      const bytes = export_3mf_bytes(JSON.stringify(workingDesign));
+      const bytes =
+        fabJson === "{}"
+          ? export_3mf_bytes(JSON.stringify(workingDesign))
+          : export_fabricated_3mf_bytes(JSON.stringify(workingDesign), fabJson);
       triggerBlobDownload(
         bytes,
         `${baseName}.3mf`,
@@ -900,15 +1073,16 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     triggerBlobDownload(buf, `${baseName}.${format}`, mime);
     exportStatus.textContent = `Saved ${baseName}.${format} (${(buf.byteLength / 1024).toFixed(1)} kB)`;
   } catch (err) {
+    const fabJson = buildFabricationOverridesJson();
     // Fallback to in-browser blade STL/3MF if server is offline
     if (format === "stl") {
-      const bytes = export_stl_bytes(JSON.stringify(workingDesign));
+      const bytes = export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
       triggerBlobDownload(bytes, `${baseName}-blade.stl`, "model/stl");
       exportStatus.textContent = `Saved blade STL (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
       return;
     }
     if (format === "3mf") {
-      const bytes = export_3mf_bytes(JSON.stringify(workingDesign));
+      const bytes = export_fabricated_3mf_bytes(JSON.stringify(workingDesign), fabJson);
       triggerBlobDownload(
         bytes,
         `${baseName}-blade.3mf`,
@@ -920,6 +1094,70 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     exportStatus.textContent = `Export failed: ${String(err)}`;
   }
 }
+
+// ---- Fabrication: Carbon Fiber Tube Hole & Split Model Listeners ----
+for (const el of [
+  inputSparHoleEnabled,
+  inputSparShowRod,
+  inputSparHoleDiameter,
+  inputSparHoleDepth,
+  inputSparHoleOffsetX,
+  inputSparHoleOffsetY,
+  selectSplitParts,
+  selectSplitActivePart,
+  sliderSplitRatio,
+  sliderSplitExplodeGap,
+]) {
+  el.addEventListener("input", () => {
+    if (el === inputSparHoleDepth) {
+      sliderSparHoleDepth.value = inputSparHoleDepth.value;
+    }
+    rebuild3D(workingDesign);
+  });
+  el.addEventListener("change", () => {
+    rebuild3D(workingDesign);
+  });
+}
+
+sliderSparHoleDepth.addEventListener("input", () => {
+  inputSparHoleDepth.value = String(sliderSparHoleDepth.valueAsNumber);
+  rebuild3D(workingDesign);
+});
+
+for (const [btn, dia] of [
+  [btnCf4, 4.0],
+  [btnCf5, 5.0],
+  [btnCf6, 6.0],
+  [btnCf8, 8.0],
+] as const) {
+  btn.addEventListener("click", () => {
+    inputSparHoleEnabled.checked = true;
+    inputSparHoleDiameter.value = dia.toFixed(1);
+    rebuild3D(workingDesign);
+  });
+}
+
+btnSparFullSpan.addEventListener("click", () => {
+  inputSparHoleEnabled.checked = true;
+  const bladeLen = Math.max(20, workingDesign.rotor.radius_mm - workingDesign.rotor.hub_radius_mm);
+  const fullDepth = Math.round(bladeLen * 0.85);
+  inputSparHoleDepth.value = String(fullDepth);
+  sliderSparHoleDepth.max = String(Math.round(bladeLen));
+  sliderSparHoleDepth.value = String(fullDepth);
+  rebuild3D(workingDesign);
+});
+
+btnExportSplitAll.addEventListener("click", () => {
+  const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
+  const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
+  for (let p = 0; p < splitParts; p++) {
+    const fabJson = buildFabricationOverridesJson(p);
+    const bytes = export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
+    const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}.stl`;
+    triggerBlobDownload(bytes, fname, "model/stl");
+  }
+  exportStatus.textContent = `Saved ${splitParts} split STL part(s)`;
+});
 
 btnExportStl.addEventListener("click", () => {
   void handleExport("stl");

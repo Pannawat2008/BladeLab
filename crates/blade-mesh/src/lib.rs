@@ -31,12 +31,16 @@
 //! ```
 
 pub mod error;
+pub mod fabrication;
 pub mod mesh;
 pub mod stl;
 pub mod tessellate;
 pub mod threemf;
 
 pub use error::MeshError;
+pub use fabrication::{
+    compute_split_spans, section_core_station, tessellate_fabricated, FabricationSpec, SparHoleSpec,
+};
 pub use mesh::{check_mesh, Mesh, MeshReport, Triangle};
 pub use stl::{stl_len, write_stl};
 pub use tessellate::{tessellate, MeshOptions};

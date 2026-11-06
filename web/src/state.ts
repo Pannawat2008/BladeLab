@@ -1043,12 +1043,22 @@ export function renderCpTsrSvgMarkup(
   return parts.join("\n");
 }
 
+export interface AirfoilPreviewHoleOptions {
+  diameterMm: number;
+  offsetXMm?: number;
+  offsetYMm?: number;
+}
+
 /**
  * Generates an SVG cross-section diagram of the blade's primary airfoil
- * showing the upper/lower contour, mean camber line, chord line, and the
- * pitch-axis pivot marker at `x/c = rotor.pitch_axis_ratio`.
+ * showing the upper/lower contour, mean camber line, chord line, the
+ * pitch-axis pivot marker at `x/c = rotor.pitch_axis_ratio`, and an optional
+ * carbon-fiber spar tube bore circle.
  */
-export function renderAirfoilSectionSvgMarkup(design: Design): string {
+export function renderAirfoilSectionSvgMarkup(
+  design: Design,
+  holeSpec?: AirfoilPreviewHoleOptions,
+): string {
   const w = 320;
   const h = 92;
   const padX = 22;
@@ -1129,12 +1139,33 @@ export function renderAirfoilSectionSvgMarkup(design: Design): string {
   const contourPoly = [...upperPts, ...lowerPts].join(" ");
   const pivotX = (padX + design.rotor.pitch_axis_ratio * scale).toFixed(1);
 
-  return [
+  const elements = [
     `<line x1="${padX}" y1="${midY}" x2="${w - padX}" y2="${midY}" stroke="#283242" stroke-width="1" stroke-dasharray="3 3" />`,
     `<polygon class="airfoil-contour" points="${contourPoly}" fill="rgba(59, 130, 246, 0.18)" stroke="#3b82f6" stroke-width="1.75" />`,
     `<path class="airfoil-camber" d="${camberPts.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="1" stroke-dasharray="2 2" />`,
     `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" />`,
+  ];
+
+  if (holeSpec && holeSpec.diameterMm > 0.1) {
+    const rootChordMm = Math.max(resolveStationsPreview(design)[0]?.effective_chord_mm ?? 70, 5);
+    const maxThickMm = t * rootChordMm;
+    const effRadiusMm = Math.min(0.5 * holeSpec.diameterMm, 0.38 * maxThickMm);
+    const oxMm = Math.max(-0.15 * maxThickMm, Math.min(0.15 * maxThickMm, holeSpec.offsetXMm ?? 0));
+    const oyMm = Math.max(-0.15 * maxThickMm, Math.min(0.15 * maxThickMm, holeSpec.offsetYMm ?? 0));
+    const coreXc = 0.3 + oxMm / rootChordMm;
+    const coreYc = 0.75 * m + oyMm / rootChordMm;
+    const holeCx = (padX + coreXc * scale).toFixed(1);
+    const holeCy = (midY - coreYc * scale * 1.35).toFixed(1);
+    const holeR = Math.max(2.2, (effRadiusMm / rootChordMm) * scale * 1.35).toFixed(1);
+    elements.push(
+      `<circle class="spar-hole-circle" cx="${holeCx}" cy="${holeCy}" r="${holeR}" fill="rgba(16, 185, 129, 0.25)" stroke="#10b981" stroke-width="1.6" />`,
+    );
+  }
+
+  elements.push(
     `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="4.2" fill="#f59e0b" stroke="#0c0f14" stroke-width="1.4" />`,
     `<text x="${padX}" y="14" fill="#94a3b8" font-size="10" font-family="ui-monospace, monospace">${label} · Pivot x/c=${design.rotor.pitch_axis_ratio.toFixed(2)}</text>`,
-  ].join("\n");
+  );
+
+  return elements.join("\n");
 }

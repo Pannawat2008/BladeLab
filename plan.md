@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 51**
-> **LAST_UPDATED: 2026-11-06 11:58 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 53**
+> **LAST_UPDATED: 2026-11-06 12:21 (UTC+7) by geom-1**
 
 ---
 
@@ -411,6 +411,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-033** | 2026-11-06 11:58 | geom-1 | T-105
   Applied the workspace UI design skills (`find-skills`, `frontend-design`, `ui-taste`) to upgrade the Web Workbench (`web/index.html`, `web/src/main.ts`, `web/src/state.ts`, `web/vite.config.ts`) and `crates/blade-wasm`: (1) `blade-wasm` now exposes `export_stl_bytes(design_json)` and `export_3mf_bytes(design_json)` for instant `< 2 ms` in-browser single-blade binary `.stl` and `.3mf` download, while `web/vite.config.ts` proxies `/api` to `http://127.0.0.1:3000` (`blade-server`) so `Export STEP` and `Full Assembly (Blade + Hub)` / `Hub Only` exports work seamlessly in the browser; (2) added a floating top-right Viewport & Export Dock (`#top-dock`, `#export-bar`) with `Single Blade`, `Full Rotor (B×)` multi-blade + hollow hub assembly preview, `Wireframe`, `Spin Rotor`, camera presets (`Iso`, `Plan`, `Tip`), and one-click `Export STL`, `Export 3MF`, `Export STEP`, and `Save JSON` buttons; (3) added a live 2D Airfoil Cross-Section SVG preview (`#airfoil-preview-svg`, `renderAirfoilSectionSvgMarkup`) showing upper/lower contour, mean camber line, and golden pitch-axis pivot reticle (`cx = pitch_axis_ratio`); and (4) split the UI into a left Geometry & Airfoil Dock (`#panel`) and right Aerodynamics & Telemetry Dock (`#aero-dock`) with 4 KPI cards (`Design Cp`, `Peak Cp`, `Mech Power`, `Gen Electrical`).
   refs: crates/blade-wasm/src/{lib,mesh}.rs, web/src/{state,main,vite-env.d}.ts, web/index.html, web/vite.config.ts | supersedes: –
+- **F-geom1-034** | 2026-11-06 12:21 | geom-1 | T-005
+  `crates/blade-mesh/src/fabrication.rs` (`SparHoleSpec`, `FabricationSpec`, `tessellate_fabricated`, `section_core_station`, `compute_split_spans`) and `crates/blade-wasm` (`export_fabricated_stl_bytes`, `export_fabricated_3mf_bytes`) implement watertight parametric **Carbon Fiber Tube Base Holes** and **Spanwise Model Splitting**: (1) `tessellate_fabricated` bores a 32-gon cylindrical cavity along the blade's thickest interior core from the root base (`z = r_0`) to `z = r_0 + depth_mm`, clamping the hole radius to `<= 0.38 * local_max_thickness` so the bore stays strictly inside the airfoil skin, and ear-clips punctured caps by splitting along the two shortest thickness struts (`upper_idx <-> M/4` and `lower_idx <-> 3M/4`); (2) supports splitting the blade into `1..=8` printable spanwise segments with through-holes or blind-holes automatically capped per segment (`check_mesh.is_valid_solid() == true` on both combined and isolated segments); and (3) `web/index.html` and `web/src/main.ts` expose `#layer-fabrication` with CF tube presets (`Ø4`, `Ø5`, `Ø6`, `Ø8 mm`), hole diameter/depth/X-Y offset inputs, 3D green carbon-tube rod preview, 2D airfoil bore circle overlay, `1..4` split part selector, exploded preview gap slider, and one-click `Export All Split Parts (.STL)`.
+  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/src/{state,main}.ts, web/index.html | supersedes: –
 
 ### 9.3 Decisions (D)
 
@@ -763,4 +766,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T11:35+07:00 agent=geom-1 mem=v49 note="added global light illumination (PMREM RoomEnvironment IBL + Ambient + Hemisphere + 3-point Key/Fill/Rim studio light rig + ACESFilmicToneMapping + live #global-light-intensity slider) in web/src/main.ts and web/index.html; 8 Node tests + tsc + vite build clean"
 [RE-ACK] 2026-11-06T11:49:00+07:00 agent=geom-1 mem=v49 last_entry=F-geom1-032 task=T-105 note="lead requested applying UI skills (frontend-design / ui-taste), making the UI more visual, and adding CAD/mesh export buttons (STL, 3MF, STEP, JSON) to the web workbench"
 [END] 2026-11-06T11:58+07:00 agent=geom-1 mem=v51 note="upgraded web workbench via frontend-design + ui-taste skills: top-right Viewport & Export Dock (Export STL/3MF via blade-wasm, Export STEP/Assembly via blade-server proxy, Save JSON, Single Blade vs Full Rotor B-blade + hub 3D assembly preview, Spin Rotor, Wireframe, Iso/Plan/Tip camera presets), live 2D Airfoil Cross-Section SVG preview, and split Left Geometry / Right Aero-Telemetry docks; 138 Rust tests + 9 Node tests + tsc + vite build clean; F-geom1-033 recorded"
+[RE-ACK] 2026-11-06T12:08:00+07:00 agent=geom-1 mem=v51 last_entry=F-geom1-033 task=T-005 note="lead requested adding a base hole for a carbon fiber spar tube (diameter, depth, offset) and a spanwise Split Model function (printable segments with exploded view and per-segment or combined STL/3MF export)"
+[END] 2026-11-06T12:21+07:00 agent=geom-1 mem=v53 note="added crates/blade-mesh/src/fabrication.rs (SparHoleSpec, FabricationSpec, tessellate_fabricated) + blade-wasm export_fabricated_{stl,3mf}_bytes + web #layer-fabrication UI (CF tube hole diameter/depth/offset + presets + 3D rod preview + 2D bore circle + 1..4 part split model + exploded gap + Export All Split Parts .STL); 140 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-034 recorded"
 ```
