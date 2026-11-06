@@ -440,4 +440,35 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   const fab3mf = export_fabricated_3mf_bytes(JSON.stringify(initialDesign), fabJson);
   assert.equal(fab3mf[0], 0x50);
   assert.equal(fab3mf[1], 0x4b);
+
+  // Alignment pins + sockets with custom tolerances
+  const { fabrication_report } = require(gluePath);
+  const alignJson = (part, clearance) =>
+    JSON.stringify({
+      spar_hole_diameter_mm: 5.0,
+      spar_hole_depth_mm: 360.0,
+      spar_hole_tolerance_mm: 0.2,
+      split_parts: 2,
+      split_ratio: 0.5,
+      ...(part === null ? { explode_gap_mm: 24.0 } : { active_part: part }),
+      align_shape: "round",
+      align_count: 2,
+      align_size_mm: 3.0,
+      align_height_mm: 6.0,
+      align_clearance_mm: clearance,
+    });
+  const report = JSON.parse(fabrication_report(JSON.stringify(initialDesign), alignJson(null, 0.2)));
+  assert.equal(report.length, 1);
+  assert.equal(report[0].placed, 2);
+  assert.ok(report[0].socket_depth_mm > report[0].pin_height_mm);
+
+  const lowerSnug = build_mesh(JSON.stringify(initialDesign), alignJson(0, 0.1));
+  const upperSnug = build_mesh(JSON.stringify(initialDesign), alignJson(1, 0.1));
+  const upperLoose = build_mesh(JSON.stringify(initialDesign), alignJson(1, 0.4));
+  const lowerPlain = build_mesh(
+    JSON.stringify(initialDesign),
+    JSON.stringify({ spar_hole_diameter_mm: 5.0, spar_hole_depth_mm: 360.0, spar_hole_tolerance_mm: 0.2, split_parts: 2, split_ratio: 0.5, active_part: 0 }),
+  );
+  assert.ok(lowerSnug.volume_mm3 > lowerPlain.volume_mm3, "pins add volume to the lower part");
+  assert.ok(upperLoose.volume_mm3 < upperSnug.volume_mm3, "larger clearance cuts bigger sockets");
 });

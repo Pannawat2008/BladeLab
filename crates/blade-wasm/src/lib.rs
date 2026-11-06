@@ -50,6 +50,26 @@ struct OverridesDto {
     active_part: Option<usize>,
     /// Optional exploded preview/export gap in mm along `+z` between split segments.
     explode_gap_mm: Option<f64>,
+    /// Carbon tube bore fit tolerance added to the bore diameter in mm.
+    spar_hole_tolerance_mm: Option<f64>,
+    /// Alignment feature shape: `"round"` or `"key"` (absent = none).
+    align_shape: Option<String>,
+    /// Alignment features per split face (`1` or `2`).
+    align_count: Option<usize>,
+    /// Pin diameter / key width in mm.
+    align_size_mm: Option<f64>,
+    /// Key length along the chord in mm.
+    align_key_length_mm: Option<f64>,
+    /// Pin height above the split face in mm.
+    align_height_mm: Option<f64>,
+    /// Distance from the tube / core center to each pin in mm (`<= 0` = auto).
+    align_spacing_mm: Option<f64>,
+    /// Per-side socket clearance in mm.
+    align_clearance_mm: Option<f64>,
+    /// Extra socket depth beyond the pin height in mm.
+    align_depth_clearance_mm: Option<f64>,
+    /// Minimum wall between a socket and the airfoil skin in mm.
+    align_min_wall_mm: Option<f64>,
 }
 
 impl From<OverridesDto> for Overrides {
@@ -66,6 +86,16 @@ impl From<OverridesDto> for Overrides {
             split_ratio: dto.split_ratio,
             active_part: dto.active_part,
             explode_gap_mm: dto.explode_gap_mm,
+            spar_hole_tolerance_mm: dto.spar_hole_tolerance_mm,
+            align_shape: dto.align_shape,
+            align_count: dto.align_count,
+            align_size_mm: dto.align_size_mm,
+            align_key_length_mm: dto.align_key_length_mm,
+            align_height_mm: dto.align_height_mm,
+            align_spacing_mm: dto.align_spacing_mm,
+            align_clearance_mm: dto.align_clearance_mm,
+            align_depth_clearance_mm: dto.align_depth_clearance_mm,
+            align_min_wall_mm: dto.align_min_wall_mm,
         }
     }
 }
@@ -291,6 +321,14 @@ pub fn export_fabricated_stl_bytes(
 ) -> Result<Vec<u8>, JsValue> {
     let overrides = parse_overrides_json(overrides_json)?;
     export_stl_with_overrides(design_json, &overrides).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Reports how many alignment pins / keys fit on each split face for the given
+/// fabrication overrides, as a JSON array string.
+#[wasm_bindgen]
+pub fn fabrication_report(design_json: &str, overrides_json: &str) -> Result<String, JsValue> {
+    let overrides = parse_overrides_json(overrides_json)?;
+    mesh::fabrication_report_json(design_json, &overrides).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Exports the current blade design as a 3MF archive byte buffer (`Uint8Array` in JS).

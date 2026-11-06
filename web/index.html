@@ -464,6 +464,20 @@
         color: var(--datum);
         font-weight: 600;
       }
+      .fit-badge {
+        margin-top: 6px;
+        padding: 5px 8px;
+        font: 11px/1.4 ui-monospace, monospace;
+        color: #94a3b8;
+        background: rgba(148, 163, 184, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 6px;
+      }
+      .fit-badge.warn {
+        color: #f59e0b;
+        background: rgba(245, 158, 11, 0.1);
+        border-color: rgba(245, 158, 11, 0.4);
+      }
     </style>
   </head>
   <body>
@@ -731,6 +745,10 @@
                 <label for="spar-hole-offset-y" class="scrub-label" data-scrub-for="spar-hole-offset-y">Hole Offset Y (mm)</label>
                 <input id="spar-hole-offset-y" type="number" min="-10" max="10" step="0.2" value="0.0" />
               </div>
+              <div class="field">
+                <label for="spar-hole-tolerance" class="scrub-label" data-scrub-for="spar-hole-tolerance" title="Added to the bore diameter so the carbon tube slides in">Tube Fit Tolerance (+mm Ø)</label>
+                <input id="spar-hole-tolerance" type="number" min="0" max="1.5" step="0.05" value="0.20" />
+              </div>
             </div>
 
             <div class="row" style="margin-top: 6px">
@@ -772,6 +790,64 @@
               <label for="split-explode-gap">Exploded Preview Gap <span id="split-explode-val">24 mm</span></label>
               <input id="split-explode-gap" type="range" min="0" max="80" step="2" value="24" />
             </div>
+
+            <div class="bind-row" style="margin-top: 8px">
+              <span style="font-weight: 600; color: var(--fg)">Alignment Pins / Keys on Split Faces</span>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="align-shape">Alignment Type</label>
+                <select id="align-shape">
+                  <option value="none">None</option>
+                  <option value="round">Dowel Pins (round)</option>
+                  <option value="key">Keys (rectangular)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="align-count">Features per Split Face</label>
+                <select id="align-count">
+                  <option value="2">2 (fore + aft of tube)</option>
+                  <option value="1">1</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="align-size" class="scrub-label" data-scrub-for="align-size">Pin Ø / Key Width (mm)</label>
+                <input id="align-size" type="number" min="1" max="12" step="0.2" value="3.0" />
+              </div>
+              <div class="field">
+                <label for="align-key-length" class="scrub-label" data-scrub-for="align-key-length">Key Length (mm)</label>
+                <input id="align-key-length" type="number" min="2" max="30" step="0.5" value="6.0" />
+              </div>
+              <div class="field">
+                <label for="align-height" class="scrub-label" data-scrub-for="align-height">Pin Height (mm)</label>
+                <input id="align-height" type="number" min="1" max="30" step="0.5" value="6.0" />
+              </div>
+              <div class="field">
+                <label for="align-spacing" class="scrub-label" data-scrub-for="align-spacing" title="Distance from the tube / core center along the chord. 0 = automatic">Spacing from Core (mm, 0=auto)</label>
+                <input id="align-spacing" type="number" min="0" max="60" step="0.5" value="0" />
+              </div>
+              <div class="field">
+                <label for="align-clearance" class="scrub-label" data-scrub-for="align-clearance" title="Per-side gap between pin and socket">Socket Clearance / side (mm)</label>
+                <input id="align-clearance" type="number" min="0" max="1.5" step="0.05" value="0.20" />
+              </div>
+              <div class="field">
+                <label for="align-depth-clearance" class="scrub-label" data-scrub-for="align-depth-clearance" title="Extra socket depth beyond the pin height">Socket Extra Depth (mm)</label>
+                <input id="align-depth-clearance" type="number" min="0" max="3" step="0.1" value="0.5" />
+              </div>
+              <div class="field">
+                <label for="align-min-wall" class="scrub-label" data-scrub-for="align-min-wall" title="Smallest wall kept between sockets and the airfoil skin">Min Skin Wall (mm)</label>
+                <input id="align-min-wall" type="number" min="0.4" max="3" step="0.1" value="0.8" />
+              </div>
+            </div>
+            <div class="bind-row">
+              <span>Fit Preset:</span>
+              <div class="toolbar">
+                <button id="btn-fit-tight" class="btn-mini" type="button" title="Tight press fit: 0.10 mm clearance, 0.10 mm tube tolerance">Tight</button>
+                <button id="btn-fit-standard" class="btn-mini" type="button" title="Standard FDM sliding fit: 0.20 mm">Standard</button>
+                <button id="btn-fit-loose" class="btn-mini" type="button" title="Loose / easy assembly: 0.35 mm clearance, 0.40 mm tube tolerance">Loose</button>
+              </div>
+            </div>
+            <div id="align-status" class="fit-badge">Alignment off</div>
 
             <div class="toolbar" style="margin-top: 6px">
               <button id="btn-export-split-all" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STL)</button>

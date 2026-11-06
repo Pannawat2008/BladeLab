@@ -17,6 +17,7 @@ import init, {
   export_fabricated_3mf_bytes,
   export_fabricated_stl_bytes,
   export_stl_bytes,
+  fabrication_report,
   simulate_aero,
 } from "../pkg/blade_wasm.js";
 import designJson from "./designs/naca4412-linear.json?raw";
@@ -224,6 +225,22 @@ const splitRatioVal = document.getElementById("split-ratio-val")!;
 const sliderSplitExplodeGap = document.getElementById("split-explode-gap") as HTMLInputElement;
 const splitExplodeVal = document.getElementById("split-explode-val")!;
 const btnExportSplitAll = document.getElementById("btn-export-split-all") as HTMLButtonElement;
+const inputSparHoleTolerance = document.getElementById("spar-hole-tolerance") as HTMLInputElement;
+const selectAlignShape = document.getElementById("align-shape") as HTMLSelectElement;
+const selectAlignCount = document.getElementById("align-count") as HTMLSelectElement;
+const inputAlignSize = document.getElementById("align-size") as HTMLInputElement;
+const inputAlignKeyLength = document.getElementById("align-key-length") as HTMLInputElement;
+const inputAlignHeight = document.getElementById("align-height") as HTMLInputElement;
+const inputAlignSpacing = document.getElementById("align-spacing") as HTMLInputElement;
+const inputAlignClearance = document.getElementById("align-clearance") as HTMLInputElement;
+const inputAlignDepthClearance = document.getElementById(
+  "align-depth-clearance",
+) as HTMLInputElement;
+const inputAlignMinWall = document.getElementById("align-min-wall") as HTMLInputElement;
+const btnFitTight = document.getElementById("btn-fit-tight") as HTMLButtonElement;
+const btnFitStandard = document.getElementById("btn-fit-standard") as HTMLButtonElement;
+const btnFitLoose = document.getElementById("btn-fit-loose") as HTMLButtonElement;
+const alignStatus = document.getElementById("align-status")!;
 
 const stationTableBody = document.getElementById("station-table-body")!;
 const errorBanner = document.getElementById("error-banner")!;
@@ -310,6 +327,7 @@ function buildFabricationOverridesJson(overrideActivePart?: number | null): stri
     dto.spar_hole_depth_mm = holeDepth;
     dto.spar_hole_offset_x_mm = holeOffsetX;
     dto.spar_hole_offset_y_mm = holeOffsetY;
+    dto.spar_hole_tolerance_mm = Math.max(0, Number.parseFloat(inputSparHoleTolerance.value) || 0);
   }
   if (splitParts > 1) {
     dto.split_parts = splitParts;
@@ -319,8 +337,68 @@ function buildFabricationOverridesJson(overrideActivePart?: number | null): stri
     } else if (explodeGap > 0) {
       dto.explode_gap_mm = explodeGap;
     }
+    if (selectAlignShape.value !== "none") {
+      dto.align_shape = selectAlignShape.value;
+      dto.align_count = Number.parseInt(selectAlignCount.value, 10) || 2;
+      dto.align_size_mm = Math.max(1, Number.parseFloat(inputAlignSize.value) || 3);
+      dto.align_key_length_mm = Math.max(2, Number.parseFloat(inputAlignKeyLength.value) || 6);
+      dto.align_height_mm = Math.max(1, Number.parseFloat(inputAlignHeight.value) || 6);
+      dto.align_spacing_mm = Math.max(0, Number.parseFloat(inputAlignSpacing.value) || 0);
+      dto.align_clearance_mm = Math.max(0, Number.parseFloat(inputAlignClearance.value) || 0);
+      dto.align_depth_clearance_mm = Math.max(
+        0,
+        Number.parseFloat(inputAlignDepthClearance.value) || 0,
+      );
+      dto.align_min_wall_mm = Math.max(0.4, Number.parseFloat(inputAlignMinWall.value) || 0.8);
+    }
   }
   return JSON.stringify(dto);
+}
+
+interface AlignmentPlaneReport {
+  span_mm: number;
+  requested: number;
+  placed: number;
+  pin_height_mm: number;
+  socket_depth_mm: number;
+}
+
+function updateAlignmentStatus(design: Design) {
+  const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
+  const shape = selectAlignShape.value;
+  const isKey = shape === "key";
+  inputAlignKeyLength.disabled = !isKey;
+  if (shape === "none") {
+    alignStatus.textContent = "Alignment off";
+    alignStatus.classList.remove("warn");
+    return;
+  }
+  if (splitParts < 2) {
+    alignStatus.textContent = "Choose 2+ split parts to place alignment features";
+    return;
+  }
+  try {
+    const rows = JSON.parse(
+      fabrication_report(JSON.stringify(design), buildFabricationOverridesJson(null)),
+    ) as AlignmentPlaneReport[];
+    const short = rows.filter((r) => r.placed < r.requested);
+    const placedTotal = rows.reduce((n, r) => n + r.placed, 0);
+    const requestedTotal = rows.reduce((n, r) => n + r.requested, 0);
+    const label = isKey ? "keys" : "pins";
+    const first = rows[0];
+    const dims = first
+      ? ` · height ${first.pin_height_mm.toFixed(1)} mm, socket depth ${first.socket_depth_mm.toFixed(1)} mm`
+      : "";
+    if (short.length > 0) {
+      const where = short.map((r) => `r=${r.span_mm.toFixed(0)} mm`).join(", ");
+      alignStatus.textContent = `Warning: only ${placedTotal}/${requestedTotal} ${label} fit (${where}). Reduce size, clearance or min wall${dims}`;
+    } else {
+      alignStatus.textContent = `${placedTotal}/${requestedTotal} ${label} placed on ${rows.length} split face(s)${dims}`;
+    }
+    alignStatus.classList.toggle("warn", short.length > 0);
+  } catch (err) {
+    alignStatus.textContent = `Alignment plan error: ${String(err)}`;
+  }
 }
 
 function updateFabricationStatus(design: Design) {
@@ -372,7 +450,14 @@ function updateFabricationStatus(design: Design) {
 
   const holeTag = holeEnabled ? `CF Ø${effDia.toFixed(1)}×${depth.toFixed(0)}mm` : "Solid";
   const splitTag = splitParts > 1 ? `${splitParts} Parts` : "1 Part";
-  fabSummary.textContent = `${holeTag} · ${splitTag}`;
+  const alignTag =
+    splitParts > 1 && selectAlignShape.value !== "none"
+      ? selectAlignShape.value === "key"
+        ? " · Keys"
+        : " · Pins"
+      : "";
+  fabSummary.textContent = `${holeTag} · ${splitTag}${alignTag}`;
+  updateAlignmentStatus(design);
 
   airfoilPreviewSvg.innerHTML = renderAirfoilSectionSvgMarkup(
     design,
@@ -1107,6 +1192,16 @@ for (const el of [
   selectSplitActivePart,
   sliderSplitRatio,
   sliderSplitExplodeGap,
+  inputSparHoleTolerance,
+  selectAlignShape,
+  selectAlignCount,
+  inputAlignSize,
+  inputAlignKeyLength,
+  inputAlignHeight,
+  inputAlignSpacing,
+  inputAlignClearance,
+  inputAlignDepthClearance,
+  inputAlignMinWall,
 ]) {
   el.addEventListener("input", () => {
     if (el === inputSparHoleDepth) {
@@ -1123,6 +1218,18 @@ sliderSparHoleDepth.addEventListener("input", () => {
   inputSparHoleDepth.value = String(sliderSparHoleDepth.valueAsNumber);
   rebuild3D(workingDesign);
 });
+
+for (const [btn, clearance, tubeTol] of [
+  [btnFitTight, 0.1, 0.1],
+  [btnFitStandard, 0.2, 0.2],
+  [btnFitLoose, 0.35, 0.4],
+] as const) {
+  btn.addEventListener("click", () => {
+    inputAlignClearance.value = clearance.toFixed(2);
+    inputSparHoleTolerance.value = tubeTol.toFixed(2);
+    rebuild3D(workingDesign);
+  });
+}
 
 for (const [btn, dia] of [
   [btnCf4, 4.0],

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 53**
-> **LAST_UPDATED: 2026-11-06 12:21 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 55**
+> **LAST_UPDATED: 2026-11-06 12:50 (UTC+7) by geom-1**
 
 ---
 
@@ -378,6 +378,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-022** | 2026-11-06 00:56 | geom-1 | T-105
   `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` deliver the T-105 Layer-1 + Layer-3 workbench: (1) `DesignHistory` bounded immutable undo/redo stack (`commit`, `undo`, `redo`, `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` + toolbar buttons with counts); (2) Layer-1 rotor controls (`radius_mm`, `hub_radius_mm`, `blade_count`, `design_tsr`, `wind_speed_mps`, `station_count`) and Linear vs Schmitz distribution mode switcher; (3) `resolveStationsPreview` + Layer-3 per-station override table (`chord_mm`, `twist_deg`, row `×` clear, `Clear Overrides`). Every edit rebuilds the 3D mesh via `blade-wasm::build_mesh` in `< 1 ms` (`avg 0.46 ms`, `max 0.76 ms` over 40 edits).
   refs: web/src/{state,main}.ts, web/index.html, web/scripts/types.test.mjs | supersedes: –
+- **F-geom1-035** | 2026-11-06 12:50 | geom-1 | T-005
+  Split faces now carry **alignment dowel pins / keys with custom tolerances**. `blade_mesh::{AlignmentSpec, AlignmentShape, alignment_report}` and `SparHoleSpec.tolerance_mm` (`crates/blade-mesh/src/fabrication.rs`): the lower segment gets integrated round pins or rectangular keys protruding +z, the upper segment gets matching blind sockets enlarged by `clearance_mm` per side and `depth_clearance_mm` extra depth; `tolerance_mm` widens the carbon tube bore diameter. Placement is fore/aft of the tube along the chord, shrunk (down to 55%) and as a last resort omitted when `min_wall_mm` to the skin cannot be kept, so `alignment_report` / wasm `fabrication_report` expose placed-vs-requested counts and the UI warns instead of dropping pins silently. Caps with several cavities use a generic bridge + ear-clip triangulator (`append_cap_with_holes`), replacing the tube-only strut method; no booleans. Web: `#align-*` controls, Tight/Standard/Loose fit presets, `#spar-hole-tolerance`, `#align-status`.
+  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/src/main.ts, web/index.html | supersedes: �
 - **F-geom1-023** | 2026-11-06 01:04 | geom-1 | T-201
   `blade_model::CurveSource` now supports `Bezier { points: Vec<BezierControlPoint> }` (`eval_bezier` solving `x(t) = s` via 48-iteration bisection over De Casteljau) and `Formula { expr: String }` (`eval_formula` via `evalexpr` 11.3.1 with bound variables `x = r/R`, `s`, `r`, `R`, `r_hub`, `B`, `tsr`, `pi` and math functions `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `abs`, `exp`, `ln`, `pow`, `deg`, `rad`). Malformed formulas, unknown variables, division by zero, `NaN`/`±∞`, and out-of-domain values are caught in `validate()` and reported as `ValidationIssue` entries without panicking.
   refs: crates/blade-model/src/{curve,schema,validate}.rs, web/src/types/blade-model.ts | supersedes: –
@@ -768,4 +771,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T11:58+07:00 agent=geom-1 mem=v51 note="upgraded web workbench via frontend-design + ui-taste skills: top-right Viewport & Export Dock (Export STL/3MF via blade-wasm, Export STEP/Assembly via blade-server proxy, Save JSON, Single Blade vs Full Rotor B-blade + hub 3D assembly preview, Spin Rotor, Wireframe, Iso/Plan/Tip camera presets), live 2D Airfoil Cross-Section SVG preview, and split Left Geometry / Right Aero-Telemetry docks; 138 Rust tests + 9 Node tests + tsc + vite build clean; F-geom1-033 recorded"
 [RE-ACK] 2026-11-06T12:08:00+07:00 agent=geom-1 mem=v51 last_entry=F-geom1-033 task=T-005 note="lead requested adding a base hole for a carbon fiber spar tube (diameter, depth, offset) and a spanwise Split Model function (printable segments with exploded view and per-segment or combined STL/3MF export)"
 [END] 2026-11-06T12:21+07:00 agent=geom-1 mem=v53 note="added crates/blade-mesh/src/fabrication.rs (SparHoleSpec, FabricationSpec, tessellate_fabricated) + blade-wasm export_fabricated_{stl,3mf}_bytes + web #layer-fabrication UI (CF tube hole diameter/depth/offset + presets + 3D rod preview + 2D bore circle + 1..4 part split model + exploded gap + Export All Split Parts .STL); 140 Rust tests + 9 Node tests + fmt/clippy/tsc/vite build clean; F-geom1-034 recorded"
+[RE-ACK] 2026-11-06T12:38:00+07:00 agent=geom-1 mem=v53 last_entry=F-geom1-034 task=T-005 note="lead requested alignment dowel pins/keys on split faces with custom tolerances"
+[END] 2026-11-06T12:50+07:00 agent=geom-1 mem=v55 note="added round pins / rectangular keys + sockets on split faces with clearance, extra depth, min wall and tube bore tolerance; generic cap-with-holes triangulator; alignment_report/fabrication_report placement warnings; 6 mesh fabrication tests + 9 Node tests, fmt/clippy/tsc clean; F-geom1-035 recorded"
 ```

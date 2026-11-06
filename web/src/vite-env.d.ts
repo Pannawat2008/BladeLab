@@ -18,5 +18,6 @@ declare module "*blade_wasm.js" {
   export function export_fabricated_stl_bytes(design_json: string, overrides_json: string): Uint8Array;
   export function export_3mf_bytes(design_json: string): Uint8Array;
   export function export_fabricated_3mf_bytes(design_json: string, overrides_json: string): Uint8Array;
+  export function fabrication_report(design_json: string, overrides_json: string): string;
   export default function init(module_or_path?: string | URL | Request | Response | BufferSource | WebAssembly.Module): Promise<unknown>;
 }

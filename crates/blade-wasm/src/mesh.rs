@@ -6,7 +6,8 @@
 
 use blade_geom::{build_sections, loft};
 use blade_mesh::{
-    check_mesh, tessellate_fabricated, write_3mf, write_stl, FabricationSpec, Mesh, SparHoleSpec,
+    alignment_report, check_mesh, tessellate_fabricated, write_3mf, write_stl, AlignmentShape,
+    AlignmentSpec, FabricationSpec, Mesh, SparHoleSpec,
 };
 use blade_model::{resolve, CurveSource, Design};
 
@@ -59,6 +60,26 @@ pub struct Overrides {
     pub active_part: Option<usize>,
     /// Optional exploded preview/export gap in mm along `+z` between split segments.
     pub explode_gap_mm: Option<f64>,
+    /// Carbon tube bore fit tolerance added to the bore diameter in mm.
+    pub spar_hole_tolerance_mm: Option<f64>,
+    /// Alignment feature shape on split faces: `"round"` or `"key"` (absent = none).
+    pub align_shape: Option<String>,
+    /// Alignment features per split face (`1` or `2`).
+    pub align_count: Option<usize>,
+    /// Pin diameter / key width in mm.
+    pub align_size_mm: Option<f64>,
+    /// Key length along the chord in mm.
+    pub align_key_length_mm: Option<f64>,
+    /// Pin height above the split face in mm.
+    pub align_height_mm: Option<f64>,
+    /// Distance from the tube / core center to each pin in mm (`<= 0` = auto).
+    pub align_spacing_mm: Option<f64>,
+    /// Per-side socket clearance in mm.
+    pub align_clearance_mm: Option<f64>,
+    /// Extra socket depth beyond the pin height in mm.
+    pub align_depth_clearance_mm: Option<f64>,
+    /// Minimum wall between a socket and the airfoil skin in mm.
+    pub align_min_wall_mm: Option<f64>,
 }
 
 impl Overrides {
@@ -71,17 +92,58 @@ impl Overrides {
                 depth_mm: depth,
                 offset_x_mm: self.spar_hole_offset_x_mm.unwrap_or(0.0),
                 offset_y_mm: self.spar_hole_offset_y_mm.unwrap_or(0.0),
+                tolerance_mm: self.spar_hole_tolerance_mm.unwrap_or(0.0).max(0.0),
             }),
             _ => None,
         };
+        let shape = match self.align_shape.as_deref() {
+            Some("round") => Some(AlignmentShape::Round),
+            Some("key") => Some(AlignmentShape::Key),
+            _ => None,
+        };
+        let defaults = AlignmentSpec::default();
+        let alignment = shape.map(|shape| AlignmentSpec {
+            shape,
+            count: self.align_count.unwrap_or(defaults.count).clamp(1, 2),
+            size_mm: self.align_size_mm.unwrap_or(defaults.size_mm),
+            key_length_mm: self.align_key_length_mm.unwrap_or(defaults.key_length_mm),
+            height_mm: self.align_height_mm.unwrap_or(defaults.height_mm),
+            spacing_mm: self.align_spacing_mm.unwrap_or(defaults.spacing_mm),
+            clearance_mm: self.align_clearance_mm.unwrap_or(defaults.clearance_mm),
+            depth_clearance_mm: self
+                .align_depth_clearance_mm
+                .unwrap_or(defaults.depth_clearance_mm),
+            min_wall_mm: self.align_min_wall_mm.unwrap_or(defaults.min_wall_mm),
+        });
         FabricationSpec {
             spar_hole,
             split_parts: self.split_parts.unwrap_or(1).clamp(1, 8),
             split_ratio: self.split_ratio,
             active_part: self.active_part,
             explode_gap_mm: self.explode_gap_mm.unwrap_or(0.0),
+            alignment,
         }
     }
+}
+
+/// Reports how many alignment pins / keys fit on each split face as JSON
+/// (`[{"span_mm":..,"requested":..,"placed":..,"pin_height_mm":..,"socket_depth_mm":..}]`).
+pub fn fabrication_report_json(design_json: &str, overrides: &Overrides) -> Result<String, String> {
+    let design = Design::from_json(design_json).map_err(as_string)?;
+    let blade = resolve(&design).map_err(as_string)?;
+    let sections = build_sections(&blade).map_err(as_string)?;
+    let surface = loft(&sections).map_err(as_string)?;
+    let reports = alignment_report(&surface, &overrides.fabrication_spec()).map_err(as_string)?;
+    let rows: Vec<String> = reports
+        .iter()
+        .map(|r| {
+            format!(
+                "{{\"span_mm\":{:.3},\"requested\":{},\"placed\":{},\"pin_height_mm\":{:.3},\"socket_depth_mm\":{:.3}}}",
+                r.span_mm, r.requested, r.placed, r.pin_height_mm, r.socket_depth_mm
+            )
+        })
+        .collect();
+    Ok(format!("[{}]", rows.join(",")))
 }
 
 /// Runs the full `Design → resolve → build_sections → loft → tessellate`
