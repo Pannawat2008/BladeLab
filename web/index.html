@@ -847,6 +847,95 @@
         box-shadow: var(--top-highlight);
       }
 
+      /* Planform & Span Transitions */
+      .planform-badge {
+        margin-left: auto;
+        padding: 0 8px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        font: 500 11px/16px var(--font-mono);
+        color: var(--accent);
+        background: var(--accent-dim);
+        border: 1px solid rgba(56, 189, 248, 0.32);
+        border-radius: 999px;
+      }
+      .planform-card {
+        padding: 12px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-card);
+      }
+      .planform-label {
+        margin-bottom: 8px;
+        font-size: 12px;
+        line-height: 16px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+      .planform-card .mode-tabs {
+        grid-template-columns: 1fr 1fr;
+      }
+      .planform-card.is-linear .row {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+      .planform-card .row input[type="range"] {
+        background: linear-gradient(
+          to right,
+          var(--accent) 0%,
+          var(--accent) var(--fill, 50%),
+          var(--bg-raised) var(--fill, 50%),
+          var(--bg-raised) 100%
+        );
+      }
+      .zone-bar {
+        display: grid;
+        grid-template-columns: var(--z-root, 1fr) var(--z-mid, 1fr) var(--z-tip, 1fr);
+        height: 32px;
+        margin-top: 12px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
+        overflow: hidden;
+        transition: grid-template-columns 0.2s var(--ease);
+      }
+      .zone {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-width: 0;
+        font: 500 12px/16px var(--font-sans);
+        color: var(--text-primary);
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .zone i {
+        width: 8px;
+        height: 8px;
+        flex: none;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .zone-root {
+        background: rgba(245, 158, 11, 0.18);
+        color: #f6b94d;
+      }
+      .zone-mid {
+        background: rgba(99, 132, 255, 0.2);
+        color: #8ea6ff;
+      }
+      .zone-tip {
+        background: rgba(76, 195, 138, 0.2);
+        color: #6fd6a6;
+      }
+      .zone-ranges {
+        margin-top: 8px;
+        font: 400 11px/16px var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--text-muted);
+      }
+
       /* Station Table (Right-aligned numeric columns, uniform 32px rows) */
       .table-wrap {
         width: 100%;
@@ -1379,6 +1468,39 @@
               </div>
             </div>
             <svg id="airfoil-preview-svg" viewBox="0 0 320 92" role="img" aria-label="2D Airfoil Cross-Section Preview"></svg>
+          </div>
+        </section>
+
+        <!-- Planform & Span Transitions -->
+        <section id="layer2-planform">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L2</span>
+              <span>Planform &amp; span transitions</span>
+            </button>
+            <span class="planform-badge" id="planform-badge">Linear</span>
+          </div>
+          <div class="planform-card">
+            <div class="planform-label" id="planform-curve-label">Spanwise planform curve</div>
+            <div class="mode-tabs" role="tablist" aria-labelledby="planform-curve-label">
+              <button id="planform-linear" class="active" type="button" role="tab" aria-selected="true">Linear taper</button>
+              <button id="planform-cosine" type="button" role="tab" aria-selected="false">Smooth cosine</button>
+            </div>
+            <div class="row">
+              <label for="planform-center">Mid-span center <span id="planform-center-val">45% of span</span></label>
+              <input id="planform-center" type="range" min="15" max="85" step="1" value="45" />
+            </div>
+            <div class="row">
+              <label for="planform-width">Mid-span plateau width <span id="planform-width-val">25% (100 mm)</span></label>
+              <input id="planform-width" type="range" min="5" max="60" step="1" value="25" />
+            </div>
+            <div class="zone-bar" id="planform-zone-bar" role="img" aria-label="Root, mid and tip planform zones">
+              <span class="zone zone-root" id="zone-root"><i></i>Root</span>
+              <span class="zone zone-mid" id="zone-mid"><i></i>Mid</span>
+              <span class="zone zone-tip" id="zone-tip"><i></i>Tip</span>
+            </div>
+            <div class="zone-ranges" id="planform-zone-ranges">Root 0 – 0.13 m | Mid 0.13 – 0.23 m | Tip 0.23 – 0.40 m</div>
           </div>
         </section>
 

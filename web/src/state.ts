@@ -445,6 +445,46 @@ export function defaultTwistBezierPoints(
   ];
 }
 
+export interface PlanformZones {
+  /** Fraction of span where the root transition ends (and the mid plateau starts). */
+  rootEnd: number;
+  /** Fraction of span where the mid plateau ends (and the tip transition starts). */
+  tipStart: number;
+}
+
+/**
+ * Resolves Root / Mid / Tip zone boundaries (span fractions) from a plateau
+ * center and width, both expressed as span fractions. The plateau is kept
+ * inside `[0.05, 0.95]` so both cosine transitions retain non-zero length.
+ */
+export function planformZones(center: number, width: number): PlanformZones {
+  const w = Math.min(0.9, Math.max(0.02, width));
+  const half = w / 2;
+  const c = Math.min(0.95 - half, Math.max(0.05 + half, center));
+  return { rootEnd: c - half, tipStart: c + half };
+}
+
+/**
+ * Builds a chord formula expression: smooth cosine transition from the root
+ * chord to the mid-plateau chord (mean of root and tip), a flat plateau, then
+ * a smooth cosine transition to the tip chord. Uses only `cos`, `abs` and
+ * `pi`, so it evaluates identically in the Rust and TypeScript formula
+ * engines. `clamp(u, 0, 1)` is expressed as `(abs(u) - abs(u - 1) + 1) / 2`.
+ */
+export function buildCosinePlateauExpr(
+  rootMm: number,
+  tipMm: number,
+  center: number,
+  width: number,
+): string {
+  const { rootEnd, tipStart } = planformZones(center, width);
+  const f = (n: number) => n.toFixed(4);
+  const clamp01 = (u: string) => `((abs(${u}) - abs((${u}) - 1) + 1) / 2)`;
+  const h1 = `(1 - cos(pi * ${clamp01(`s / ${f(rootEnd)}`)})) / 2`;
+  const h2 = `(1 - cos(pi * ${clamp01(`(s - ${f(tipStart)}) / ${f(1 - tipStart)}`)})) / 2`;
+  return `${f(rootMm)} + (${f(tipMm - rootMm)}) * 0.5 * ((${h1}) + (${h2}))`;
+}
+
 /**
  * Switches Layer-1/2 distributions to Schmitz optimum-rotor curves.
  */

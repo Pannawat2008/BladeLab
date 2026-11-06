@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyBezierCurve,
+  buildCosinePlateauExpr,
+  evalFormulaPreview,
+  planformZones,
   applyBoundRootChord,
   applyFormulaCurve,
   applyLinearLayer1,
@@ -489,4 +492,22 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
     `expected WASM optimizer to improve Cp: ${optRes.initial_cp} -> ${optRes.optimized_cp}`,
   );
   assert.ok(optRes.optimized_design.overrides.length >= 10);
+});
+
+test("smooth cosine planform: root, plateau and tip values", () => {
+  const rotor = { radius_mm: 500, hub_radius_mm: 100, blade_count: 3, design_tsr: 6 };
+  const expr = buildCosinePlateauExpr(70, 30, 0.45, 0.25);
+  const { rootEnd, tipStart } = planformZones(0.45, 0.25);
+  assert.ok(Math.abs(rootEnd - 0.325) < 1e-9 && Math.abs(tipStart - 0.575) < 1e-9);
+  const at = (s) => evalFormulaPreview(expr, rotor, s, s);
+  assert.ok(Math.abs(at(0) - 70) < 1e-6);
+  assert.ok(Math.abs(at(1) - 30) < 1e-6);
+  assert.ok(Math.abs(at(0.4) - 50) < 1e-6);
+  assert.ok(Math.abs(at(0.5) - 50) < 1e-6);
+  let prev = at(0);
+  for (let i = 1; i <= 100; i++) {
+    const v = at(i / 100);
+    assert.ok(v <= prev + 1e-9, "monotonic non-increasing");
+    prev = v;
+  }
 });

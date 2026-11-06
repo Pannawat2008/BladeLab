@@ -25,6 +25,8 @@ import designJson from "./designs/naca4412-linear.json?raw";
 import {
   type AeroSimulationBundle,
   applyBezierCurve,
+  buildCosinePlateauExpr,
+  planformZones,
   applyBoundRootChord,
   applyFormulaCurve,
   applyLinearLayer1,
@@ -33,7 +35,7 @@ import {
   clearAllOverrides,
   clearStationOverride,
   cloneDesign,
-  compareABSimulation,
+  evalChordCurve,  compareABSimulation,
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
@@ -173,6 +175,16 @@ const inputAirfoilThickness = document.getElementById("airfoil-thickness") as HT
 const inputAirfoilCamber = document.getElementById("airfoil-camber") as HTMLInputElement;
 const airfoilPreviewSvg = document.getElementById("airfoil-preview-svg") as unknown as SVGSVGElement;
 
+const btnPlanformLinear = document.getElementById("planform-linear") as HTMLButtonElement;
+const btnPlanformCosine = document.getElementById("planform-cosine") as HTMLButtonElement;
+const sliderPlanformCenter = document.getElementById("planform-center") as HTMLInputElement;
+const sliderPlanformWidth = document.getElementById("planform-width") as HTMLInputElement;
+const planformCenterVal = document.getElementById("planform-center-val")!;
+const planformWidthVal = document.getElementById("planform-width-val")!;
+const planformBadge = document.getElementById("planform-badge")!;
+const planformCard = document.querySelector(".planform-card") as HTMLElement;
+const planformZoneBar = document.getElementById("planform-zone-bar")!;
+const planformZoneRanges = document.getElementById("planform-zone-ranges")!;
 const btnModeLinear = document.getElementById("mode-linear") as HTMLButtonElement;
 const btnModeSchmitz = document.getElementById("mode-schmitz") as HTMLButtonElement;
 const btnModeBezier = document.getElementById("mode-bezier") as HTMLButtonElement;
@@ -266,6 +278,7 @@ const inputExpData = document.getElementById("exp-data-input") as HTMLTextAreaEl
 const expFitSummary = document.getElementById("exp-fit-summary")!;
 
 let bezierTarget: "chord_mm" | "twist_deg" = "chord_mm";
+let planformCosine = false;
 const lockedSpanRatios: number[] = [];
 let baselineBundleA: AeroSimulationBundle | null = null;
 let latestBundleB: AeroSimulationBundle | null = null;
@@ -898,6 +911,36 @@ function activeDistributionMode(design: Design): "linear" | "schmitz" | "bezier"
   return "linear";
 }
 
+function renderPlanformPanel(design: Design) {
+  const chord = design.distributions.chord_mm;
+  planformCosine = chord.type === "formula" && chord.expr.includes("cos(pi");
+  const bladeLenMm = Math.max(0, design.rotor.radius_mm - design.rotor.hub_radius_mm);
+  const center = Number.parseFloat(sliderPlanformCenter.value) / 100;
+  const width = Number.parseFloat(sliderPlanformWidth.value) / 100;
+  const { rootEnd, tipStart } = planformZones(center, width);
+
+  btnPlanformLinear.classList.toggle("active", !planformCosine);
+  btnPlanformLinear.setAttribute("aria-selected", String(!planformCosine));
+  btnPlanformCosine.classList.toggle("active", planformCosine);
+  btnPlanformCosine.setAttribute("aria-selected", String(planformCosine));
+  planformCard.classList.toggle("is-linear", !planformCosine);
+  planformBadge.textContent = planformCosine ? "Optimized" : "Linear";
+  sliderPlanformCenter.disabled = !planformCosine;
+  sliderPlanformWidth.disabled = !planformCosine;
+
+  planformCenterVal.textContent = `${Math.round(center * 100)}% of span`;
+  planformWidthVal.textContent = `${Math.round(width * 100)}% (${Math.round(width * bladeLenMm)} mm)`;
+  sliderPlanformCenter.style.setProperty("--fill", `${((Number(sliderPlanformCenter.value) - 15) / 70) * 100}%`);
+  sliderPlanformWidth.style.setProperty("--fill", `${((Number(sliderPlanformWidth.value) - 5) / 55) * 100}%`);
+
+  planformZoneBar.style.setProperty("--z-root", `${rootEnd}fr`);
+  planformZoneBar.style.setProperty("--z-mid", `${tipStart - rootEnd}fr`);
+  planformZoneBar.style.setProperty("--z-tip", `${1 - tipStart}fr`);
+  const m = (frac: number) => ((frac * bladeLenMm) / 1000).toFixed(2);
+  planformZoneRanges.textContent =
+    `Root 0 – ${m(rootEnd)} m | Mid ${m(rootEnd)} – ${m(tipStart)} m | Tip ${m(tipStart)} – ${m(1)} m`;
+}
+
 function syncControlsFromDesign(design: Design) {
   const { rotor, distributions } = design;
 
@@ -978,6 +1021,7 @@ function syncControlsFromDesign(design: Design) {
   btnBezierTargetTwist.classList.toggle("active", bezierTarget === "twist_deg");
   btnBezierTargetTwist.setAttribute("aria-selected", String(bezierTarget === "twist_deg"));
   renderBezierEditor(design);
+  renderPlanformPanel(design);
 
   const counts = history.counts();
   btnUndo.disabled = !history.canUndo();
@@ -1607,6 +1651,49 @@ function applySelectedAirfoil() {
 selectAirfoilFamily.addEventListener("change", applySelectedAirfoil);
 inputAirfoilThickness.addEventListener("change", applySelectedAirfoil);
 inputAirfoilCamber.addEventListener("change", applySelectedAirfoil);
+
+// ---- Planform & Span Transitions Listeners ----
+function planformEndpoints(design: Design): { root: number; tip: number } {
+  const { rotor, distributions } = design;
+  return {
+    root: evalChordCurve(distributions.chord_mm, rotor, 0, 0),
+    tip: evalChordCurve(distributions.chord_mm, rotor, 1, 1),
+  };
+}
+
+function applyPlanformCosine() {
+  const { root, tip } = planformEndpoints(workingDesign);
+  const center = Number.parseFloat(sliderPlanformCenter.value) / 100;
+  const width = Number.parseFloat(sliderPlanformWidth.value) / 100;
+  commitDesign(
+    applyFormulaCurve(
+      workingDesign,
+      "chord_mm",
+      buildCosinePlateauExpr(root, tip, center, width),
+      lockedSpanRatios,
+    ),
+  );
+}
+
+btnPlanformLinear.addEventListener("click", () => {
+  if (!planformCosine) return;
+  const { root, tip } = planformEndpoints(workingDesign);
+  const next = cloneDesign(workingDesign);
+  next.distributions.chord_mm = { type: "linear", root, tip };
+  commitDesign(preserveLockedStations(workingDesign, next, lockedSpanRatios));
+});
+
+btnPlanformCosine.addEventListener("click", () => {
+  if (planformCosine) return;
+  applyPlanformCosine();
+});
+
+for (const slider of [sliderPlanformCenter, sliderPlanformWidth]) {
+  slider.addEventListener("input", () => renderPlanformPanel(workingDesign));
+  slider.addEventListener("change", () => {
+    if (planformCosine) applyPlanformCosine();
+  });
+}
 
 // ---- Layer 1/2 Distribution Listeners ----
 btnModeLinear.addEventListener("click", () => {
