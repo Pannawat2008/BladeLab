@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 43**
-> **LAST_UPDATED: 2026-11-06 09:53 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 44**
+> **LAST_UPDATED: 2026-11-06 09:54 (UTC+7) by geom-1**
 
 ---
 
@@ -235,7 +235,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-301 | Precomputed polars + Viterna extrapolation | aero | geom-1 | done | 2026-11-06 09:29 | T-002 | Usable across full α ±180° range |
 | T-302 | BEM solver (Ning 2014 + Brent) + Prandtl + Glauert | aero | geom-1 | done | 2026-11-06 09:45 | T-301 | Results closely match QBlade reference cases (tolerance logged as Fact) |
 | T-303 | Generator matching (Kv, internal resistance, load curve) | aero | geom-1 | done | 2026-11-06 09:53 | T-302 | Accurately predicts voltage and output power |
-| T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | | todo | | T-302 | Successfully plots experimental data against simulation curves |
+| T-304 | UI: Cp–TSR charts, A/B comparison, test data logging | web | geom-1 | in-progress | 2026-11-06 09:54 | T-302 | Successfully plots experimental data against simulation curves |
 
 Lead will populate Phase 4 (optimizers, NeuralFoil, OCCT, team accounts) upon completion of Phase 3.
 
@@ -497,6 +497,9 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 - **D-geom1-024** | 2026-11-06 09:50 | geom-1 | T-303 | **Accepted**
   The lead's "lets do next" instruction in-session on 2026-11-06 approves the **T-303** takeover (`aero` role: `crates/blade-aero/src/generator.rs`). Scope: permanent-magnet / brushless DC generator model (`GeneratorSpec` with `kv_rpm_per_v`, `internal_resistance_ohm`, `no_load_current_a`, `gear_ratio`), electrical state evaluation at a given rotor RPM and resistive load (`eval_generator_at_rpm`), load-curve sweep (`sweep_generator_load`), and coupled BEM rotor–generator equilibrium solver (`match_generator`) solving $Q_{\text{aero}}(\Omega) = Q_{\text{gen}}(\Omega, R_{\text{load}})$ to predict equilibrium RPM, TSR, back-EMF voltage, terminal load voltage, current, mechanical power, electrical output power, copper loss, and generator/system efficiency. No §8 signatures are modified.
   refs: plan.md §7 T-303, §8 | supersedes: –
+- **D-geom1-025** | 2026-11-06 09:54 | geom-1 | T-304 | **Accepted**
+  The lead's "lets do next" instruction in-session on 2026-11-06 approves the **T-304** takeover (`web` role: `crates/blade-wasm/` + `web/`). Scope: (1) expose `simulate_aero(design_json, options_json)` in `crates/blade-wasm` returning JSON with the design-point `AeroResult`, full `TsrSweepPoint` curve, and optional `GeneratorMatchResult`; (2) extend `web/src/state.ts`, `web/index.html`, and `web/src/main.ts` with a live SVG $C_p$–TSR chart (`#cp-tsr-svg` with Betz limit reference), **A/B Design Comparison** (snapshotting Baseline A and plotting both A and B curves with $\Delta C_{p,\max}$ / $\Delta P$ metrics), and **Experimental Test Data Logging** (parsing/adding experimental `(tsr, cp, rpm, power_w)` measurements, overlaying them as scatter points on the $C_p$–TSR SVG chart, and computing residuals/RMSE against the BEM simulation curve). No §8 signatures are modified.
+  refs: plan.md §7 T-304, §3, §6.2 | supersedes: –
 
 ### 9.4 Open Questions (Q)
 
@@ -739,4 +742,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T09:45+07:00 agent=geom-1 mem=v41 note="T-302 done: crates/blade-aero/src/bem.rs (simulate + simulate_tsr_sweep with Ning 2014 + Brent + Prandtl + Glauert/Buhl); matches QBlade reference within |dCp|<0.025 and |dCt|<0.040 (F-geom1-029); 132 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; H-geom1-023 recorded"
 [RE-ACK] 2026-11-06T09:50:00+07:00 agent=geom-1 mem=v41 last_entry=H-geom1-023 task=T-303 note="lead: 'lets do next' -> claiming T-303 (Generator matching: Kv, internal resistance, load curve) under D-geom1-024"
 [END] 2026-11-06T09:53+07:00 agent=geom-1 mem=v43 note="T-303 done: crates/blade-aero/src/generator.rs (GeneratorSpec, eval_generator_at_rpm, match_generator, sweep_generator_load); accurately predicts equilibrium RPM, voltage, current, and electrical power across load curves; 137 Rust tests + 6 Node tests + fmt/clippy/wasm32 clean; F-geom1-030, H-geom1-024 recorded"
+[RE-ACK] 2026-11-06T09:54:00+07:00 agent=geom-1 mem=v43 last_entry=H-geom1-024 task=T-304 note="lead: 'lets do next' -> claiming T-304 (UI: Cp-TSR charts, A/B comparison, test data logging) under D-geom1-025"
 ```
