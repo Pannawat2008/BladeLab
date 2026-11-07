@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 80**
-> **LAST_UPDATED: 2026-11-07 14:58 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 81**
+> **LAST_UPDATED: 2026-11-07 16:31 (UTC+7) by geom-1**
 
 ---
 
@@ -476,6 +476,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added 4 advanced engineering & fabrication analysis modules across web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs: (1) Structural & CF Spar Mechanics (evaluateStructuralMechanics, #struct-material, #struct-status) integrating BEM flapwise thrust and centrifugal inertia for root/split bending moments, CF-tube + 3D-printed shell stress (PLA, PETG, ASA, PA-CF), Root & Joint Safety Factors, blade mass (g), centrifugal pull (N), and Euler-Bernoulli tip deflection; (2) 3D Aerodynamic & Wall-Thickness Color Heatmaps (computeVertexHeatmapColors, #heatmap-mode, #viewport-heatmap-legend) for segment, alpha, cl_cd, torque, and wall_stress; (3) Multi-Wind-Speed Power Curve (2-18 m/s), Cut-In Wind Speed, and Weibull AEP (evaluateWindSpeedCurveAndAep, renderWindPowerCurveSvgMarkup, #wind-power-svg, #site-avg-wind); and (4) 3D Printer Build-Volume Fit Checker & 1-Click Auto-Fit Split (evaluatePrinterBuildFit, #printer-preset, #printer-max-z, #btn-auto-fit-printer).
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: �
 
+- **F-geom1-051** | 2026-11-07 16:31 | geom-1 | T-105
+  Completed 6-point /ui-taste polish & audit pass across web/index.html, web/src/main.ts, web/src/state.ts, and web/scripts/types.test.mjs: (1) split #aero-dock into 4 peer collapsible <section> blocks (BEM, AEP, STR, LAB) with sticky #aero-section-nav quick-jump pills and scroll-spy; (2) added Planform and Sections pills to #panel-section-nav and wired all 6 Left Dock sections into indDockSectionNav; (3) replaced undefined ar(--fg) with ar(--text-primary) and added responsive @media (max-width: 1280px) / (max-width: 1180px) + dynamic ria-hidden rules to #viewport-heatmap-legend; (4) de-crowded #top-dock, made #autosave-badge a clickable <button> that toggles #projects-drawer, and unified Export JSON / Load JSON labels (Anti-Slop Law #6); (5) standardized Title Case headers (Planform & Span Transitions, Blade Sections (Root / Mid / Tip)) and added .scrub-label drag-scrubbing to #sec-chord-num, #sec-twist-num, and #sec-thick-num; and (6) added interactive hover crosshairs (.chart-crosshair) and live mono readouts (#cp-tsr-hover-readout, #wind-power-hover-readout, inspectCpTsrAtSvgX, inspectWindPowerAtSvgX) on #cp-tsr-svg and #wind-power-svg.
+  refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs | supersedes: –
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -875,3 +879,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-07T14:44:15+07:00 agent=geom-1 mem=v79 last_entry=F-geom1-049 task=T-105 note="lead selected 4 features to add next: (1) Structural & Root-Bending Mechanics + CF Spar/Material Safety Factor, (2) 3D Aerodynamic & Wall-Thickness Color Heatmaps on the Blade, (4) Multi-Wind-Speed Power Curve + Starting Torque/Cut-In + Weibull AEP, and (5) Printer Build-Volume Fit Checker & Per-Segment Split Ratios"
 [END] 2026-11-07T14:58:30+07:00 agent=geom-1 mem=v80 note="implemented (1) Structural & CF Spar Mechanics, (2) 3D Vertex Color Heatmaps (alpha, cl_cd, torque, wall_stress), (4) Multi-Wind-Speed Power Curve (2-18 m/s) + Cut-In + Weibull AEP, and (5) 3D Printer Build-Volume Fit Checker & 1-click Auto-Fit Split across web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs; 13/13 Node tests + tsc + vite build pass; F-geom1-050 recorded"
 [RE-ACK] 2026-11-07T16:21:00+07:00 agent=geom-1 mem=v80 last_entry=F-geom1-050 task=T-105 note="lead approved all 6 /ui-taste upgrades: (1) Right Aero Dock section-nav + 4 collapsible sections, (2) Left Dock section-nav Planform & Sections pills + scroll-spy, (3) fix var(--fg) token + responsive/accessible #viewport-heatmap-legend, (4) de-crowd #top-dock + clickable #autosave-badge + unified JSON labels, (5) Title Case headers + scrub-label on #layer2-sections, and (6) interactive hover crosshair & readout on #cp-tsr-svg and #wind-power-svg"
+[END] 2026-11-07T16:31:30+07:00 agent=geom-1 mem=v81 note="completed all 6 /ui-taste polish upgrades across web/index.html, web/src/main.ts, web/src/state.ts, and web/scripts/types.test.mjs; 13/13 Node tests + tsc + vite build pass; F-geom1-051 recorded"

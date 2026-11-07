@@ -1264,7 +1264,81 @@ export function renderCpTsrSvgMarkup(
     );
   }
 
+  parts.push(
+    `<g class="chart-crosshair" style="display:none;pointer-events:none">` +
+      `<line class="ch-line" x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="#edeff5" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
+      `<circle class="ch-dot-secondary" cx="${padX}" cy="${h - padY}" r="3.2" fill="#7a8296" stroke="#07080d" stroke-width="1.2" style="display:none" />` +
+      `<circle class="ch-dot-primary" cx="${padX}" cy="${h - padY}" r="4" fill="#38bdf8" stroke="#07080d" stroke-width="1.5" />` +
+      `</g>`,
+  );
+
   return parts.join("\n");
+}
+
+export interface CpTsrHoverInspection {
+  tsr: number;
+  cp: number;
+  cp_baseline_a: number | null;
+  betz_pct: number;
+  rpm: number;
+  svg_x: number;
+  svg_y_b: number;
+  svg_y_a: number | null;
+  readout: string;
+}
+
+/**
+ * Computes interpolated $C_p$–TSR values and SVG crosshair coordinates at a
+ * pointer `svgX` position (`0..320` viewBox coordinates).
+ */
+export function inspectCpTsrAtSvgX(
+  svgX: number,
+  currentSweep: readonly TsrSweepPoint[],
+  baselineASweep: readonly TsrSweepPoint[] | null = null,
+  rotorRadiusMm = 600,
+  windSpeedMps = 8.0,
+): CpTsrHoverInspection {
+  const w = 320;
+  const h = 155;
+  const padX = 28;
+  const padY = 18;
+  const xMin = 1.0;
+  const xMax = 9.5;
+  const yMin = 0.0;
+  const yMax = 0.65;
+
+  const clampedX = Math.min(w - padX, Math.max(padX, svgX));
+  const frac = (clampedX - padX) / Math.max(1e-6, w - 2 * padX);
+  const tsr = xMin + frac * (xMax - xMin);
+  const cp = interpolateSweepCp(currentSweep, tsr);
+  const toY = (val: number) =>
+    h - padY - ((Math.min(yMax, Math.max(yMin, val)) - yMin) / (yMax - yMin)) * (h - 2 * padY);
+
+  const svgYB = toY(cp);
+  let cpA: number | null = null;
+  let svgYA: number | null = null;
+  if (baselineASweep && baselineASweep.length > 0) {
+    cpA = interpolateSweepCp(baselineASweep, tsr);
+    svgYA = toY(cpA);
+  }
+
+  const betzPct = Math.max(0, (cp / (16.0 / 27.0)) * 100);
+  const rM = Math.max(1e-3, rotorRadiusMm * 1e-3);
+  const rpm = ((tsr * Math.max(0.1, windSpeedMps)) / rM) * (60 / (2 * Math.PI));
+  const deltaStr =
+    cpA !== null ? `  ΔA ${(cp - cpA) >= 0 ? "+" : ""}${(cp - cpA).toFixed(3)}` : "";
+
+  return {
+    tsr,
+    cp,
+    cp_baseline_a: cpA,
+    betz_pct: betzPct,
+    rpm,
+    svg_x: clampedX,
+    svg_y_b: svgYB,
+    svg_y_a: svgYA,
+    readout: `λ ${tsr.toFixed(2)}  |  Cp ${cp.toFixed(3)} (${betzPct.toFixed(0)}% Betz)  |  ${rpm.toFixed(0)} RPM${deltaStr}`,
+  };
 }
 
 export interface AirfoilPreviewHoleOptions {
@@ -2482,9 +2556,100 @@ export function renderWindPowerCurveSvgMarkup(report: WindPowerAepReport): strin
     `<text x="${padL}" y="${height - 8}" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">2 m/s</text>`,
     `<text x="${padL + plotW * 0.5}" y="${height - 8}" text-anchor="middle" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">10 m/s</text>`,
     `<text x="${padL + plotW}" y="${height - 8}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">18 m/s</text>`,
+    `<g class="chart-crosshair" style="display:none;pointer-events:none">` +
+      `<line class="ch-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#edeff5" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
+      `<circle class="ch-dot-primary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#38bdf8" stroke="#07080d" stroke-width="1.4" />` +
+      `<circle class="ch-dot-secondary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#4cc38a" stroke="#07080d" stroke-width="1.4" />` +
+      `</g>`,
   ];
 
   return lines.join("\n");
+}
+
+export interface WindPowerHoverInspection {
+  wind_mps: number;
+  mech_power_w: number;
+  elec_power_w: number;
+  rpm: number;
+  svg_x: number;
+  svg_y_mech: number;
+  svg_y_elec: number;
+  readout: string;
+}
+
+/**
+ * Computes interpolated Mechanical & Electrical power, RPM, and SVG crosshair
+ * coordinates at a pointer `svgX` position (`0..320` viewBox coordinates).
+ */
+export function inspectWindPowerAtSvgX(
+  svgX: number,
+  report: WindPowerAepReport,
+): WindPowerHoverInspection {
+  const width = 320;
+  const height = 148;
+  const padL = 38;
+  const padR = 14;
+  const padT = 14;
+  const padB = 26;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const vMin = 2;
+  const vMax = 18;
+
+  const maxP =
+    Math.max(
+      25,
+      ...report.points.map((p) => Math.max(p.mech_power_w, p.elec_power_w)),
+    ) * 1.1;
+
+  const clampedX = Math.min(padL + plotW, Math.max(padL, svgX));
+  const frac = (clampedX - padL) / Math.max(1e-6, plotW);
+  const v = vMin + frac * (vMax - vMin);
+
+  let mechW = 0;
+  let elecW = 0;
+  let rpm = 0;
+  const pts = report.points;
+  if (pts.length > 0) {
+    if (v <= pts[0]!.wind_mps) {
+      mechW = pts[0]!.mech_power_w;
+      elecW = pts[0]!.elec_power_w;
+      rpm = pts[0]!.rpm;
+    } else if (v >= pts[pts.length - 1]!.wind_mps) {
+      const last = pts[pts.length - 1]!;
+      mechW = last.mech_power_w;
+      elecW = last.elec_power_w;
+      rpm = last.rpm;
+    } else {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i]!;
+        const p1 = pts[i + 1]!;
+        if (v >= p0.wind_mps && v <= p1.wind_mps) {
+          const t = (v - p0.wind_mps) / Math.max(1e-6, p1.wind_mps - p0.wind_mps);
+          mechW = p0.mech_power_w + t * (p1.mech_power_w - p0.mech_power_w);
+          elecW = p0.elec_power_w + t * (p1.elec_power_w - p0.elec_power_w);
+          rpm = p0.rpm + t * (p1.rpm - p0.rpm);
+          break;
+        }
+      }
+    }
+  }
+
+  const yOf = (p: number) => padT + plotH - (Math.min(maxP, Math.max(0, p)) / maxP) * plotH;
+
+  return {
+    wind_mps: v,
+    mech_power_w: mechW,
+    elec_power_w: elecW,
+    rpm,
+    svg_x: clampedX,
+    svg_y_mech: yOf(mechW),
+    svg_y_elec: yOf(elecW),
+    readout:
+      v < report.cut_in_mps
+        ? `V ${v.toFixed(1)} m/s  |  Below cut-in (${report.cut_in_mps.toFixed(1)} m/s) — parked`
+        : `V ${v.toFixed(1)} m/s  |  Mech ${mechW.toFixed(0)} W  |  Elec ${elecW.toFixed(0)} W  |  ${rpm.toFixed(0)} RPM`,
+  };
 }
 
 // ============================================================================

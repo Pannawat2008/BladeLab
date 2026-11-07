@@ -32,6 +32,8 @@ import {
   evaluatePrinterBuildFit,
   evaluateStructuralMechanics,
   evaluateWindSpeedCurveAndAep,
+  inspectCpTsrAtSvgX,
+  inspectWindPowerAtSvgX,
   interpolateSweepCp,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
@@ -719,6 +721,17 @@ test("structural mechanics, 3D vertex heatmaps, wind power AEP curve, and printe
   };
   const fitSplit = evaluatePrinterBuildFit(initialDesign, fab3Part, "bambu_256");
   assert.equal(fitSplit.all_fit, true, "3-part split fits 256 mm Z limit including 8 mm Contour Lip");
+
+  // 5. Interactive SVG chart crosshair & hover inspection helpers (/ui-taste polish)
+  assert.ok(windSvg.includes('class="chart-crosshair"'));
+  const cpHover = inspectCpTsrAtSvgX(160, bundle.sweep, bundle.sweep, 600, 8.0);
+  assert.ok(cpHover.tsr >= 1.0 && cpHover.tsr <= 9.5);
+  assert.ok(cpHover.cp > 0.1 && cpHover.cp < 0.6);
+  assert.ok(cpHover.readout.includes("Cp") && cpHover.readout.includes("RPM"));
+  const windHover = inspectWindPowerAtSvgX(200, aep);
+  assert.ok(windHover.wind_mps >= 2.0 && windHover.wind_mps <= 18.0);
+  assert.ok(windHover.mech_power_w >= windHover.elec_power_w);
+  assert.ok(windHover.readout.includes("m/s"));
 });
 
 

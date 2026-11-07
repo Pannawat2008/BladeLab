@@ -58,6 +58,8 @@ import {
   evaluateWindSpeedCurveAndAep,
   type FabricationSnapshot,
   type HeatmapMode,
+  inspectCpTsrAtSvgX,
+  inspectWindPowerAtSvgX,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
   preserveLockedStations,
@@ -82,6 +84,7 @@ import {
   updatePrimaryAirfoil,
   updateRotorField,
   upsertSavedSlot,
+  type WindPowerAepReport,
   type WorkbenchSnapshot,
   type WorkbenchUiSnapshot,
 } from "./state";
@@ -334,6 +337,8 @@ const kpiPower = document.getElementById("kpi-power")!;
 const kpiGenElec = document.getElementById("kpi-gen-elec")!;
 const hudRotorSpec = document.getElementById("hud-rotor-spec");
 const cpTsrSvg = document.getElementById("cp-tsr-svg") as unknown as SVGSVGElement;
+const cpTsrHoverReadout = document.getElementById("cp-tsr-hover-readout");
+const bemSecMeta = document.getElementById("bem-sec-meta");
 const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
 const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
 const abDeltaSummary = document.getElementById("ab-delta-summary")!;
@@ -345,8 +350,10 @@ const inputSiteAvgWind = document.getElementById("site-avg-wind") as HTMLInputEl
 const aepCutinBadge = document.getElementById("aep-cutin-badge")!;
 const kpiAepKwh = document.getElementById("kpi-aep-kwh")!;
 const windPowerSvg = document.getElementById("wind-power-svg") as unknown as SVGSVGElement;
+const windPowerHoverReadout = document.getElementById("wind-power-hover-readout");
 const aepSummary = document.getElementById("aep-summary")!;
 const selectStructMaterial = document.getElementById("struct-material") as HTMLSelectElement;
+const structSecMeta = document.getElementById("struct-sec-meta");
 const structRootMoment = document.getElementById("struct-root-moment")!;
 const structTipDefl = document.getElementById("struct-tip-defl")!;
 const structSf = document.getElementById("struct-sf")!;
@@ -354,6 +361,8 @@ const structMassPull = document.getElementById("struct-mass-pull")!;
 const structStatus = document.getElementById("struct-status")!;
 const inputExpData = document.getElementById("exp-data-input") as HTMLTextAreaElement;
 const expFitSummary = document.getElementById("exp-fit-summary")!;
+const expSecMeta = document.getElementById("exp-sec-meta");
+const sectionsSummary = document.getElementById("sections-summary");
 
 let bezierTarget: "chord_mm" | "twist_deg" = "chord_mm";
 let planformCosine = false;
@@ -362,6 +371,7 @@ const lockedSpanRatios: number[] = [];
 let baselineBundleA: AeroSimulationBundle | null = null;
 let latestBundleB: AeroSimulationBundle | null = null;
 let latestStructuralReport: StructuralMechanicsReport | null = null;
+let latestAepReport: WindPowerAepReport | null = null;
 
 let viewMode: "single" | "rotor" = "rotor";
 let wireframeMode = false;
@@ -768,12 +778,14 @@ function rebuild3D(design: Design) {
       );
       bladeGeo.setAttribute("color", new THREE.BufferAttribute(hm.colors, 3));
       viewportHeatmapLegend.classList.add("visible");
+      viewportHeatmapLegend.setAttribute("aria-hidden", "false");
       heatmapLegendTitle.textContent = hm.title;
       heatmapLegendMin.textContent = hm.minLabel;
       heatmapLegendBar.style.background = hm.gradientCss;
       heatmapLegendMax.textContent = hm.maxLabel;
     } else {
       viewportHeatmapLegend.classList.remove("visible");
+      viewportHeatmapLegend.setAttribute("aria-hidden", "true");
     }
 
     const bladeMaterial = new THREE.MeshStandardMaterial({
@@ -951,6 +963,9 @@ function updateAeroPanel(design: Design) {
     const betzLimit = 16.0 / 27.0;
     const betzPct = Math.min(100, Math.max(0, (bundle.design_point.cp / betzLimit) * 100));
     aeroSummary.textContent = `Cp ${bundle.design_point.cp.toFixed(3)}  P ${bundle.design_point.power_w.toFixed(0)} W`;
+    if (bemSecMeta) {
+      bemSecMeta.textContent = `Pk ${bundle.peak_cp.toFixed(3)} @λ${bundle.peak_tsr.toFixed(1)}`;
+    }
     kpiCp.textContent = bundle.design_point.cp.toFixed(3);
     if (kpiBetzPct) {
       kpiBetzPct.textContent = `${betzPct.toFixed(0)}% Betz`;
@@ -985,6 +1000,7 @@ function updateAeroPanel(design: Design) {
       { kv, r_int: rInt, r_load: rLoad },
       siteAvgWind,
     );
+    latestAepReport = aepReport;
     aepCutinBadge.textContent = `Cut-in ${aepReport.cut_in_mps.toFixed(1)} m/s`;
     kpiAepKwh.textContent = `${aepReport.aep_kwh_yr.toFixed(0)} kWh/yr`;
     windPowerSvg.innerHTML = renderWindPowerCurveSvgMarkup(aepReport);
@@ -1019,6 +1035,9 @@ function updateAeroPanel(design: Design) {
         ? ">50×"
         : `${structReport.joint_safety_factor.toFixed(1)}×`;
     structSf.textContent = `${rSfStr} / ${jSfStr}`;
+    if (structSecMeta) {
+      structSecMeta.textContent = `SF ${rSfStr}`;
+    }
     structMassPull.textContent = `${structReport.blade_mass_g.toFixed(0)} g / ${structReport.centrifugal_root_n.toFixed(1)} N`;
     structStatus.textContent = `[${structReport.status.toUpperCase()}] Peak shell σ=${structReport.max_shell_stress_mpa.toFixed(
       1,
@@ -1033,6 +1052,9 @@ function updateAeroPanel(design: Design) {
       design.rotor.wind_speed_mps,
     );
     const fit = evaluateExperimentalFit(bundle.sweep, expPoints);
+    if (expSecMeta) {
+      expSecMeta.textContent = `${fit.count} pts`;
+    }
     if (fit.count > 0) {
       expFitSummary.textContent = `Exp log: ${fit.count} pts / RMSE ΔCp=${fit.rmse_cp.toFixed(
         4,
@@ -1155,6 +1177,9 @@ function setRangeFill(input: HTMLInputElement) {
 
 function renderSectionsPanel(design: Design) {
   const sections = readSections(design, sectionCenterFrac());
+  if (sectionsSummary) {
+    sectionsSummary.textContent = `c ${sections.root.chord_mm.toFixed(0)}→${sections.tip.chord_mm.toFixed(0)} mm`;
+  }
   for (const tab of secTabs) {
     const key = tab.dataset.sec as SectionKey;
     const on = key === activeSection;
@@ -2251,10 +2276,27 @@ function renderSavedSlotsList() {
   }
 }
 
-btnToggleProjects.addEventListener("click", () => {
-  const isOpen = projectsDrawer.classList.toggle("open");
+function toggleProjectsDrawer(forceOpen?: boolean) {
+  const isOpen =
+    forceOpen !== undefined
+      ? projectsDrawer.classList.toggle("open", forceOpen)
+      : projectsDrawer.classList.toggle("open");
   btnToggleProjects.classList.toggle("active", isOpen);
   btnToggleProjects.setAttribute("aria-expanded", String(isOpen));
+  if (isOpen) {
+    document.body.classList.remove("hide-left-dock");
+    if (innerWidth <= 1180) {
+      document.body.setAttribute("data-mobile-pane", "cad");
+    }
+  }
+}
+
+btnToggleProjects.addEventListener("click", () => {
+  toggleProjectsDrawer();
+});
+
+autosaveBadge.addEventListener("click", () => {
+  toggleProjectsDrawer();
 });
 
 btnSaveSlot.addEventListener("click", () => {
@@ -2856,12 +2898,102 @@ const btnToggleLeft = document.getElementById("btn-toggle-left") as HTMLButtonEl
 const btnToggleRight = document.getElementById("btn-toggle-right") as HTMLButtonElement | null;
 const btnZen3d = document.getElementById("btn-zen-3d") as HTMLButtonElement | null;
 const panelScrollContainer = document.getElementById("panel-scroll-container");
-const sectionNavButtons = document.querySelectorAll<HTMLButtonElement>(
-  "#panel-section-nav button[data-scroll-target]",
-);
+const aeroScrollContainer = document.getElementById("aero-scroll-container");
 const mobileNavButtons = document.querySelectorAll<HTMLButtonElement>(
   "#mobile-workspace-nav button[data-mobile-target]",
 );
+
+// Interactive SVG Chart Crosshair & Hover Readout (#cp-tsr-svg & #wind-power-svg)
+cpTsrSvg.addEventListener("pointermove", (ev) => {
+  if (!latestBundleB) return;
+  const rect = cpTsrSvg.getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const svgX = ((ev.clientX - rect.left) / rect.width) * 320;
+  const info = inspectCpTsrAtSvgX(
+    svgX,
+    latestBundleB.sweep,
+    baselineBundleA ? baselineBundleA.sweep : null,
+    workingDesign.rotor.radius_mm,
+    workingDesign.rotor.wind_speed_mps,
+  );
+  const g = cpTsrSvg.querySelector<SVGGElement>(".chart-crosshair");
+  if (g) {
+    g.style.display = "block";
+    const line = g.querySelector<SVGLineElement>(".ch-line");
+    const dotB = g.querySelector<SVGCircleElement>(".ch-dot-primary");
+    const dotA = g.querySelector<SVGCircleElement>(".ch-dot-secondary");
+    if (line) {
+      line.setAttribute("x1", info.svg_x.toFixed(1));
+      line.setAttribute("x2", info.svg_x.toFixed(1));
+    }
+    if (dotB) {
+      dotB.setAttribute("cx", info.svg_x.toFixed(1));
+      dotB.setAttribute("cy", info.svg_y_b.toFixed(1));
+    }
+    if (dotA) {
+      if (info.svg_y_a !== null) {
+        dotA.style.display = "block";
+        dotA.setAttribute("cx", info.svg_x.toFixed(1));
+        dotA.setAttribute("cy", info.svg_y_a.toFixed(1));
+      } else {
+        dotA.style.display = "none";
+      }
+    }
+  }
+  if (cpTsrHoverReadout) {
+    cpTsrHoverReadout.classList.add("active");
+    cpTsrHoverReadout.textContent = info.readout;
+  }
+});
+
+cpTsrSvg.addEventListener("pointerleave", () => {
+  const g = cpTsrSvg.querySelector<SVGGElement>(".chart-crosshair");
+  if (g) g.style.display = "none";
+  if (cpTsrHoverReadout) {
+    cpTsrHoverReadout.classList.remove("active");
+    cpTsrHoverReadout.textContent = "Hover curve to inspect λ, Cp & RPM";
+  }
+});
+
+windPowerSvg.addEventListener("pointermove", (ev) => {
+  if (!latestAepReport) return;
+  const rect = windPowerSvg.getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const svgX = ((ev.clientX - rect.left) / rect.width) * 320;
+  const info = inspectWindPowerAtSvgX(svgX, latestAepReport);
+  const g = windPowerSvg.querySelector<SVGGElement>(".chart-crosshair");
+  if (g) {
+    g.style.display = "block";
+    const line = g.querySelector<SVGLineElement>(".ch-line");
+    const dotMech = g.querySelector<SVGCircleElement>(".ch-dot-primary");
+    const dotElec = g.querySelector<SVGCircleElement>(".ch-dot-secondary");
+    if (line) {
+      line.setAttribute("x1", info.svg_x.toFixed(1));
+      line.setAttribute("x2", info.svg_x.toFixed(1));
+    }
+    if (dotMech) {
+      dotMech.setAttribute("cx", info.svg_x.toFixed(1));
+      dotMech.setAttribute("cy", info.svg_y_mech.toFixed(1));
+    }
+    if (dotElec) {
+      dotElec.setAttribute("cx", info.svg_x.toFixed(1));
+      dotElec.setAttribute("cy", info.svg_y_elec.toFixed(1));
+    }
+  }
+  if (windPowerHoverReadout) {
+    windPowerHoverReadout.classList.add("active");
+    windPowerHoverReadout.textContent = info.readout;
+  }
+});
+
+windPowerSvg.addEventListener("pointerleave", () => {
+  const g = windPowerSvg.querySelector<SVGGElement>(".chart-crosshair");
+  if (g) g.style.display = "none";
+  if (windPowerHoverReadout) {
+    windPowerHoverReadout.classList.remove("active");
+    windPowerHoverReadout.textContent = "Hover curve to inspect V, Watts & RPM";
+  }
+});
 
 // Measure #top-dock height dynamically so #aero-dock / #panel never collide when toolbar wraps
 function syncTopDockOffset() {
@@ -2930,51 +3062,75 @@ btnZen3d?.addEventListener("click", () => {
   syncTopDockOffset();
 });
 
-// Quick Section Jump Pills inside Left CAD Dock
-sectionNavButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const targetId = btn.dataset.scrollTarget;
-    if (!targetId) return;
-    const sectionEl = document.getElementById(targetId);
-    if (!sectionEl) return;
-    sectionEl.classList.remove("collapsed");
-    const toggleBtn = sectionEl.querySelector<HTMLButtonElement>("[data-collapse-section]");
-    toggleBtn?.setAttribute("aria-expanded", "true");
-    sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
-    sectionNavButtons.forEach((b) => {
-      const isTarget = b === btn;
-      b.classList.toggle("active", isTarget);
-      if (isTarget) {
-        b.setAttribute("aria-current", "true");
+// Quick Section Jump Pills & Scroll-Spy inside Left CAD Dock and Right Telemetry Dock
+function bindDockSectionNav(
+  navSelector: string,
+  scrollContainerEl: HTMLElement | null,
+  sectionIds: readonly string[],
+) {
+  const navButtons = document.querySelectorAll<HTMLButtonElement>(
+    `${navSelector} button[data-scroll-target]`,
+  );
+  navButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.scrollTarget;
+      if (!targetId) return;
+      const sectionEl = document.getElementById(targetId);
+      if (!sectionEl) return;
+      sectionEl.classList.remove("collapsed");
+      const toggleBtn = sectionEl.querySelector<HTMLButtonElement>("[data-collapse-section]");
+      toggleBtn?.setAttribute("aria-expanded", "true");
+      sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      navButtons.forEach((b) => {
+        const isTarget = b === btn;
+        b.classList.toggle("active", isTarget);
+        if (isTarget) {
+          b.setAttribute("aria-current", "true");
+        } else {
+          b.removeAttribute("aria-current");
+        }
+      });
+    });
+  });
+
+  scrollContainerEl?.addEventListener("scroll", () => {
+    const containerTop = scrollContainerEl.getBoundingClientRect().top;
+    let activeId = sectionIds[0] ?? "";
+    for (const id of sectionIds) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const offset = el.getBoundingClientRect().top - containerTop;
+      if (offset <= 88) {
+        activeId = id;
+      }
+    }
+    navButtons.forEach((btn) => {
+      const isAct = btn.dataset.scrollTarget === activeId;
+      btn.classList.toggle("active", isAct);
+      if (isAct) {
+        btn.setAttribute("aria-current", "true");
       } else {
-        b.removeAttribute("aria-current");
+        btn.removeAttribute("aria-current");
       }
     });
   });
-});
+}
 
-// Highlight active section pill while scrolling the left dock
-panelScrollContainer?.addEventListener("scroll", () => {
-  const containerTop = panelScrollContainer.getBoundingClientRect().top;
-  let activeId = "layer1-rotor";
-  for (const id of ["layer1-rotor", "layer1-distributions", "layer-fabrication", "layer3-stations"]) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    const offset = el.getBoundingClientRect().top - containerTop;
-    if (offset <= 80) {
-      activeId = id;
-    }
-  }
-  sectionNavButtons.forEach((btn) => {
-    const isAct = btn.dataset.scrollTarget === activeId;
-    btn.classList.toggle("active", isAct);
-    if (isAct) {
-      btn.setAttribute("aria-current", "true");
-    } else {
-      btn.removeAttribute("aria-current");
-    }
-  });
-});
+bindDockSectionNav("#panel-section-nav", panelScrollContainer, [
+  "layer1-rotor",
+  "layer1-distributions",
+  "layer2-planform",
+  "layer2-sections",
+  "layer-fabrication",
+  "layer3-stations",
+]);
+
+bindDockSectionNav("#aero-section-nav", aeroScrollContainer, [
+  "layer-aero",
+  "layer-aero-aep",
+  "layer-aero-struct",
+  "layer-aero-cloud",
+]);
 
 // Collapsible section toggle buttons with aria-expanded state
 document.querySelectorAll<HTMLButtonElement>("button[data-collapse-section]").forEach((toggleBtn) => {

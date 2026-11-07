@@ -283,19 +283,26 @@
         color: var(--text-secondary);
       }
 
-      /* Quick Section Jump Bar inside #panel (32px rows, 4px gap) */
+      /* Quick Section Jump Bar inside #panel & #aero-dock (32px rows, 4px gap) */
       .section-nav {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        display: flex;
+        align-items: center;
         gap: 4px;
-        padding: 8px 12px;
+        padding: 6px 10px;
         background: var(--bg-deep);
         border-bottom: 1px solid var(--border-hairline);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .section-nav::-webkit-scrollbar {
+        display: none;
       }
       .section-nav button {
+        flex: 1 1 0;
+        min-width: 0;
         height: 28px;
-        padding: 0 8px;
-        font-size: 12px;
+        padding: 0 5px;
+        font-size: 11.5px;
         font-weight: 500;
         border-radius: var(--radius-control);
         background: transparent;
@@ -303,6 +310,7 @@
         color: var(--text-muted);
         text-align: center;
         white-space: nowrap;
+        justify-content: center;
       }
       .section-nav button:hover {
         color: var(--text-primary);
@@ -1127,6 +1135,11 @@
         color: var(--text-secondary);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
+        cursor: pointer;
+      }
+      .autosave-badge:hover {
+        color: var(--text-primary);
+        border-color: var(--border-strong);
       }
       .autosave-badge::before {
         content: "";
@@ -1138,6 +1151,34 @@
       }
       .autosave-badge.saving::before {
         background: var(--datum);
+      }
+
+      /* Interactive SVG Chart Crosshair & Hover Readout */
+      #cp-tsr-svg,
+      #wind-power-svg {
+        cursor: crosshair;
+        touch-action: pan-y;
+      }
+      .chart-hover-readout {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 20px;
+        padding: 2px 6px;
+        margin-top: 2px;
+        border-radius: var(--radius-tag);
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chart-hover-readout.active {
+        color: var(--text-primary);
+        border-color: var(--border-strong);
       }
 
       #projects-drawer {
@@ -1385,7 +1426,8 @@
         left: 50%;
       }
       @media (max-width: 1280px) {
-        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-datum-hud {
+        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-datum-hud,
+        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-heatmap-legend {
           display: none;
         }
       }
@@ -1452,6 +1494,13 @@
           width: min(420px, calc(100vw - 16px));
         }
         #viewport-datum-hud {
+          display: none;
+        }
+        #viewport-heatmap-legend {
+          left: 50%;
+          bottom: 56px;
+        }
+        body:not([data-mobile-pane="canvas"]) #viewport-heatmap-legend {
           display: none;
         }
         #mobile-workspace-nav {
@@ -1554,10 +1603,10 @@
         </div>
 
         <span class="toolbar-label">View</span>
-        <button id="btn-view-single" type="button" aria-pressed="false">Single Blade</button>
-        <button id="btn-view-rotor" class="active" type="button" aria-pressed="true">Full Rotor (B×)</button>
-        <button id="btn-view-wireframe" type="button" aria-pressed="false">Wireframe</button>
-        <button id="btn-view-spin" type="button" aria-pressed="false">Spin Rotor</button>
+        <button id="btn-view-single" class="btn-mini" type="button" aria-pressed="false" title="Single Blade 3D view">Single</button>
+        <button id="btn-view-rotor" class="btn-mini active" type="button" aria-pressed="true" title="Full Rotor B-blade + Hub assembly preview">Rotor (B×)</button>
+        <button id="btn-view-wireframe" class="btn-mini" type="button" aria-pressed="false" title="Toggle triangle wireframe mesh">Wireframe</button>
+        <button id="btn-view-spin" class="btn-mini" type="button" aria-pressed="false" title="Animate rotor rotation at design RPM">Spin</button>
         <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
           <option value="segment">Color: CAD Segments</option>
           <option value="alpha">Heatmap: Angle of Attack α</option>
@@ -1572,7 +1621,7 @@
       </div>
 
       <div class="toolbar" id="export-bar">
-        <span id="autosave-badge" class="autosave-badge" role="status" aria-live="polite" title="Automatic browser session persistence">Auto-saved</span>
+        <button id="autosave-badge" type="button" class="autosave-badge" aria-live="polite" title="Automatic browser session persistence — click to open Projects &amp; Slots">Auto-saved</button>
         <span class="toolbar-divider"></span>
         <span class="toolbar-label">Export</span>
         <select id="export-part" class="compact-select" aria-label="Select part to export" title="Select part to export">
@@ -1580,11 +1629,11 @@
           <option value="assembly">Full Assembly (Blade + Hub)</option>
           <option value="hub">Hub Only</option>
         </select>
-        <button id="btn-export-stl" class="btn-primary" type="button" title="Download watertight binary STL">Export STL</button>
-        <button id="btn-export-3mf" type="button" title="Download 3MF package (mm units)">Export 3MF</button>
-        <button id="btn-export-step" type="button" title="Download ISO-10303-21 B-rep STEP solid">Export STEP</button>
-        <button id="btn-export-json" type="button" title="Download full Workbench Snapshot JSON (Design + Fabrication + Settings)">Export JSON</button>
-        <button id="btn-load-json" type="button" title="Load a Workbench Snapshot or Blade Design JSON file">Load JSON</button>
+        <button id="btn-export-stl" class="btn-primary btn-mini" type="button" title="Download watertight binary STL">STL</button>
+        <button id="btn-export-3mf" class="btn-mini" type="button" title="Download 3MF package (mm units)">3MF</button>
+        <button id="btn-export-step" class="btn-mini" type="button" title="Download ISO-10303-21 B-rep STEP solid">STEP</button>
+        <button id="btn-export-json" class="btn-mini" type="button" title="Download full Workbench Snapshot JSON (Design + Fabrication + Settings)">Export JSON</button>
+        <button id="btn-load-json" class="btn-mini" type="button" title="Load a Workbench Snapshot or Blade Design JSON file">Load JSON</button>
         <input id="input-load-json-file" type="file" accept=".json,application/json" hidden />
         <span id="export-status" role="status" aria-live="polite">Ready</span>
       </div>
@@ -1621,10 +1670,10 @@
         </div>
         <div class="toolbar" style="margin-bottom: 8px; justify-content: space-between;">
           <div class="toolbar">
-            <button id="btn-drawer-load-json" class="btn-mini" type="button" title="Import a .json project or design file from disk">Load JSON File</button>
-            <button id="btn-drawer-save-json" class="btn-mini" type="button" title="Download full project snapshot .json to disk">Save JSON File</button>
+            <button id="btn-drawer-load-json" class="btn-mini" type="button" title="Load a Workbench Snapshot or Blade Design JSON file">Load JSON</button>
+            <button id="btn-drawer-save-json" class="btn-mini" type="button" title="Download full Workbench Snapshot JSON (Design + Fabrication + Settings)">Export JSON</button>
           </div>
-          <span class="projects-drawer-meta">Accepts Snapshot or Design JSON</span>
+          <span class="projects-drawer-meta">Snapshot or Design JSON</span>
         </div>
         <div id="saved-slots-list" class="saved-slots-list" role="list">
           <div class="slot-empty">No named slots saved yet</div>
@@ -1634,8 +1683,10 @@
       <!-- Quick Section Jump Tabs -->
       <nav class="section-nav" id="panel-section-nav" aria-label="CAD Section Navigation">
         <button type="button" class="active" aria-current="true" data-scroll-target="layer1-rotor">Rotor</button>
-        <button type="button" data-scroll-target="layer1-distributions">Airfoil</button>
-        <button type="button" data-scroll-target="layer-fabrication">Split &amp; Joint</button>
+        <button type="button" data-scroll-target="layer1-distributions">Curve</button>
+        <button type="button" data-scroll-target="layer2-planform">Planform</button>
+        <button type="button" data-scroll-target="layer2-sections">Sections</button>
+        <button type="button" data-scroll-target="layer-fabrication">Fab</button>
         <button type="button" data-scroll-target="layer3-stations">Stations</button>
       </nav>
 
@@ -1830,22 +1881,22 @@
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
               <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
               <span class="layer-tag">L2</span>
-              <span>Planform &amp; span transitions</span>
+              <span>Planform &amp; Span Transitions</span>
             </button>
             <span class="planform-badge" id="planform-badge">Linear</span>
           </div>
           <div class="planform-card">
-            <div class="planform-label" id="planform-curve-label">Spanwise planform curve</div>
+            <div class="planform-label" id="planform-curve-label">Spanwise Planform Curve</div>
             <div class="mode-tabs" role="tablist" aria-labelledby="planform-curve-label">
-              <button id="planform-linear" class="active" type="button" role="tab" aria-selected="true">Linear taper</button>
-              <button id="planform-cosine" type="button" role="tab" aria-selected="false">Smooth cosine</button>
+              <button id="planform-linear" class="active" type="button" role="tab" aria-selected="true">Linear Taper</button>
+              <button id="planform-cosine" type="button" role="tab" aria-selected="false">Smooth Cosine</button>
             </div>
             <div class="row">
-              <label for="planform-center">Mid-span center <span id="planform-center-val">45% of span</span></label>
+              <label for="planform-center">Mid-Span Center <span id="planform-center-val">45% of span</span></label>
               <input id="planform-center" type="range" min="15" max="85" step="1" value="45" />
             </div>
             <div class="row">
-              <label for="planform-width">Mid-span plateau width <span id="planform-width-val">25% (100 mm)</span></label>
+              <label for="planform-width">Mid-Span Plateau Width <span id="planform-width-val">25% (100 mm)</span></label>
               <input id="planform-width" type="range" min="5" max="60" step="1" value="25" />
             </div>
             <div class="zone-bar" id="planform-zone-bar" role="img" aria-label="Root, mid and tip planform zones">
@@ -1856,7 +1907,7 @@
             <div class="zone-ranges" id="planform-zone-ranges">Root 0 – 0.13 m | Mid 0.13 – 0.23 m | Tip 0.23 – 0.40 m</div>
             <div class="planform-pin" id="planform-pin" hidden>
               <span id="planform-pin-text"></span>
-              <button id="btn-planform-unpin" class="btn-mini" type="button">Clear overrides</button>
+              <button id="btn-planform-unpin" class="btn-mini" type="button">Clear Overrides</button>
             </div>
           </div>
         </section>
@@ -1867,8 +1918,9 @@
             <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
               <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
               <span class="layer-tag">L2</span>
-              <span>Blade sections</span>
+              <span>Blade Sections (Root / Mid / Tip)</span>
             </button>
+            <span id="sections-summary" class="section-meta">3 Zones</span>
           </div>
           <div class="planform-card">
             <div class="sec-tabs" role="tablist" aria-label="Blade section">
@@ -1888,25 +1940,25 @@
             <div class="planform-label" id="sec-role">Structural and hub attachment</div>
 
             <div class="field">
-              <label for="sec-airfoil">Airfoil family</label>
+              <label for="sec-airfoil">Airfoil Family</label>
               <select id="sec-airfoil">
-                <option value="naca4">NACA 4-digit (parametric)</option>
-                <option value="SG6043">SG6043 (high lift, low Re)</option>
-                <option value="SD7062">SD7062 (thick, low Re)</option>
-                <option value="E387">E387 (Eppler, low Re)</option>
-                <option value="S833">S833 (NREL thick root, 18%)</option>
+                <option value="naca4">NACA 4-Digit (Parametric)</option>
+                <option value="SG6043">SG6043 (High Lift, Low Re)</option>
+                <option value="SD7062">SD7062 (Thick, Low Re)</option>
+                <option value="E387">E387 (Eppler, Low Re)</option>
+                <option value="S833">S833 (NREL Thick Root, 18%)</option>
               </select>
             </div>
             <div class="row">
-              <label for="sec-chord">Chord width <span><input id="sec-chord-num" class="sec-num" type="number" min="10" max="150" step="1" aria-label="Chord width in millimetres" /> mm</span></label>
+              <label for="sec-chord"><span class="scrub-label" data-scrub-for="sec-chord-num" title="Drag horizontally to scrub section chord">Chord Width</span> <span><input id="sec-chord-num" class="sec-num" type="number" min="10" max="150" step="1" aria-label="Chord width in millimetres" /> mm</span></label>
               <input id="sec-chord" type="range" min="10" max="150" step="1" value="50" />
             </div>
             <div class="row">
-              <label for="sec-twist">Twist angle <span><input id="sec-twist-num" class="sec-num" type="number" min="-10" max="45" step="0.5" aria-label="Twist angle in degrees" /> °</span></label>
+              <label for="sec-twist"><span class="scrub-label" data-scrub-for="sec-twist-num" title="Drag horizontally to scrub section twist">Twist Angle</span> <span><input id="sec-twist-num" class="sec-num" type="number" min="-10" max="45" step="0.5" aria-label="Twist angle in degrees" /> °</span></label>
               <input id="sec-twist" type="range" min="-10" max="45" step="0.5" value="10" />
             </div>
             <div class="row">
-              <label for="sec-thick">Thickness ratio t/c <span><input id="sec-thick-num" class="sec-num" type="number" min="6" max="30" step="0.5" aria-label="Thickness ratio in percent" /> %</span></label>
+              <label for="sec-thick"><span class="scrub-label" data-scrub-for="sec-thick-num" title="Drag horizontally to scrub section thickness ratio">Thickness Ratio t/c</span> <span><input id="sec-thick-num" class="sec-num" type="number" min="6" max="30" step="0.5" aria-label="Thickness ratio in percent" /> %</span></label>
               <input id="sec-thick" type="range" min="6" max="30" step="0.5" value="12" />
             </div>
             <div class="zone-ranges" id="sec-note"></div>
@@ -1929,7 +1981,7 @@
 
           <div>
             <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <label for="spar-hole-enabled" style="font-weight: 500; color: var(--fg)">
+              <label for="spar-hole-enabled" style="font-weight: 500; color: var(--text-primary)">
                 <input id="spar-hole-enabled" type="checkbox" />
                 Base Hole (Carbon Tube)
               </label>
@@ -2014,7 +2066,7 @@
             </div>
 
             <div class="bind-row" style="margin-top: 8px">
-              <span style="font-weight: 500; color: var(--fg)">Interlocking Joints on Split Faces</span>
+              <span style="font-weight: 500; color: var(--text-primary)">Interlocking Joints on Split Faces</span>
             </div>
             <div class="bind-row" style="border-top: none; padding-top: 0">
               <span>Joint Presets</span>
@@ -2166,95 +2218,105 @@
         <span id="aero-summary" class="section-meta">Cp –  P – W</span>
       </div>
 
-      <div class="panel-scroll">
+      <!-- Quick Section Jump Tabs for Right Telemetry Dock -->
+      <nav class="section-nav" id="aero-section-nav" aria-label="Telemetry Section Navigation">
+        <button type="button" class="active" aria-current="true" data-scroll-target="layer-aero">BEM</button>
+        <button type="button" data-scroll-target="layer-aero-aep">Power &amp; AEP</button>
+        <button type="button" data-scroll-target="layer-aero-struct">Structural</button>
+        <button type="button" data-scroll-target="layer-aero-cloud">Lab &amp; Cloud</button>
+      </nav>
+
+      <div class="panel-scroll" id="aero-scroll-container">
+        <!-- Section 1: BEM Cp-TSR Curve, A/B Comparison & Blade Optimizer -->
         <section id="layer-aero">
-          <div class="telemetry-deck">
-            <div class="telemetry-lead">
-              <div class="telemetry-lead-top">
-                <span class="kpi-label">Design Cp</span>
-                <span id="kpi-cp" class="telemetry-lead-val">–</span>
-              </div>
-              <div class="betz-meter">
-                <div class="betz-meter-meta">
-                  <span>Betz 0.593</span>
-                  <span id="kpi-betz-pct">–% Betz</span>
-                </div>
-                <div class="betz-meter-track">
-                  <div id="kpi-betz-bar" class="betz-meter-fill"></div>
-                </div>
-              </div>
-            </div>
-            <div class="telemetry-strip">
-              <div class="telemetry-row">
-                <span class="kpi-label">Peak Cp</span>
-                <span id="kpi-peak-cp" class="kpi-val">–</span>
-              </div>
-              <div class="telemetry-row">
-                <span class="kpi-label">Mech Power</span>
-                <span id="kpi-power" class="kpi-val">–</span>
-              </div>
-              <div class="telemetry-row">
-                <span class="kpi-label">Gen Output</span>
-                <span id="kpi-gen-elec" class="kpi-val">–</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="aero-legend">
-            <span><i class="swatch" style="background: #38bdf8"></i>Design B</span>
-            <span><i class="swatch" style="background: #7a8296"></i>Baseline A</span>
-            <span><i class="swatch" style="background: #f59e0b"></i>Exp Data</span>
-            <span><i class="swatch" style="background: #e5484d"></i>Betz 0.593</span>
-          </div>
-          <svg id="cp-tsr-svg" viewBox="0 0 320 155" role="img" aria-label="Cp vs Tip-Speed Ratio Chart"></svg>
-
-          <div class="bind-row">
-            <div class="toolbar">
-              <button id="btn-snapshot-a" class="btn-mini" type="button">Snapshot Baseline A</button>
-              <button id="btn-clear-a" class="btn-mini" type="button" disabled>Clear A</button>
-            </div>
-            <span id="ab-delta-summary" class="section-meta">No Baseline A</span>
-          </div>
-
-          <div class="bind-row" style="margin-top: 8px; padding-top: 12px">
-            <span style="font-weight: 500; color: var(--text-primary)">Blade Optimizer</span>
-            <select id="opt-objective" aria-label="Optimization objective" title="Optimization objective">
-              <option value="design_tsr" selected>Max Cp at Design TSR</option>
-              <option value="broadband_tsr">Broadband TSR (±20%)</option>
-            </select>
-          </div>
-          <div class="toolbar" style="margin-top: 8px">
-            <button id="btn-auto-optimize" class="btn-primary" type="button" style="flex: 1" title="Run Glauert-Schmitz + Coordinate Search optimizer respecting locked stations and manufacturing limits">
-              Auto-Optimize Blade (Max Cp)
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">BEM</span>
+              <span>Cp–TSR &amp; Blade Optimizer</span>
             </button>
-          </div>
-          <div id="opt-status" class="fit-badge">Optimizer ready (respects locked stations)</div>
-
-          <div class="aero-subbox">
-            <div class="grid-2">
-              <div class="field">
-                <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
-                <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
-              </div>
-              <div class="field">
-                <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int">R_int (Ω)</label>
-                <input id="gen-r-int" type="number" min="0.05" max="50" step="0.05" value="0.8" />
-              </div>
-            </div>
-            <div class="field" style="margin-top: 8px">
-              <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R_load (Ω)</label>
-              <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
-            </div>
-            <div id="gen-summary" class="fit-badge">Gen: –</div>
+            <span id="bem-sec-meta" class="section-meta">Betz 0.593</span>
           </div>
 
-          <!-- Feature #4: Multi-Wind-Speed Power Curve (2–18 m/s), Cut-In & Weibull AEP -->
-          <div class="aero-subbox">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Power Curve (2–18 m/s) &amp; AEP</span>
-              <span id="aep-cutin-badge" class="section-meta">Cut-in – m/s</span>
+          <div>
+            <div class="telemetry-deck">
+              <div class="telemetry-lead">
+                <div class="telemetry-lead-top">
+                  <span class="kpi-label">Design Cp</span>
+                  <span id="kpi-cp" class="telemetry-lead-val">–</span>
+                </div>
+                <div class="betz-meter">
+                  <div class="betz-meter-meta">
+                    <span>Betz 0.593</span>
+                    <span id="kpi-betz-pct">–% Betz</span>
+                  </div>
+                  <div class="betz-meter-track">
+                    <div id="kpi-betz-bar" class="betz-meter-fill"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="telemetry-strip">
+                <div class="telemetry-row">
+                  <span class="kpi-label">Peak Cp</span>
+                  <span id="kpi-peak-cp" class="kpi-val">–</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="kpi-label">Mech Power</span>
+                  <span id="kpi-power" class="kpi-val">–</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="kpi-label">Gen Output</span>
+                  <span id="kpi-gen-elec" class="kpi-val">–</span>
+                </div>
+              </div>
             </div>
-            <div class="grid-2" style="margin-top: 6px; margin-bottom: 6px">
+
+            <div class="aero-legend">
+              <span><i class="swatch" style="background: #38bdf8"></i>Design B</span>
+              <span><i class="swatch" style="background: #7a8296"></i>Baseline A</span>
+              <span><i class="swatch" style="background: #f59e0b"></i>Exp Data</span>
+              <span><i class="swatch" style="background: #e5484d"></i>Betz 0.593</span>
+            </div>
+            <svg id="cp-tsr-svg" viewBox="0 0 320 155" role="img" aria-label="Cp vs Tip-Speed Ratio Chart"></svg>
+            <div id="cp-tsr-hover-readout" class="chart-hover-readout">Hover curve to inspect λ, Cp &amp; RPM</div>
+
+            <div class="bind-row">
+              <div class="toolbar">
+                <button id="btn-snapshot-a" class="btn-mini" type="button">Snapshot Baseline A</button>
+                <button id="btn-clear-a" class="btn-mini" type="button" disabled>Clear A</button>
+              </div>
+              <span id="ab-delta-summary" class="section-meta">No Baseline A</span>
+            </div>
+
+            <div class="bind-row" style="margin-top: 8px; padding-top: 12px">
+              <span style="font-weight: 500; color: var(--text-primary)">Blade Optimizer</span>
+              <select id="opt-objective" aria-label="Optimization objective" title="Optimization objective">
+                <option value="design_tsr" selected>Max Cp at Design TSR</option>
+                <option value="broadband_tsr">Broadband TSR (±20%)</option>
+              </select>
+            </div>
+            <div class="toolbar" style="margin-top: 8px">
+              <button id="btn-auto-optimize" class="btn-primary" type="button" style="flex: 1" title="Run Glauert-Schmitz + Coordinate Search optimizer respecting locked stations and manufacturing limits">
+                Auto-Optimize Blade (Max Cp)
+              </button>
+            </div>
+            <div id="opt-status" class="fit-badge">Optimizer ready (respects locked stations)</div>
+          </div>
+        </section>
+
+        <!-- Section 2: Power Curve (2–18 m/s), Cut-In, Weibull AEP & Generator Matching -->
+        <section id="layer-aero-aep">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">AEP</span>
+              <span>Power Curve &amp; Generator</span>
+            </button>
+            <span id="aep-cutin-badge" class="section-meta">Cut-in – m/s</span>
+          </div>
+
+          <div>
+            <div class="grid-2" style="margin-bottom: 6px">
               <div class="field">
                 <label for="site-avg-wind" class="scrub-label" data-scrub-for="site-avg-wind">Site Avg Wind (m/s)</label>
                 <input id="site-avg-wind" type="number" min="2.5" max="12.0" step="0.5" value="5.5" />
@@ -2270,13 +2332,43 @@
               <span><i class="swatch" style="background: #f59e0b"></i>Cut-In</span>
             </div>
             <svg id="wind-power-svg" viewBox="0 0 320 148" role="img" aria-label="Power vs Wind Speed Curve"></svg>
+            <div id="wind-power-hover-readout" class="chart-hover-readout">Hover curve to inspect V, Watts &amp; RPM</div>
             <div id="aep-summary" class="fit-badge">AEP: –</div>
+
+            <div class="aero-subbox">
+              <div class="grid-2">
+                <div class="field">
+                  <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
+                  <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
+                </div>
+                <div class="field">
+                  <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int">R_int (Ω)</label>
+                  <input id="gen-r-int" type="number" min="0.05" max="50" step="0.05" value="0.8" />
+                </div>
+              </div>
+              <div class="field" style="margin-top: 8px">
+                <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R_load (Ω)</label>
+                <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
+              </div>
+              <div id="gen-summary" class="fit-badge">Gen: –</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 3: Structural & Root-Bending Mechanics + CF Spar Safety Factor -->
+        <section id="layer-aero-struct">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">STR</span>
+              <span>Structural &amp; CF Spar Mechanics</span>
+            </button>
+            <span id="struct-sec-meta" class="section-meta">SF –</span>
           </div>
 
-          <!-- Feature #1: Structural & Root-Bending Mechanics + CF Spar Safety Factor -->
-          <div class="aero-subbox">
+          <div>
             <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Structural &amp; CF Spar Mechanics</span>
+              <span>3D Printed Shell Material</span>
               <select id="struct-material" class="compact-select" aria-label="3D Print Shell Material" title="3D Printed Blade Shell Material">
                 <option value="petg" selected>PETG Shell</option>
                 <option value="pla">PLA Shell</option>
@@ -2304,8 +2396,20 @@
             </div>
             <div id="struct-status" class="fit-badge">Evaluating structural loads...</div>
           </div>
+        </section>
 
-          <div class="aero-subbox">
+        <!-- Section 4: Experimental Test Data Log & Team Cloud Workspace -->
+        <section id="layer-aero-cloud">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">LAB</span>
+              <span>Test Log &amp; Cloud Workspace</span>
+            </button>
+            <span id="exp-sec-meta" class="section-meta">0 pts</span>
+          </div>
+
+          <div>
             <div class="field">
               <label for="exp-data-input">Experimental Data Log (tsr, cp or rpm=.., power_w=..)</label>
               <textarea
@@ -2315,38 +2419,38 @@
               ></textarea>
             </div>
             <div id="exp-fit-summary" class="fit-badge">Exp log: 0 pts</div>
-          </div>
 
-          <div class="aero-subbox">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Team &amp; Cloud Designs</span>
-              <button id="btn-cloud-refresh" class="btn-mini" type="button" title="Refresh team designs from blade-server">Refresh</button>
+            <div class="aero-subbox">
+              <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+                <span style="font-weight: 500; color: var(--text-primary)">Team &amp; Cloud Designs</span>
+                <button id="btn-cloud-refresh" class="btn-mini" type="button" title="Refresh team designs from blade-server">Refresh</button>
+              </div>
+              <div class="grid-2" style="margin-top: 4px">
+                <div class="field">
+                  <label for="cloud-team">Team Workspace</label>
+                  <select id="cloud-team">
+                    <option value="team-default" selected>BladeLab Core Team</option>
+                    <option value="team-comp">Wind Competition Team</option>
+                    <option value="all">All Teams</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="cloud-author">Engineer Handle</label>
+                  <input id="cloud-author" type="text" value="panna" />
+                </div>
+              </div>
+              <div class="grid-2" style="margin-top: 8px">
+                <div class="field">
+                  <label for="cloud-design-name">Design Name</label>
+                  <input id="cloud-design-name" type="text" value="Rotor-R600-B3" />
+                </div>
+                <div class="field" style="justify-content: flex-end">
+                  <button id="btn-cloud-save" type="button">Save to Cloud</button>
+                </div>
+              </div>
+              <div id="cloud-status" class="fit-badge">Cloud workspace ready</div>
+              <div id="cloud-designs-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px"></div>
             </div>
-            <div class="grid-2" style="margin-top: 4px">
-              <div class="field">
-                <label for="cloud-team">Team Workspace</label>
-                <select id="cloud-team">
-                  <option value="team-default" selected>BladeLab Core Team</option>
-                  <option value="team-comp">Wind Competition Team</option>
-                  <option value="all">All Teams</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="cloud-author">Engineer Handle</label>
-                <input id="cloud-author" type="text" value="panna" />
-              </div>
-            </div>
-            <div class="grid-2" style="margin-top: 8px">
-              <div class="field">
-                <label for="cloud-design-name">Design Name</label>
-                <input id="cloud-design-name" type="text" value="Rotor-R600-B3" />
-              </div>
-              <div class="field" style="justify-content: flex-end">
-                <button id="btn-cloud-save" type="button">Save to Cloud</button>
-              </div>
-            </div>
-            <div id="cloud-status" class="fit-badge">Cloud workspace ready</div>
-            <div id="cloud-designs-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px"></div>
           </div>
         </section>
       </div>
