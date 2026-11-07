@@ -24,6 +24,7 @@ import init, {
 import designJson from "./designs/naca4412-linear.json?raw";
 import {
   type AeroSimulationBundle,
+  AUTOSAVE_STORAGE_KEY,
   applyBezierCurve,
   buildCosinePlateauExpr,
   planformZones,
@@ -33,7 +34,8 @@ import {
   readSections,
   renderSectionStackSvgMarkup,
   type SectionKey,
-  applyBoundRootChord,  applyFormulaCurve,
+  applyBoundRootChord,
+  applyFormulaCurve,
   applyLinearLayer1,
   applySchmitzLayer1,
   applyScrubDelta,
@@ -41,18 +43,26 @@ import {
   clearStationOverride,
   cloneDesign,
   compareABSimulation,
+  createWorkbenchSnapshot,
+  defaultFabricationSnapshot,
+  defaultWorkbenchUiSnapshot,
   evalChordCurve,
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
   evalBezierPoints,
   evaluateExperimentalFit,
+  type FabricationSnapshot,
   parseExperimentalDataLog,
+  parseLoadedProjectJson,
   preserveLockedStations,
   RATIO_EPS,
+  removeSavedSlot,
   renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
   resolveStationsPreview,
+  SAVED_SLOTS_STORAGE_KEY,
+  type SavedSlotEntry,
   scaleAllChords,
   setStationOverride,
   shiftAllChordsMm,
@@ -61,6 +71,9 @@ import {
   updatePitchAxisRatio,
   updatePrimaryAirfoil,
   updateRotorField,
+  upsertSavedSlot,
+  type WorkbenchSnapshot,
+  type WorkbenchUiSnapshot,
 } from "./state";
 import type { AirfoilSpec, BezierControlPoint, Design } from "./types/blade-model";
 
@@ -150,7 +163,20 @@ const btnExportStl = document.getElementById("btn-export-stl") as HTMLButtonElem
 const btnExport3mf = document.getElementById("btn-export-3mf") as HTMLButtonElement;
 const btnExportStep = document.getElementById("btn-export-step") as HTMLButtonElement;
 const btnExportJson = document.getElementById("btn-export-json") as HTMLButtonElement;
+const btnLoadJson = document.getElementById("btn-load-json") as HTMLButtonElement;
+const inputLoadJsonFile = document.getElementById("input-load-json-file") as HTMLInputElement;
+const autosaveBadge = document.getElementById("autosave-badge")!;
 const exportStatus = document.getElementById("export-status")!;
+
+const btnToggleProjects = document.getElementById("btn-toggle-projects") as HTMLButtonElement;
+const projectsDrawer = document.getElementById("projects-drawer")!;
+const savedSlotsCount = document.getElementById("saved-slots-count")!;
+const autosaveDetail = document.getElementById("autosave-detail")!;
+const slotNameInput = document.getElementById("slot-name-input") as HTMLInputElement;
+const btnSaveSlot = document.getElementById("btn-save-slot") as HTMLButtonElement;
+const btnDrawerLoadJson = document.getElementById("btn-drawer-load-json") as HTMLButtonElement;
+const btnDrawerSaveJson = document.getElementById("btn-drawer-save-json") as HTMLButtonElement;
+const savedSlotsList = document.getElementById("saved-slots-list")!;
 
 const rotorSummary = document.getElementById("rotor-summary")!;
 const inputRadius = document.getElementById("rotor-radius") as HTMLInputElement;
@@ -1401,6 +1427,7 @@ function renderStationTable(design: Design) {
     lockBtn.addEventListener("click", () => {
       toggleStationLock(row.span_ratio);
       renderStationTable(workingDesign);
+      scheduleAutoSave();
     });
     tdLock.appendChild(lockBtn);
 
@@ -1422,11 +1449,201 @@ function renderStationTable(design: Design) {
   }
 }
 
+// ---- Full Workbench Snapshot Read / Apply & Auto-Save ----
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let suppressAutoSave = false;
+
+function readCurrentFabricationSnapshot(): FabricationSnapshot {
+  return {
+    spar_hole_enabled: inputSparHoleEnabled.checked,
+    spar_show_rod: inputSparShowRod.checked,
+    spar_hole_diameter_mm: Math.max(0.5, Number.parseFloat(inputSparHoleDiameter.value) || 5.0),
+    spar_hole_depth_mm: Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240),
+    spar_hole_offset_x_mm: Number.parseFloat(inputSparHoleOffsetX.value) || 0,
+    spar_hole_offset_y_mm: Number.parseFloat(inputSparHoleOffsetY.value) || 0,
+    spar_hole_tolerance_mm: Math.max(0, Number.parseFloat(inputSparHoleTolerance.value) || 0),
+    split_parts: Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1),
+    split_active_part: selectSplitActivePart.value || "all",
+    split_ratio_pct: Math.max(12, Math.min(88, sliderSplitRatio.valueAsNumber || 50)),
+    split_explode_gap_mm: Math.max(0, sliderSplitExplodeGap.valueAsNumber || 0),
+    align_shape: selectAlignShape.value || "round",
+    align_count: Math.max(1, Number.parseInt(selectAlignCount.value, 10) || 2),
+    align_size_mm: Math.max(1, Number.parseFloat(inputAlignSize.value) || 3),
+    align_key_length_mm: Math.max(2, Number.parseFloat(inputAlignKeyLength.value) || 6),
+    align_height_mm: Math.max(1, Number.parseFloat(inputAlignHeight.value) || 6),
+    align_spacing_mm: Math.max(0, Number.parseFloat(inputAlignSpacing.value) || 0),
+    align_clearance_mm: Math.max(0, Number.parseFloat(inputAlignClearance.value) || 0),
+    align_depth_clearance_mm: Math.max(
+      0,
+      Number.parseFloat(inputAlignDepthClearance.value) || 0,
+    ),
+    align_min_wall_mm: Math.max(0.4, Number.parseFloat(inputAlignMinWall.value) || 0.8),
+  };
+}
+
+function applyFabricationSnapshotToDom(fab: FabricationSnapshot) {
+  inputSparHoleEnabled.checked = Boolean(fab.spar_hole_enabled);
+  inputSparShowRod.checked = fab.spar_show_rod !== false;
+  inputSparHoleDiameter.value = String(fab.spar_hole_diameter_mm ?? 5.0);
+  inputSparHoleDepth.value = String(fab.spar_hole_depth_mm ?? 240);
+  sliderSparHoleDepth.value = String(fab.spar_hole_depth_mm ?? 240);
+  inputSparHoleOffsetX.value = String(fab.spar_hole_offset_x_mm ?? 0);
+  inputSparHoleOffsetY.value = String(fab.spar_hole_offset_y_mm ?? 0);
+  inputSparHoleTolerance.value = String(fab.spar_hole_tolerance_mm ?? 0.2);
+  selectSplitParts.value = String(Math.max(1, Math.min(4, fab.split_parts || 1)));
+  selectSplitActivePart.value = fab.split_active_part || "all";
+  sliderSplitRatio.value = String(Math.max(12, Math.min(88, fab.split_ratio_pct ?? 50)));
+  splitRatioVal.textContent = `${sliderSplitRatio.value}%`;
+  sliderSplitExplodeGap.value = String(Math.max(0, fab.split_explode_gap_mm ?? 0));
+  splitExplodeVal.textContent = `${sliderSplitExplodeGap.value} mm`;
+  selectAlignShape.value = fab.align_shape || "round";
+  selectAlignCount.value = String(Math.max(1, Math.min(2, fab.align_count ?? 2)));
+  inputAlignSize.value = String(fab.align_size_mm ?? 3.0);
+  inputAlignKeyLength.value = String(fab.align_key_length_mm ?? 6.0);
+  inputAlignHeight.value = String(fab.align_height_mm ?? 6.0);
+  inputAlignSpacing.value = String(fab.align_spacing_mm ?? 0);
+  inputAlignClearance.value = String(fab.align_clearance_mm ?? 0.2);
+  inputAlignDepthClearance.value = String(fab.align_depth_clearance_mm ?? 0.5);
+  inputAlignMinWall.value = String(fab.align_min_wall_mm ?? 0.8);
+}
+
+function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
+  return {
+    planform_cosine: planformCosine,
+    planform_center_pct: Number.parseFloat(sliderPlanformCenter.value) || 45,
+    planform_width_pct: Number.parseFloat(sliderPlanformWidth.value) || 25,
+    locked_span_ratios: [...lockedSpanRatios],
+    bind_taper: inputBindTaper.checked,
+    taper_ratio: Number.parseFloat(inputTaperRatio.value) || 0.457,
+    chord_offset_x_mm: sliderChordOffsetX.valueAsNumber || 0,
+    chord_offset_y_mm: sliderChordOffsetY.valueAsNumber || 0,
+    global_light_intensity: sliderGlobalLight.valueAsNumber || 1.35,
+    view_mode: viewMode,
+    wireframe_mode: wireframeMode,
+    gen_kv: Number.parseFloat(inputGenKv.value) || 35,
+    gen_r_int: Number.parseFloat(inputGenRInt.value) || 0.8,
+    gen_r_load: Number.parseFloat(inputGenRLoad.value) || 12.0,
+    exp_data_log: inputExpData.value || "",
+  };
+}
+
+function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
+  planformCosine = Boolean(wb.planform_cosine);
+  sliderPlanformCenter.value = String(wb.planform_center_pct ?? 45);
+  sliderPlanformWidth.value = String(wb.planform_width_pct ?? 25);
+  lockedSpanRatios.splice(0, lockedSpanRatios.length, ...(wb.locked_span_ratios ?? []));
+  inputBindTaper.checked = Boolean(wb.bind_taper);
+  inputTaperRatio.value = String(wb.taper_ratio ?? 0.457);
+
+  const ox = wb.chord_offset_x_mm ?? 0;
+  const oy = wb.chord_offset_y_mm ?? 0;
+  sliderChordOffsetX.value = String(ox);
+  chordOffsetXVal.textContent = `${ox} mm`;
+  sliderChordOffsetY.value = String(oy);
+  chordOffsetYVal.textContent = `${oy} mm`;
+
+  const light = wb.global_light_intensity ?? 1.35;
+  sliderGlobalLight.value = String(light);
+  globalLightVal.textContent = `${light.toFixed(2)}×`;
+  setGlobalIlluminationScale(light);
+
+  viewMode = wb.view_mode === "single" ? "single" : "rotor";
+  btnViewSingle.classList.toggle("active", viewMode === "single");
+  btnViewSingle.setAttribute("aria-pressed", String(viewMode === "single"));
+  btnViewRotor.classList.toggle("active", viewMode === "rotor");
+  btnViewRotor.setAttribute("aria-pressed", String(viewMode === "rotor"));
+
+  wireframeMode = Boolean(wb.wireframe_mode);
+  btnViewWireframe.classList.toggle("active", wireframeMode);
+  btnViewWireframe.setAttribute("aria-pressed", String(wireframeMode));
+
+  inputGenKv.value = String(wb.gen_kv ?? 35);
+  inputGenRInt.value = String(wb.gen_r_int ?? 0.8);
+  inputGenRLoad.value = String(wb.gen_r_load ?? 12.0);
+  inputExpData.value = wb.exp_data_log ?? "";
+}
+
+function buildCurrentWorkbenchSnapshot(name?: string): WorkbenchSnapshot {
+  return createWorkbenchSnapshot(
+    workingDesign,
+    readCurrentFabricationSnapshot(),
+    readCurrentWorkbenchUiSnapshot(),
+    name || slotNameInput.value.trim() || undefined,
+  );
+}
+
+function formatShortTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return "just now";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return "just now";
+  }
+}
+
+function flushAutoSaveNow(badgePrefix = "Auto-saved") {
+  if (suppressAutoSave) return;
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+  try {
+    const snap = buildCurrentWorkbenchSnapshot();
+    localStorage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(snap));
+    const timeLabel = formatShortTime(snap.saved_at);
+    autosaveBadge.classList.remove("saving");
+    autosaveBadge.textContent = `${badgePrefix} ${timeLabel}`;
+    autosaveDetail.textContent = `${badgePrefix} at ${timeLabel}`;
+  } catch {
+    autosaveBadge.classList.remove("saving");
+    autosaveBadge.textContent = "Local save full";
+  }
+}
+
+function scheduleAutoSave(badgePrefix = "Auto-saved") {
+  if (suppressAutoSave) return;
+  autosaveBadge.classList.add("saving");
+  autosaveBadge.textContent = "Saving...";
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer);
+  }
+  autoSaveTimer = setTimeout(() => {
+    flushAutoSaveNow(badgePrefix);
+  }, 160);
+}
+
+function applyWorkbenchSnapshot(
+  snapshot: WorkbenchSnapshot,
+  options: { commitToHistory?: boolean; badgePrefix?: string } = {},
+) {
+  const prevSuppress = suppressAutoSave;
+  suppressAutoSave = true;
+  try {
+    applyFabricationSnapshotToDom(snapshot.fabrication);
+    applyWorkbenchUiSnapshotToDom(snapshot.workbench);
+    if (snapshot.name) {
+      slotNameInput.value = snapshot.name;
+    }
+    if (options.commitToHistory !== false) {
+      history.commit(snapshot.design);
+    }
+    workingDesign = history.current();
+    syncControlsFromDesign(workingDesign);
+    rebuild3D(workingDesign);
+    applyMeshChordOffset();
+  } finally {
+    suppressAutoSave = prevSuppress;
+  }
+  flushAutoSaveNow(options.badgePrefix ?? "Loaded");
+}
+
 function commitDesign(next: Design) {
   history.commit(next);
   workingDesign = history.current();
   syncControlsFromDesign(workingDesign);
   rebuild3D(workingDesign);
+  scheduleAutoSave();
 }
 
 // ---- 3D Viewport Mode & Camera Listeners ----
@@ -1438,6 +1655,7 @@ btnViewSingle.addEventListener("click", () => {
   btnViewRotor.setAttribute("aria-pressed", "false");
   controls.target.set(30, 0, workingDesign.rotor.radius_mm * 0.55);
   rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 btnViewRotor.addEventListener("click", () => {
@@ -1448,6 +1666,7 @@ btnViewRotor.addEventListener("click", () => {
   btnViewSingle.setAttribute("aria-pressed", "false");
   controls.target.set(0, 0, 0);
   rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 btnViewWireframe.addEventListener("click", () => {
@@ -1455,6 +1674,7 @@ btnViewWireframe.addEventListener("click", () => {
   btnViewWireframe.classList.toggle("active", wireframeMode);
   btnViewWireframe.setAttribute("aria-pressed", String(wireframeMode));
   rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 btnViewSpin.addEventListener("click", () => {
@@ -1607,15 +1827,18 @@ for (const el of [
       sliderSparHoleDepth.value = inputSparHoleDepth.value;
     }
     rebuild3D(workingDesign);
+    scheduleAutoSave();
   });
   el.addEventListener("change", () => {
     rebuild3D(workingDesign);
+    scheduleAutoSave();
   });
 }
 
 sliderSparHoleDepth.addEventListener("input", () => {
   inputSparHoleDepth.value = String(sliderSparHoleDepth.valueAsNumber);
   rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 for (const [btn, clearance, tubeTol] of [
@@ -1627,6 +1850,7 @@ for (const [btn, clearance, tubeTol] of [
     inputAlignClearance.value = clearance.toFixed(2);
     inputSparHoleTolerance.value = tubeTol.toFixed(2);
     rebuild3D(workingDesign);
+    scheduleAutoSave();
   });
 }
 
@@ -1652,6 +1876,7 @@ for (const [btnId, shapeVal, sizeMm, lenMm] of [
       inputAlignKeyLength.value = lenMm.toFixed(1);
     }
     rebuild3D(workingDesign);
+    scheduleAutoSave();
   });
 }
 
@@ -1665,6 +1890,7 @@ for (const [btn, dia] of [
     inputSparHoleEnabled.checked = true;
     inputSparHoleDiameter.value = dia.toFixed(1);
     rebuild3D(workingDesign);
+    scheduleAutoSave();
   });
 }
 
@@ -1676,6 +1902,7 @@ btnSparFullSpan.addEventListener("click", () => {
   sliderSparHoleDepth.max = String(Math.round(bladeLen));
   sliderSparHoleDepth.value = String(fullDepth);
   rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 btnExportSplitAll.addEventListener("click", () => {
@@ -1702,14 +1929,181 @@ btnExportStep.addEventListener("click", () => {
   void handleExport("step");
 });
 
-btnExportJson.addEventListener("click", () => {
-  const filename = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}.json`;
+function exportWorkbenchSnapshotJson() {
+  const snapshot = buildCurrentWorkbenchSnapshot();
+  const slug = snapshot.name
+    ? snapshot.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+    : `R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}`;
+  const filename = `bladelab-${slug || "project"}.json`;
   triggerBlobDownload(
-    JSON.stringify(workingDesign, null, 2),
+    JSON.stringify(snapshot, null, 2),
     filename,
     "application/json",
   );
   exportStatus.textContent = `Saved ${filename}`;
+  flushAutoSaveNow("Saved");
+}
+
+btnExportJson.addEventListener("click", exportWorkbenchSnapshotJson);
+btnDrawerSaveJson.addEventListener("click", exportWorkbenchSnapshotJson);
+
+function triggerLoadJsonPicker() {
+  inputLoadJsonFile.value = "";
+  inputLoadJsonFile.click();
+}
+
+btnLoadJson.addEventListener("click", triggerLoadJsonPicker);
+btnDrawerLoadJson.addEventListener("click", triggerLoadJsonPicker);
+
+inputLoadJsonFile.addEventListener("change", async () => {
+  const file = inputLoadJsonFile.files?.[0];
+  if (!file) return;
+  try {
+    const rawText = await file.text();
+    const snapshot = parseLoadedProjectJson(rawText);
+    if (!snapshot.name) {
+      snapshot.name = file.name.replace(/\.json$/i, "");
+    }
+    applyWorkbenchSnapshot(snapshot, { commitToHistory: true, badgePrefix: "Loaded" });
+    exportStatus.textContent = `Loaded ${file.name}`;
+    errorBanner.style.display = "none";
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    exportStatus.textContent = "Load failed";
+    errorBanner.textContent = `Could not load ${file.name}: ${msg}`;
+    errorBanner.style.display = "block";
+  }
+});
+
+// ---- Saved Projects & Named Local Slots Manager ----
+let savedSlots: SavedSlotEntry[] = [];
+
+function loadSavedSlotsFromStorage(): SavedSlotEntry[] {
+  try {
+    const raw = localStorage.getItem(SAVED_SLOTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is SavedSlotEntry =>
+        Boolean(item && typeof item === "object" && "id" in item && "snapshot" in item),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedSlotsToStorage(slots: readonly SavedSlotEntry[]) {
+  try {
+    localStorage.setItem(SAVED_SLOTS_STORAGE_KEY, JSON.stringify(slots));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function renderSavedSlotsList() {
+  savedSlotsCount.textContent = String(savedSlots.length);
+  savedSlotsList.innerHTML = "";
+  if (savedSlots.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "slot-empty";
+    empty.textContent = "No named slots saved yet";
+    savedSlotsList.appendChild(empty);
+    return;
+  }
+
+  for (const entry of savedSlots) {
+    const row = document.createElement("div");
+    row.className = "slot-row";
+    row.setAttribute("role", "listitem");
+
+    const info = document.createElement("div");
+    info.className = "slot-info";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "slot-name";
+    nameEl.textContent = entry.name;
+
+    const subEl = document.createElement("span");
+    subEl.className = "slot-sub";
+    const d = entry.snapshot.design.rotor;
+    const fab = entry.snapshot.fabrication;
+    const splitTag =
+      fab && fab.split_parts > 1 ? `${fab.split_parts}-part (${fab.align_shape})` : "1-part";
+    subEl.textContent = `R${d.radius_mm} B${d.blade_count} · ${splitTag} · ${formatShortTime(entry.saved_at)}`;
+
+    info.append(nameEl, subEl);
+
+    const actions = document.createElement("div");
+    actions.className = "slot-actions";
+
+    const loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.className = "btn-mini";
+    loadBtn.textContent = "Load";
+    loadBtn.title = `Load "${entry.name}" into workbench`;
+    loadBtn.addEventListener("click", () => {
+      try {
+        const validated = parseLoadedProjectJson(JSON.stringify(entry.snapshot));
+        validated.name = entry.name;
+        applyWorkbenchSnapshot(validated, { commitToHistory: true, badgePrefix: "Loaded" });
+        exportStatus.textContent = `Loaded slot "${entry.name}"`;
+      } catch (err) {
+        exportStatus.textContent = `Slot error: ${String(err)}`;
+      }
+    });
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn-mini";
+    delBtn.textContent = "×";
+    delBtn.title = `Delete saved slot "${entry.name}"`;
+    delBtn.setAttribute("aria-label", `Delete saved slot ${entry.name}`);
+    delBtn.addEventListener("click", () => {
+      savedSlots = removeSavedSlot(savedSlots, entry.id);
+      persistSavedSlotsToStorage(savedSlots);
+      renderSavedSlotsList();
+    });
+
+    actions.append(loadBtn, delBtn);
+    row.append(info, actions);
+    savedSlotsList.appendChild(row);
+  }
+}
+
+btnToggleProjects.addEventListener("click", () => {
+  const isOpen = projectsDrawer.classList.toggle("open");
+  btnToggleProjects.classList.toggle("active", isOpen);
+  btnToggleProjects.setAttribute("aria-expanded", String(isOpen));
+});
+
+btnSaveSlot.addEventListener("click", () => {
+  const rawName = slotNameInput.value.trim();
+  const snap = buildCurrentWorkbenchSnapshot(rawName);
+  const slotName =
+    rawName ||
+    `Rotor R${workingDesign.rotor.radius_mm} B${workingDesign.rotor.blade_count}`;
+  savedSlots = upsertSavedSlot(savedSlots, snap, slotName);
+  slotNameInput.value = slotName;
+  persistSavedSlotsToStorage(savedSlots);
+  renderSavedSlotsList();
+  flushAutoSaveNow("Saved");
+  exportStatus.textContent = `Saved slot "${slotName}"`;
+
+  // Also sync to Team Cloud Workspace if blade-server is reachable
+  if (inputCloudDesignName) {
+    inputCloudDesignName.value = slotName;
+  }
+});
+
+slotNameInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    btnSaveSlot.click();
+  }
 });
 
 // ---- Layer 1 Rotor Listeners ----
@@ -1760,17 +2154,20 @@ inputPitchAxis.addEventListener("change", () => {
 sliderChordOffsetX.addEventListener("input", () => {
   chordOffsetXVal.textContent = `${sliderChordOffsetX.valueAsNumber} mm`;
   applyMeshChordOffset();
+  scheduleAutoSave();
 });
 
 sliderChordOffsetY.addEventListener("input", () => {
   chordOffsetYVal.textContent = `${sliderChordOffsetY.valueAsNumber} mm`;
   applyMeshChordOffset();
+  scheduleAutoSave();
 });
 
 sliderGlobalLight.addEventListener("input", () => {
   const val = sliderGlobalLight.valueAsNumber || 1.35;
   globalLightVal.textContent = `${val.toFixed(2)}×`;
   setGlobalIlluminationScale(val);
+  scheduleAutoSave();
 });
 
 btnChordMinus.addEventListener("click", () => {
@@ -2114,11 +2511,15 @@ btnClearA.addEventListener("click", () => {
 });
 
 [inputGenKv, inputGenRInt, inputGenRLoad].forEach((el) => {
-  el.addEventListener("change", () => updateAeroPanel(workingDesign));
+  el.addEventListener("change", () => {
+    updateAeroPanel(workingDesign);
+    scheduleAutoSave();
+  });
 });
 
 inputExpData.addEventListener("input", () => {
   updateAeroPanel(workingDesign);
+  scheduleAutoSave();
 });
 
 // ---- Phase 4 Team & Cloud Workspace Listeners ----
@@ -2235,6 +2636,7 @@ function performUndo() {
     workingDesign = prev;
     syncControlsFromDesign(workingDesign);
     rebuild3D(workingDesign);
+    scheduleAutoSave("Auto-saved");
   }
 }
 
@@ -2244,13 +2646,21 @@ function performRedo() {
     workingDesign = next;
     syncControlsFromDesign(workingDesign);
     rebuild3D(workingDesign);
+    scheduleAutoSave("Auto-saved");
   }
 }
 
 btnUndo.addEventListener("click", performUndo);
 btnRedo.addEventListener("click", performRedo);
 btnReset.addEventListener("click", () => {
-  commitDesign(initialDesign);
+  slotNameInput.value = "";
+  const factorySnapshot = createWorkbenchSnapshot(
+    initialDesign,
+    defaultFabricationSnapshot(),
+    defaultWorkbenchUiSnapshot(),
+  );
+  applyWorkbenchSnapshot(factorySnapshot, { commitToHistory: true, badgePrefix: "Reset" });
+  exportStatus.textContent = "Reset to factory default";
 });
 
 // ---- Responsive Workspace Switcher, Dock Toggles & Section Navigation ----
@@ -2459,5 +2869,33 @@ addEventListener("resize", () => {
   syncDockAccessibilityState();
 });
 
-syncControlsFromDesign(workingDesign);
-rebuild3D(workingDesign);
+addEventListener("beforeunload", () => {
+  flushAutoSaveNow("Auto-saved");
+});
+
+// ---- Startup Restore (Auto-Save & Saved Slots) ----
+savedSlots = loadSavedSlotsFromStorage();
+renderSavedSlotsList();
+
+let restoredOnStartup = false;
+try {
+  const rawAutoSave = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
+  if (rawAutoSave) {
+    const restoredSnapshot = parseLoadedProjectJson(rawAutoSave);
+    const isDifferentFromInitial =
+      JSON.stringify(restoredSnapshot.design) !== JSON.stringify(initialDesign);
+    applyWorkbenchSnapshot(restoredSnapshot, {
+      commitToHistory: isDifferentFromInitial,
+      badgePrefix: "Restored",
+    });
+    restoredOnStartup = true;
+  }
+} catch {
+  // Ignore corrupted storage and start from initialDesign
+}
+
+if (!restoredOnStartup) {
+  syncControlsFromDesign(workingDesign);
+  rebuild3D(workingDesign);
+  flushAutoSaveNow("Auto-saved");
+}

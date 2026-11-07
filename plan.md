@@ -3,7 +3,7 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 78**
+> **MEMORY_VERSION: 79**
 > **LAST_UPDATED: 2026-11-07 13:33 (UTC+7) by geom-1**
 
 ---
@@ -468,6 +468,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added `AlignmentShape::AirfoilLip` (`align_shape: "contour"`, UI preset `Contour Lip` / `Airfoil Contour Lip (Stepped Sleeve)`): (1) computes an inward-offset airfoil-shaped stepped lip / spigot (`pin_rings`, offset inward by `min_wall_mm + clearance_mm`) on the lower segment and a matching airfoil-contoured recessed pocket (`socket_rings`, offset inward by `min_wall_mm`) on the upper segment across non-crossing paired upper/lower chord stations `[d_le..=d_te]`, terminating with a clean flat step before the thin trailing edge and rounding smoothly around the leading-edge nose; (2) when a carbon-fiber spar tube bore (`seg_hole`) crosses the split plane, `append_segment_mesh` extends the bore through the male lip tip cap (`z1 + pin_height`) and starts the upper bore at the female socket ceiling (`z0 + socket_depth`) via `encloses_tube: true`, preserving 100% 2-manifold watertightness (`boundary_edges == 0`, `non_manifold_edges == 0`); and (3) tightened `triangulate_cap` Pass 2 in `crates/blade-mesh/src/tessellate.rs` so only near-collinear (`|cross| <= epsilon`) triples bypass `ear_is_valid`.
   refs: crates/blade-mesh/src/fabrication.rs, crates/blade-mesh/src/tessellate.rs, crates/blade-wasm/src/mesh.rs, web/index.html, web/src/main.ts | supersedes: F-geom1-047
 
+- **F-geom1-049** | 2026-11-07 14:28 | geom-1 | T-105
+  Added full Workbench Snapshot auto-save, startup restore, JSON file load/export, named local save slots, and factory reset across web/src/state.ts, web/index.html, and web/src/main.ts: (1) WorkbenchSnapshot captures design (Design), abrication (FabricationSnapshot: CF tube bore, split parts/ratios, interlocking joint shape/dimensions/tolerances), and workbench (WorkbenchUiSnapshot: cosine planform sliders, locked span stations, taper binding, 3D offsets/lighting, view/wireframe modes, generator specs, experimental data); (2) parseLoadedProjectJson accepts both full WorkbenchSnapshot JSON and plain Design JSON files (auto-inferring cosine planform parameters from formula expressions); (3) debounced localStorage auto-save (ladelab.autosave.v1) + eforeunload flush with live #autosave-badge in #top-dock and automatic startup restore; (4) Load JSON button (#btn-load-json) + collapsible Projects drawer (#projects-drawer) with named local slots (ladelab.slots.v1, upsertSavedSlot / emoveSavedSlot); and (5) Reset restores factory defaults across both Design and fabrication/UI settings while preserving Undo history.
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: –
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -863,3 +867,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-07T13:23:00+07:00 agent=geom-1 mem=v77 last_entry=F-geom1-047 task=T-105 note="lead requested airfoil-contour offset interlocking lip/socket joint around the blade shape; implementing AlignmentShape::AirfoilLip in blade-mesh, blade-wasm, and web UI"
 [END] 2026-11-07T13:33+07:00 agent=geom-1 mem=v78 note="implemented AlignmentShape::AirfoilLip full-contour offset stepped lip and socket in blade-mesh, blade-wasm, and web UI; all Rust & Node tests + vite build pass; F-geom1-048 recorded"
 [RE-ACK] 2026-11-07T14:18:00+07:00 agent=geom-1 mem=v78 last_entry=F-geom1-048 task=T-105 note="lead requested auto-save and load function via /grill-me; aligned on full Workbench Snapshot auto-save/restore in localStorage + Load/Export JSON (supporting both WorkbenchSnapshot and plain Design JSON) + Named local save slots UI + factory Reset"
+[END] 2026-11-07T14:28:30+07:00 agent=geom-1 mem=v79 note="added full WorkbenchSnapshot auto-save/restore in localStorage, Load/Export JSON (supporting both WorkbenchSnapshot and plain Design JSON), named local save slots drawer (#projects-drawer), and factory Reset in web/src/state.ts, web/index.html, and web/src/main.ts; 12/12 Node tests + tsc + vite build pass; F-geom1-049 recorded"

@@ -1445,3 +1445,281 @@ export function renderAirfoilSectionSvgMarkup(
 
   return elements.join("\n");
 }
+
+// ---- Full Workbench Snapshot & Auto-Save / Load Helpers ----
+
+export const AUTOSAVE_STORAGE_KEY = "bladelab.autosave.v1";
+export const SAVED_SLOTS_STORAGE_KEY = "bladelab.slots.v1";
+
+export interface FabricationSnapshot {
+  spar_hole_enabled: boolean;
+  spar_show_rod: boolean;
+  spar_hole_diameter_mm: number;
+  spar_hole_depth_mm: number;
+  spar_hole_offset_x_mm: number;
+  spar_hole_offset_y_mm: number;
+  spar_hole_tolerance_mm: number;
+  split_parts: number;
+  split_active_part: string;
+  split_ratio_pct: number;
+  split_explode_gap_mm: number;
+  align_shape: string;
+  align_count: number;
+  align_size_mm: number;
+  align_key_length_mm: number;
+  align_height_mm: number;
+  align_spacing_mm: number;
+  align_clearance_mm: number;
+  align_depth_clearance_mm: number;
+  align_min_wall_mm: number;
+}
+
+export interface WorkbenchUiSnapshot {
+  planform_cosine: boolean;
+  planform_center_pct: number;
+  planform_width_pct: number;
+  locked_span_ratios: number[];
+  bind_taper: boolean;
+  taper_ratio: number;
+  chord_offset_x_mm: number;
+  chord_offset_y_mm: number;
+  global_light_intensity: number;
+  view_mode: "single" | "rotor";
+  wireframe_mode: boolean;
+  gen_kv: number;
+  gen_r_int: number;
+  gen_r_load: number;
+  exp_data_log: string;
+}
+
+export interface WorkbenchSnapshot {
+  bladelab_snapshot_version: 1;
+  saved_at: string;
+  name?: string;
+  design: Design;
+  fabrication: FabricationSnapshot;
+  workbench: WorkbenchUiSnapshot;
+}
+
+export interface SavedSlotEntry {
+  id: string;
+  name: string;
+  saved_at: string;
+  snapshot: WorkbenchSnapshot;
+}
+
+/**
+ * Returns factory default fabrication settings matching `web/index.html`.
+ */
+export function defaultFabricationSnapshot(): FabricationSnapshot {
+  return {
+    spar_hole_enabled: false,
+    spar_show_rod: true,
+    spar_hole_diameter_mm: 5.0,
+    spar_hole_depth_mm: 240,
+    spar_hole_offset_x_mm: 0.0,
+    spar_hole_offset_y_mm: 0.0,
+    spar_hole_tolerance_mm: 0.2,
+    split_parts: 1,
+    split_active_part: "all",
+    split_ratio_pct: 50,
+    split_explode_gap_mm: 0,
+    align_shape: "round",
+    align_count: 2,
+    align_size_mm: 3.0,
+    align_key_length_mm: 6.0,
+    align_height_mm: 6.0,
+    align_spacing_mm: 0,
+    align_clearance_mm: 0.2,
+    align_depth_clearance_mm: 0.5,
+    align_min_wall_mm: 0.8,
+  };
+}
+
+/**
+ * Returns factory default workbench UI settings matching `web/index.html`.
+ */
+export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
+  return {
+    planform_cosine: false,
+    planform_center_pct: 45,
+    planform_width_pct: 25,
+    locked_span_ratios: [],
+    bind_taper: false,
+    taper_ratio: 0.457,
+    chord_offset_x_mm: 0,
+    chord_offset_y_mm: 0,
+    global_light_intensity: 1.35,
+    view_mode: "rotor",
+    wireframe_mode: false,
+    gen_kv: 35,
+    gen_r_int: 0.8,
+    gen_r_load: 12.0,
+    exp_data_log: "",
+  };
+}
+
+/**
+ * Builds a complete `WorkbenchSnapshot` from a `Design` and optional partial
+ * fabrication / workbench UI overrides.
+ */
+export function createWorkbenchSnapshot(
+  design: Design,
+  fabrication: Partial<FabricationSnapshot> = {},
+  workbench: Partial<WorkbenchUiSnapshot> = {},
+  name?: string,
+  savedAt?: string,
+): WorkbenchSnapshot {
+  const clonedDesign = cloneDesign(design);
+  const fab: FabricationSnapshot = {
+    ...defaultFabricationSnapshot(),
+    ...fabrication,
+  };
+  const wb: WorkbenchUiSnapshot = {
+    ...defaultWorkbenchUiSnapshot(),
+    ...workbench,
+    locked_span_ratios: Array.isArray(workbench.locked_span_ratios)
+      ? [...workbench.locked_span_ratios]
+      : [],
+  };
+
+  // Auto-infer planform cosine parameters when chord_mm uses a cosine plateau formula
+  if (
+    workbench.planform_cosine === undefined &&
+    clonedDesign.distributions.chord_mm.type === "formula"
+  ) {
+    const parsed = parseCosinePlateauExpr(clonedDesign.distributions.chord_mm.expr);
+    if (parsed) {
+      wb.planform_cosine = true;
+      wb.planform_center_pct = Math.round(parsed.center * 100);
+      wb.planform_width_pct = Math.round(parsed.width * 100);
+    }
+  }
+
+  const snapshot: WorkbenchSnapshot = {
+    bladelab_snapshot_version: 1,
+    saved_at: savedAt ?? new Date().toISOString(),
+    design: clonedDesign,
+    fabrication: fab,
+    workbench: wb,
+  };
+  if (name && name.trim().length > 0) {
+    snapshot.name = name.trim();
+  }
+  return snapshot;
+}
+
+function isValidDesignObject(obj: unknown): obj is Design {
+  if (!obj || typeof obj !== "object") return false;
+  const rec = obj as Record<string, unknown>;
+  const rotor = rec.rotor as Record<string, unknown> | undefined;
+  const dist = rec.distributions as Record<string, unknown> | undefined;
+  const airfoils = rec.airfoils;
+  if (!rotor || typeof rotor !== "object") return false;
+  if (typeof rotor.radius_mm !== "number" || !Number.isFinite(rotor.radius_mm)) return false;
+  if (typeof rotor.hub_radius_mm !== "number" || !Number.isFinite(rotor.hub_radius_mm)) return false;
+  if (typeof rotor.blade_count !== "number" || !Number.isFinite(rotor.blade_count)) return false;
+  if (!dist || typeof dist !== "object" || !dist.chord_mm || !dist.twist_deg) return false;
+  if (!Array.isArray(airfoils) || airfoils.length === 0) return false;
+  return true;
+}
+
+/**
+ * Parses either a full `WorkbenchSnapshot` JSON or a plain `Design` JSON string
+ * (such as `naca4412-linear.json` or legacy exports) into a validated `WorkbenchSnapshot`.
+ */
+export function parseLoadedProjectJson(rawJson: string): WorkbenchSnapshot {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (err) {
+    throw new Error(`Invalid JSON syntax: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Project JSON must be an object.");
+  }
+
+  const record = parsed as Record<string, unknown>;
+
+  // Case 1: Full WorkbenchSnapshot (or Cloud Design wrapper `{ design: Design, name?: string }`)
+  if ("design" in record && isValidDesignObject(record.design)) {
+    const fabRaw =
+      record.fabrication && typeof record.fabrication === "object"
+        ? (record.fabrication as Partial<FabricationSnapshot>)
+        : {};
+    const wbRaw =
+      record.workbench && typeof record.workbench === "object"
+        ? (record.workbench as Partial<WorkbenchUiSnapshot>)
+        : {};
+    const name = typeof record.name === "string" ? record.name : undefined;
+    const savedAt = typeof record.saved_at === "string" ? record.saved_at : undefined;
+    return createWorkbenchSnapshot(record.design, fabRaw, wbRaw, name, savedAt);
+  }
+
+  // Case 2: Plain BladeLab `Design` JSON
+  if (isValidDesignObject(record)) {
+    return createWorkbenchSnapshot(record);
+  }
+
+  throw new Error(
+    "Unrecognized JSON schema: expected a BladeLab WorkbenchSnapshot or Design object with rotor, distributions, and airfoils.",
+  );
+}
+
+/**
+ * Inserts or updates a named saved slot in the slots array (most recent first),
+ * bounded to `maxSlots` entries.
+ */
+export function upsertSavedSlot(
+  slots: readonly SavedSlotEntry[],
+  snapshot: WorkbenchSnapshot,
+  name: string,
+  id?: string,
+  maxSlots = 25,
+): SavedSlotEntry[] {
+  const cleanName =
+    name.trim() ||
+    snapshot.name ||
+    `Rotor R${snapshot.design.rotor.radius_mm} B${snapshot.design.rotor.blade_count}`;
+  const nowIso = new Date().toISOString();
+  const existingIdx = id
+    ? slots.findIndex((s) => s.id === id)
+    : slots.findIndex((s) => s.name.toLowerCase() === cleanName.toLowerCase());
+
+  const slotId =
+    existingIdx >= 0
+      ? slots[existingIdx]!.id
+      : id || `slot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  const snapWithMeta: WorkbenchSnapshot = {
+    ...createWorkbenchSnapshot(
+      snapshot.design,
+      snapshot.fabrication,
+      snapshot.workbench,
+      cleanName,
+      nowIso,
+    ),
+  };
+
+  const entry: SavedSlotEntry = {
+    id: slotId,
+    name: cleanName,
+    saved_at: nowIso,
+    snapshot: snapWithMeta,
+  };
+
+  const remaining = slots.filter((_, idx) => idx !== existingIdx);
+  return [entry, ...remaining].slice(0, Math.max(1, maxSlots));
+}
+
+/**
+ * Removes a saved slot by `id`.
+ */
+export function removeSavedSlot(
+  slots: readonly SavedSlotEntry[],
+  id: string,
+): SavedSlotEntry[] {
+  return slots.filter((s) => s.id !== id);
+}
+

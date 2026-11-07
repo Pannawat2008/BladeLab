@@ -1113,6 +1113,123 @@
         font-variant-numeric: tabular-nums;
       }
 
+      /* Live Auto-Save Status Pill & Saved Projects Drawer */
+      .autosave-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: var(--radius-control);
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .autosave-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--status-ok);
+        flex-shrink: 0;
+      }
+      .autosave-badge.saving::before {
+        background: var(--datum);
+      }
+
+      #projects-drawer {
+        display: none;
+        padding: 12px;
+        background: var(--bg-deep);
+        border-bottom: 1px solid var(--border-strong);
+      }
+      #projects-drawer.open {
+        display: block;
+      }
+      .projects-drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .projects-drawer-title {
+        font: 500 12px/16px var(--font-sans);
+        color: var(--text-primary);
+      }
+      .projects-drawer-meta {
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-muted);
+      }
+      .slot-save-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .slot-save-row input[type="text"] {
+        flex: 1;
+        height: 32px;
+        padding: 0 10px;
+        border-radius: var(--radius-control);
+        border: 1px solid var(--border-hairline);
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font: 400 12px/16px var(--font-sans);
+      }
+      .saved-slots-list {
+        max-height: 156px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .slot-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: var(--radius-control);
+        background: var(--bg-card);
+        border: 1px solid var(--border-hairline);
+      }
+      .slot-info {
+        min-width: 0;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .slot-name {
+        font: 500 12px/16px var(--font-sans);
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .slot-sub {
+        font: 400 11px/14px var(--font-mono);
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .slot-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .slot-empty {
+        padding: 8px;
+        text-align: center;
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-muted);
+        border: 1px dashed var(--border-hairline);
+        border-radius: var(--radius-control);
+      }
+
       #error-banner {
         display: none;
         margin: 0 12px 8px;
@@ -1365,6 +1482,8 @@
       </div>
 
       <div class="toolbar" id="export-bar">
+        <span id="autosave-badge" class="autosave-badge" role="status" aria-live="polite" title="Automatic browser session persistence">Auto-saved</span>
+        <span class="toolbar-divider"></span>
         <span class="toolbar-label">Export</span>
         <select id="export-part" class="compact-select" aria-label="Select part to export" title="Select part to export">
           <option value="blade">Blade Only</option>
@@ -1374,7 +1493,9 @@
         <button id="btn-export-stl" class="btn-primary" type="button" title="Download watertight binary STL">Export STL</button>
         <button id="btn-export-3mf" type="button" title="Download 3MF package (mm units)">Export 3MF</button>
         <button id="btn-export-step" type="button" title="Download ISO-10303-21 B-rep STEP solid">Export STEP</button>
-        <button id="btn-export-json" type="button" title="Download Design JSON">Export JSON</button>
+        <button id="btn-export-json" type="button" title="Download full Workbench Snapshot JSON (Design + Fabrication + Settings)">Export JSON</button>
+        <button id="btn-load-json" type="button" title="Load a Workbench Snapshot or Blade Design JSON file">Load JSON</button>
+        <input id="input-load-json-file" type="file" accept=".json,application/json" hidden />
         <span id="export-status" role="status" aria-live="polite">Ready</span>
       </div>
     </header>
@@ -1388,9 +1509,35 @@
           <span class="brand-sub">Rotor CAD &amp; Fab</span>
         </div>
         <div class="toolbar">
+          <button id="btn-toggle-projects" class="btn-mini" type="button" aria-expanded="false" aria-controls="projects-drawer" title="Saved Projects &amp; Local Slots">
+            <span>Projects</span>
+            <span id="saved-slots-count" class="layer-tag">0</span>
+          </button>
           <button id="btn-undo" class="btn-mini" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
           <button id="btn-redo" class="btn-mini" type="button" title="Redo (Ctrl+Y)" disabled>Redo</button>
-          <button id="btn-reset" class="btn-mini" type="button" title="Reset to initial fixture">Reset</button>
+          <button id="btn-reset" class="btn-mini" type="button" title="Reset design and fabrication settings to factory defaults">Reset</button>
+        </div>
+      </div>
+
+      <!-- Collapsible Saved Projects & Slots Manager -->
+      <div id="projects-drawer" role="region" aria-label="Saved Projects and Slots">
+        <div class="projects-drawer-head">
+          <span class="projects-drawer-title">Saved Projects &amp; Slots</span>
+          <span id="autosave-detail" class="projects-drawer-meta">Session auto-save active</span>
+        </div>
+        <div class="slot-save-row">
+          <input id="slot-name-input" type="text" placeholder="Project slot name (e.g. S833 600mm Contour)" aria-label="Project slot name" />
+          <button id="btn-save-slot" class="btn-primary btn-mini" type="button" title="Save current workbench snapshot into a named browser slot">Save Slot</button>
+        </div>
+        <div class="toolbar" style="margin-bottom: 8px; justify-content: space-between;">
+          <div class="toolbar">
+            <button id="btn-drawer-load-json" class="btn-mini" type="button" title="Import a .json project or design file from disk">Load JSON File</button>
+            <button id="btn-drawer-save-json" class="btn-mini" type="button" title="Download full project snapshot .json to disk">Save JSON File</button>
+          </div>
+          <span class="projects-drawer-meta">Accepts Snapshot or Design JSON</span>
+        </div>
+        <div id="saved-slots-list" class="saved-slots-list" role="list">
+          <div class="slot-empty">No named slots saved yet</div>
         </div>
       </div>
 

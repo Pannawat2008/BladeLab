@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -22,12 +22,15 @@ import {
   clearAllOverrides,
   clearStationOverride,
   compareABSimulation,
+  createWorkbenchSnapshot,
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
   evaluateExperimentalFit,
   interpolateSweepCp,
   parseExperimentalDataLog,
+  parseLoadedProjectJson,
+  removeSavedSlot,
   renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
   resolveStationsPreview,
@@ -39,6 +42,7 @@ import {
   updatePitchAxisRatio,
   updatePrimaryAirfoil,
   updateRotorField,
+  upsertSavedSlot,
 } from "../src/state.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -541,3 +545,82 @@ test("three-section planform: explicit mid chord/twist, parse round-trip and air
   assert.equal(next.airfoils[2].airfoil.name, "SG6043");
   assert.ok(next.airfoils[1].span_ratio > 0.1 && next.airfoils[1].span_ratio < 1);
 });
+
+test("workbench snapshot auto-save/load: full snapshot round-trip, plain Design JSON load, and named slots", () => {
+  const customDesign = updateRotorField(initialDesign, "radius_mm", 750);
+  const snap = createWorkbenchSnapshot(
+    customDesign,
+    {
+      spar_hole_enabled: true,
+      spar_hole_diameter_mm: 6.0,
+      split_parts: 2,
+      align_shape: "contour",
+      align_height_mm: 8.0,
+      align_min_wall_mm: 1.2,
+    },
+    {
+      planform_cosine: true,
+      planform_center_pct: 48,
+      planform_width_pct: 30,
+      locked_span_ratios: [0.0, 1.0],
+      gen_kv: 42,
+      exp_data_log: "4.5, 0.41",
+    },
+    "S833 750mm Contour",
+  );
+
+  assert.equal(snap.bladelab_snapshot_version, 1);
+  assert.equal(snap.name, "S833 750mm Contour");
+  assert.equal(snap.design.rotor.radius_mm, 750);
+  assert.equal(snap.fabrication.spar_hole_enabled, true);
+  assert.equal(snap.fabrication.align_shape, "contour");
+  assert.equal(snap.workbench.planform_center_pct, 48);
+  assert.deepEqual(snap.workbench.locked_span_ratios, [0.0, 1.0]);
+
+  // 1. Round-trip full WorkbenchSnapshot JSON
+  const loadedSnap = parseLoadedProjectJson(JSON.stringify(snap));
+  assert.equal(loadedSnap.name, "S833 750mm Contour");
+  assert.equal(loadedSnap.design.rotor.radius_mm, 750);
+  assert.equal(loadedSnap.fabrication.split_parts, 2);
+  assert.equal(loadedSnap.fabrication.align_shape, "contour");
+  assert.equal(loadedSnap.workbench.gen_kv, 42);
+  assert.equal(loadedSnap.workbench.exp_data_log, "4.5, 0.41");
+
+  // 2. Load plain Design JSON (like naca4412-linear.json or legacy export)
+  const plainDesign = structuredClone(initialDesign);
+  plainDesign.distributions.chord_mm = {
+    type: "formula",
+    expr: buildCosinePlateauExpr(65, 25, 0.42, 0.28, 80),
+  };
+  const loadedFromPlain = parseLoadedProjectJson(JSON.stringify(plainDesign));
+  assert.equal(loadedFromPlain.bladelab_snapshot_version, 1);
+  assert.equal(loadedFromPlain.design.rotor.radius_mm, initialDesign.rotor.radius_mm);
+  assert.equal(loadedFromPlain.fabrication.split_parts, 1);
+  assert.equal(loadedFromPlain.workbench.planform_cosine, true);
+  assert.equal(loadedFromPlain.workbench.planform_center_pct, 42);
+  assert.equal(loadedFromPlain.workbench.planform_width_pct, 28);
+
+  // 3. Reject invalid JSON
+  assert.throws(() => parseLoadedProjectJson("{not valid json"), /Invalid JSON syntax/);
+  assert.throws(() => parseLoadedProjectJson(JSON.stringify({ hello: "world" })), /Unrecognized JSON schema/);
+
+  // 4. Named slot upsert, update-by-name, and removal
+  let slots = [];
+  slots = upsertSavedSlot(slots, snap, "Slot Alpha");
+  assert.equal(slots.length, 1);
+  assert.equal(slots[0].name, "Slot Alpha");
+
+  slots = upsertSavedSlot(slots, loadedFromPlain, "Slot Beta");
+  assert.equal(slots.length, 2);
+  assert.equal(slots[0].name, "Slot Beta");
+
+  // Updating "Slot Alpha" by case-insensitive name moves it to top without duplicating
+  slots = upsertSavedSlot(slots, snap, "slot alpha");
+  assert.equal(slots.length, 2);
+  assert.equal(slots[0].name, "slot alpha");
+
+  slots = removeSavedSlot(slots, slots[0].id);
+  assert.equal(slots.length, 1);
+  assert.equal(slots[0].name, "Slot Beta");
+});
+
