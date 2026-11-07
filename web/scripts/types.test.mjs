@@ -742,8 +742,14 @@ test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimiz
   const require = createRequire(import.meta.url);
   const { build_mesh, simulate_aero } = require("../../target/glue-node/blade_wasm.js");
 
-  // 1. Verify all 4 blade presets build valid 3D meshes and have tailored parameters
-  for (const presetKey of ["low_wind", "med_kidwind", "high_wind", "schmitz_600"]) {
+  // 1. Verify all 5 blade presets build valid 3D meshes and have tailored parameters
+  for (const presetKey of [
+    "low_wind",
+    "med_kidwind",
+    "scimitar_belly",
+    "high_wind",
+    "schmitz_600",
+  ]) {
     const { design, spec } = applyBladeWindPreset(initialDesign, presetKey);
     assert.equal(design.rotor.wind_speed_mps, spec.rotor.wind_speed_mps);
     assert.equal(design.rotor.design_tsr, spec.rotor.design_tsr);
@@ -754,6 +760,10 @@ test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimiz
 
   assert.equal(BLADE_WIND_PRESETS.low_wind.rotor.wind_speed_mps, 3.5);
   assert.equal(BLADE_WIND_PRESETS.med_kidwind.rotor.wind_speed_mps, 4.5);
+  assert.equal(BLADE_WIND_PRESETS.scimitar_belly.sections.root.chord_mm, 45);
+  assert.equal(BLADE_WIND_PRESETS.scimitar_belly.sections.mid.chord_mm, 76);
+  assert.equal(BLADE_WIND_PRESETS.scimitar_belly.sections.tip.chord_mm, 22);
+  assert.equal(BLADE_WIND_PRESETS.scimitar_belly.recommended_spar_mm, 5.0);
   assert.equal(BLADE_WIND_PRESETS.high_wind.rotor.wind_speed_mps, 8.0);
 
   // 2. Verify WASM simulate_aero couples generator_gear_ratio properly

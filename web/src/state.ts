@@ -1578,7 +1578,12 @@ export interface FabricationSnapshot {
 export type StructuralMaterialKey = "pla" | "petg" | "asa" | "pacf";
 export type HeatmapMode = "segment" | "alpha" | "cl_cd" | "torque" | "wall_stress";
 export type PrinterPresetKey = "bambu_256" | "prusa_mk4" | "ender3" | "voron_350" | "custom";
-export type BladeWindPresetKey = "low_wind" | "med_kidwind" | "high_wind" | "schmitz_600";
+export type BladeWindPresetKey =
+  | "low_wind"
+  | "med_kidwind"
+  | "scimitar_belly"
+  | "high_wind"
+  | "schmitz_600";
 export type GeneratorPresetKey =
   | "kidwind_red"
   | "kidwind_gen2"
@@ -2878,6 +2883,7 @@ export interface BladeWindPresetSpec {
     r_load_ohm: number;
     site_avg_wind_mps: number;
   };
+  recommended_spar_mm?: number;
 }
 
 export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec> = {
@@ -2968,6 +2974,51 @@ export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec>
       r_load_ohm: 10.0,
       site_avg_wind_mps: 4.5,
     },
+  },
+  scimitar_belly: {
+    key: "scimitar_belly",
+    name: "Scimitar Elliptical Belly (45→76→22 mm · High Mid-Span Torque · λ 4.5)",
+    badge: "45→76→22 Scimitar",
+    description:
+      "Pinched 45 mm S833 root swelling into a 76 mm SG6043 mid-span power belly and tapering to a low-drag 22 mm tip (22°→11.5°→2.5° twist). Auto-enables 5 mm CF spar tube for high Root Safety Factor.",
+    rotor: {
+      radius_mm: 350,
+      hub_radius_mm: 40,
+      blade_count: 3,
+      design_tsr: 4.5,
+      wind_speed_mps: 4.5,
+      station_count: 13,
+      pitch_axis_ratio: 0.25,
+    },
+    planform: {
+      cosine: true,
+      center_pct: 45,
+      width_pct: 22,
+    },
+    sections: {
+      root: {
+        chord_mm: 45,
+        twist_deg: 22.0,
+        airfoil: { type: "named", name: "S833" },
+      },
+      mid: {
+        chord_mm: 76,
+        twist_deg: 11.5,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+      tip: {
+        chord_mm: 22,
+        twist_deg: 2.5,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+    },
+    recommended_drivetrain: {
+      gen_preset: "kidwind_red",
+      gear_ratio: 3.0,
+      r_load_ohm: 10.0,
+      site_avg_wind_mps: 4.5,
+    },
+    recommended_spar_mm: 5.0,
   },
   high_wind: {
     key: "high_wind",

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 82**
-> **LAST_UPDATED: 2026-11-07 20:03 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 83**
+> **LAST_UPDATED: 2026-11-07 21:02 (UTC+7) by geom-1**
 
 ---
 
@@ -484,6 +484,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added Competition Wind & Blade Presets, Generator Spec Presets, Gear Ratio (G:1) coupling, and the Drivetrain & Load Max-Out Optimizer across crates/blade-wasm/src/lib.rs, web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs: (1) AeroOptionsDto in lade-wasm now accepts generator_gear_ratio and generator_i0 and passes them into GeneratorSpec during simulate_aero; (2) 4 1-click Wind & Competition Blade Presets in #layer1-rotor (low_wind at 3.5 m/s TSR 3.5, med_kidwind at 4.5 m/s TSR 4.2, high_wind at 8.0 m/s TSR 5.5, and schmitz_600 600 mm reference rotor), each configuring multi-section airfoils (S833, SG6043, SD7062, E387, NACA 4412), cosine/linear planform, and recommended drivetrain; (3) Generator Spec Presets (kidwind_red Kv=240 R_int=6.2Ω, kidwind_gen2 Kv=320 R_int=4.8Ω, outrunner_bldc Kv=100 R_int=1.4Ω, low_rpm_pmg Kv=35 R_int=0.8Ω, custom) plus scrubbable Gear Ratio (#gen-gear-ratio) and 1:1..4:1 quick buttons; and (4) optimizeGeneratorAndGearbox (DrivetrainMaxOutReport) diagnosing Over-Loaded Stall vs Under-Loaded Overspeed vs Optimal Band, solving for optimal (G:1, R_load) and best R_load at current gear, rendering a 3-step "How to Max Out" guide (#gen-maxout-guide), and providing 1-click #btn-max-out-drivetrain (Max Out Gear & Load) and #btn-match-load-only (Match Load Only) actions.
   refs: crates/blade-wasm/src/lib.rs, web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: –
 
+- **F-geom1-053** | 2026-11-07 21:02 | geom-1 | T-105
+  Added scimitar_belly (Scimitar Belly (45→76→22)) to BladeWindPresetKey, BLADE_WIND_PRESETS, #btn-preset-scimitar, and pplySelectedBladePreset across web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs: configures a 350 mm radius 3-blade rotor (_hub = 40 mm, λ = 4.5, 4.5 m/s) with a pinched 45 mm S833 root (22° twist), a 76 mm SG6043 mid-span power belly (11.5° twist, cosine center 45%, width 22%), and a low-drag 22 mm SG6043 tip (2.5° twist), while automatically enabling a 5.0 mm carbon-fiber spar tube (ecommended_spar_mm: 5.0) to reinforce the 45 mm root neck.
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: –
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -887,3 +891,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-07T19:41:55+07:00 agent=geom-1 mem=v81 last_entry=F-geom1-051 task=T-105 note="lead requested: (1) Blade Presets for Low-Speed Wind vs High-Speed Wind (KidWind Challenge), (2) Generator Spec Presets & Gear Ratio controls, and (3) Drivetrain & Load Max-Out Optimizer (how to max out electrical power via optimal gear ratio, load resistance, and TSR matching)"
 [END] 2026-11-07T20:03:00+07:00 agent=geom-1 mem=v82 last_entry=F-geom1-052 task=T-105 note="Added low-wind/KidWind/high-wind/reference blade presets, generator spec presets, gear ratio coupling in blade-wasm + UI, and Drivetrain & Load Max-Out Optimizer; 14/14 web tests + 29/29 aero/wasm tests + vite build clean"
 [RE-ACK] 2026-11-07T20:56:45+07:00 agent=geom-1 mem=v82 last_entry=F-geom1-052 task=T-105 note="lead requested adding the Scimitar / Elliptical-Belly blade design (45 mm root -> 78 mm mid belly -> 22 mm tip) to the Wind & Competition Blade Presets"
+[END] 2026-11-07T21:02:45+07:00 agent=geom-1 mem=v83 last_entry=F-geom1-053 task=T-105 note="Added scimitar_belly (45->76->22 mm + 5 mm CF spar) preset to BLADE_WIND_PRESETS and UI; 14/14 Node tests + tsc + vite build pass"

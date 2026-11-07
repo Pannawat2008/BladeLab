@@ -351,6 +351,7 @@ const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
 const abDeltaSummary = document.getElementById("ab-delta-summary")!;
 const btnPresetLowWind = document.getElementById("btn-preset-low-wind") as HTMLButtonElement | null;
 const btnPresetKidwind = document.getElementById("btn-preset-kidwind") as HTMLButtonElement | null;
+const btnPresetScimitar = document.getElementById("btn-preset-scimitar") as HTMLButtonElement | null;
 const btnPresetHighWind = document.getElementById("btn-preset-high-wind") as HTMLButtonElement | null;
 const btnPresetRef = document.getElementById("btn-preset-ref") as HTMLButtonElement | null;
 const bladePresetDesc = document.getElementById("blade-preset-desc");
@@ -1766,6 +1767,7 @@ function syncBladePresetButtons(presetKey: BladeWindPresetKey) {
   for (const [btn, key] of [
     [btnPresetLowWind, "low_wind"],
     [btnPresetKidwind, "med_kidwind"],
+    [btnPresetScimitar, "scimitar_belly"],
     [btnPresetHighWind, "high_wind"],
     [btnPresetRef, "schmitz_600"],
   ] as const) {
@@ -2849,6 +2851,10 @@ function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
   inputGenGearRatio.value = String(preset.recommended_drivetrain.gear_ratio);
   inputGenRLoad.value = String(preset.recommended_drivetrain.r_load_ohm);
   inputSiteAvgWind.value = String(preset.recommended_drivetrain.site_avg_wind_mps);
+  if (preset.recommended_spar_mm && preset.recommended_spar_mm > 0) {
+    inputSparHoleEnabled.checked = true;
+    inputSparHoleDiameter.value = String(preset.recommended_spar_mm);
+  }
   syncGearQuickButtons(preset.recommended_drivetrain.gear_ratio);
   syncBladePresetButtons(presetKey);
   commitDesign(design);
@@ -2856,6 +2862,7 @@ function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
 
 btnPresetLowWind?.addEventListener("click", () => applySelectedBladePreset("low_wind"));
 btnPresetKidwind?.addEventListener("click", () => applySelectedBladePreset("med_kidwind"));
+btnPresetScimitar?.addEventListener("click", () => applySelectedBladePreset("scimitar_belly"));
 btnPresetHighWind?.addEventListener("click", () => applySelectedBladePreset("high_wind"));
 btnPresetRef?.addEventListener("click", () => applySelectedBladePreset("schmitz_600"));
 
