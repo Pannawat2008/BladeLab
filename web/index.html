@@ -1701,6 +1701,20 @@
             </button>
             <span id="rotor-summary" class="section-meta">R 600  L 540  B 3</span>
           </div>
+
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Wind &amp; Competition Blade Presets</span>
+          </div>
+          <div class="toolbar" style="margin-bottom: 6px; flex-wrap: wrap">
+            <button id="btn-preset-low-wind" class="btn-mini" type="button" title="Low-Speed Wind Tunnel (3.5 m/s · High Starting Torque · S833+SG6043 · Geared 3:1)">Low Wind (3.5 m/s)</button>
+            <button id="btn-preset-kidwind" class="btn-mini" type="button" title="KidWind Competition All-Rounder (4.5 m/s · Geared 3:1 · S833+SG6043)">KidWind (4.5 m/s)</button>
+            <button id="btn-preset-high-wind" class="btn-mini" type="button" title="High-Speed Wind (8.0 m/s · Fast TSR Direct-Drive · S833+SD7062+E387)">High Speed (8 m/s)</button>
+            <button id="btn-preset-ref" class="btn-mini active" type="button" title="600 mm Reference Rotor (8.0 m/s · NACA 4412 · 1:1 Direct Drive)">600 mm Ref</button>
+          </div>
+          <div id="blade-preset-desc" class="zone-ranges" style="margin-bottom: 10px">
+            Select a preset to configure Root/Mid/Tip airfoils, cosine planform, wind speed &amp; drivetrain.
+          </div>
+
           <div class="grid-2">
             <div class="field">
               <label for="rotor-radius" class="scrub-label" data-scrub-for="rotor-radius" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Tip Radius R (mm)</label>
@@ -2336,21 +2350,62 @@
             <div id="aep-summary" class="fit-badge">AEP: –</div>
 
             <div class="aero-subbox">
+              <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+                <span style="font-weight: 500; color: var(--text-primary)">Generator Spec &amp; Gear Ratio</span>
+              </div>
+              <div class="field" style="margin-bottom: 8px">
+                <label for="gen-preset">Generator Preset</label>
+                <select id="gen-preset">
+                  <option value="kidwind_red">KidWind Red Generator (Kv 240 · R_int 6.2 Ω)</option>
+                  <option value="kidwind_gen2">KidWind GEN2 / High-RPM DC (Kv 320 · R_int 4.8 Ω)</option>
+                  <option value="outrunner_bldc">Gimbal / Outrunner BLDC (Kv 100 · R_int 1.4 Ω)</option>
+                  <option value="low_rpm_pmg" selected>Low-RPM Direct-Drive PMG (Kv 35 · R_int 0.8 Ω)</option>
+                  <option value="custom">Custom Generator Spec</option>
+                </select>
+              </div>
               <div class="grid-2">
                 <div class="field">
-                  <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
-                  <input id="gen-kv" type="number" min="1" max="500" step="1" value="35" />
+                  <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv" title="Generator speed constant in RPM per Volt">Gen Kv (RPM/V)</label>
+                  <input id="gen-kv" type="number" min="1" max="1000" step="1" value="35" />
                 </div>
                 <div class="field">
-                  <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int">R_int (Ω)</label>
-                  <input id="gen-r-int" type="number" min="0.05" max="50" step="0.05" value="0.8" />
+                  <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int" title="Generator internal winding resistance in Ohms">R_int (Ω)</label>
+                  <input id="gen-r-int" type="number" min="0.05" max="80" step="0.05" value="0.8" />
+                </div>
+                <div class="field">
+                  <label for="gen-gear-ratio" class="scrub-label" data-scrub-for="gen-gear-ratio" title="Step-up gear ratio G = RPM_gen / RPM_rotor (1.0 = direct drive)">Gear Ratio G (:1)</label>
+                  <input id="gen-gear-ratio" type="number" min="0.25" max="16" step="0.25" value="1.0" />
+                </div>
+                <div class="field">
+                  <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load" title="External load resistor connected across generator terminals">Load R_load (Ω)</label>
+                  <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
                 </div>
               </div>
-              <div class="field" style="margin-top: 8px">
-                <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R_load (Ω)</label>
-                <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
+              <div class="bind-row" style="margin-top: 6px">
+                <span>Quick Gear Ratio</span>
+                <div class="toolbar">
+                  <button id="btn-gear-1" class="btn-mini active" type="button" title="1:1 Direct Drive">1:1</button>
+                  <button id="btn-gear-2" class="btn-mini" type="button" title="2:1 Step-Up Gear Ratio">2:1</button>
+                  <button id="btn-gear-3" class="btn-mini" type="button" title="3:1 Step-Up Gear Ratio (KidWind Standard)">3:1</button>
+                  <button id="btn-gear-4" class="btn-mini" type="button" title="4:1 Step-Up Gear Ratio">4:1</button>
+                </div>
               </div>
               <div id="gen-summary" class="fit-badge">Gen: –</div>
+
+              <div class="bind-row" style="margin-top: 8px">
+                <span style="font-weight: 500; color: var(--text-primary)">How to Max Out Power (Gear &amp; Load)</span>
+                <span id="gen-opt-target" class="section-meta">Opt –</span>
+              </div>
+              <div id="gen-regime-badge" class="fit-badge" style="margin-top: 4px">Evaluating drivetrain torque balance...</div>
+              <div class="toolbar" style="margin-top: 6px">
+                <button id="btn-max-out-drivetrain" class="btn-primary btn-mini" type="button" style="flex: 1" title="Automatically set optimal Gear Ratio G:1, Load Resistor R_load (Ω), and Rotor Design TSR for maximum electrical Watts">
+                  Max Out Gear &amp; Load
+                </button>
+                <button id="btn-match-load-only" class="btn-mini" type="button" title="Set optimal Load Resistor R_load (Ω) while keeping your current Gear Ratio fixed">
+                  Match Load Only
+                </button>
+              </div>
+              <div id="gen-maxout-guide" class="zone-ranges" style="margin-top: 8px; line-height: 1.45; white-space: pre-line"></div>
             </div>
           </div>
         </section>

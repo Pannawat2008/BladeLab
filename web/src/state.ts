@@ -988,9 +988,14 @@ export interface GeneratorMatchSummary {
   net_cp_electrical: number;
   generator: {
     rotor_rpm: number;
+    generator_rpm?: number;
+    back_emf_v?: number;
     terminal_voltage_v: number;
     current_a: number;
+    torque_nm?: number;
+    mechanical_power_w?: number;
     electrical_power_w: number;
+    copper_loss_w?: number;
     efficiency: number;
   };
 }
@@ -1573,6 +1578,13 @@ export interface FabricationSnapshot {
 export type StructuralMaterialKey = "pla" | "petg" | "asa" | "pacf";
 export type HeatmapMode = "segment" | "alpha" | "cl_cd" | "torque" | "wall_stress";
 export type PrinterPresetKey = "bambu_256" | "prusa_mk4" | "ender3" | "voron_350" | "custom";
+export type BladeWindPresetKey = "low_wind" | "med_kidwind" | "high_wind" | "schmitz_600";
+export type GeneratorPresetKey =
+  | "kidwind_red"
+  | "kidwind_gen2"
+  | "outrunner_bldc"
+  | "low_rpm_pmg"
+  | "custom";
 
 export interface WorkbenchUiSnapshot {
   planform_cosine: boolean;
@@ -1591,6 +1603,9 @@ export interface WorkbenchUiSnapshot {
   site_avg_wind_mps?: number;
   printer_preset?: PrinterPresetKey;
   printer_max_z_mm?: number;
+  blade_preset?: BladeWindPresetKey;
+  gen_preset?: GeneratorPresetKey;
+  gen_gear_ratio?: number;
   gen_kv: number;
   gen_r_int: number;
   gen_r_load: number;
@@ -1662,6 +1677,9 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     site_avg_wind_mps: 5.5,
     printer_preset: "bambu_256",
     printer_max_z_mm: 256,
+    blade_preset: "schmitz_600",
+    gen_preset: "low_rpm_pmg",
+    gen_gear_ratio: 1.0,
     gen_kv: 35,
     gen_r_int: 0.8,
     gen_r_load: 12.0,
@@ -2409,7 +2427,7 @@ export interface WindPowerAepReport {
 export function evaluateWindSpeedCurveAndAep(
   design: Design,
   bundle: AeroSimulationBundle,
-  genSpec: { kv: number; r_int: number; r_load: number },
+  genSpec: { kv: number; r_int: number; r_load: number; gear_ratio?: number },
   siteAvgWindMps = 5.5,
   airDensityKgM3 = 1.225,
 ): WindPowerAepReport {
@@ -2417,6 +2435,7 @@ export function evaluateWindSpeedCurveAndAep(
   const areaM2 = Math.PI * rM * rM;
   const peakCp = Math.max(0.05, bundle.peak_cp || bundle.design_point.cp || 0.35);
   const optTsr = Math.max(0.5, bundle.peak_tsr || design.rotor.design_tsr || 4.5);
+  const gearRatio = Math.max(0.1, genSpec.gear_ratio ?? 1.0);
 
   // Estimate low-TSR starting torque coefficient Cq_start from the lowest TSR point in sweep
   const firstSweep = bundle.sweep[0];
@@ -2425,8 +2444,9 @@ export function evaluateWindSpeedCurveAndAep(
       ? Math.max(0.008, firstSweep.cp / firstSweep.tsr)
       : Math.max(0.012, peakCp / (optTsr * 2.4));
 
-  // Typical small PMG cogging + bearing static friction torque scales modestly with rotor size
-  const coggingTorqueNm = Math.max(0.015, 0.035 * rM * rM);
+  // Typical small PMG cogging + bearing static friction torque scales with rotor size and step-up gear ratio
+  const gearCoggingFactor = 0.65 + 0.35 * Math.min(4.0, gearRatio);
+  const coggingTorqueNm = Math.max(0.012, 0.032 * rM * rM * gearCoggingFactor);
   // 0.5 * rho * A * R * V_cut^2 * Cq_start = coggingTorqueNm
   const denomStart = Math.max(1e-6, 0.5 * airDensityKgM3 * areaM2 * rM * lowTsrCq);
   const cutInMps = Math.min(7.5, Math.max(1.4, Math.sqrt(coggingTorqueNm / denomStart)));
@@ -2435,6 +2455,10 @@ export function evaluateWindSpeedCurveAndAep(
   const rInt = Math.max(0.02, genSpec.r_int || 0.8);
   const rLoad = Math.max(0.1, genSpec.r_load || 12.0);
   const rTot = rInt + rLoad;
+  const gearMeshEff =
+    Math.abs(gearRatio - 1.0) < 1e-3
+      ? 1.0
+      : Math.max(0.85, 0.97 - 0.012 * Math.abs(gearRatio - 1.0));
 
   const points: WindCurvePoint[] = [];
   for (let v = 2; v <= 18; v += 1) {
@@ -2460,16 +2484,17 @@ export function evaluateWindSpeedCurveAndAep(
     const rpm = (omega * 60) / (2 * Math.PI);
     const torqueNm = omega > 1e-3 ? mechPowerW / omega : 0;
 
-    // Coupled PMG electrical output
-    const emfV = rpm / kv;
+    // Coupled PMG electrical output including step-up gear ratio G = RPM_gen / RPM_rotor
+    const genRpm = rpm * gearRatio;
+    const emfV = genRpm / kv;
     const currentUnclampedA = emfV / rTot;
     const pGenInputDemand = emfV * currentUnclampedA;
-    // Generator electrical efficiency at matched load
-    const elecEff = Math.min(0.92, (rLoad / rTot) * 0.94);
+    // Generator electrical efficiency at matched load * gearbox mesh efficiency
+    const elecEff = Math.min(0.92, (rLoad / rTot) * 0.94) * gearMeshEff;
     const elecPowerW =
       pGenInputDemand > 0
-        ? Math.min(mechPowerW * elecEff, (currentUnclampedA ** 2) * rLoad)
-        : mechPowerW * 0.78;
+        ? Math.min(mechPowerW * elecEff, (currentUnclampedA ** 2) * rLoad * gearMeshEff)
+        : mechPowerW * 0.78 * gearMeshEff;
 
     points.push({
       wind_mps: v,
@@ -2818,5 +2843,659 @@ export function evaluatePrinterBuildFit(
     summary,
   };
 }
+
+// ============================================================================
+// KidWind & Competition Blade Wind Presets + Generator & Gear Max-Out Solver
+// ============================================================================
+
+export interface BladeWindPresetSpec {
+  key: BladeWindPresetKey;
+  name: string;
+  badge: string;
+  description: string;
+  rotor: {
+    radius_mm: number;
+    hub_radius_mm: number;
+    blade_count: number;
+    design_tsr: number;
+    wind_speed_mps: number;
+    station_count: number;
+    pitch_axis_ratio: number;
+  };
+  planform: {
+    cosine: boolean;
+    center_pct: number;
+    width_pct: number;
+  };
+  sections: {
+    root: { chord_mm: number; twist_deg: number; airfoil: AirfoilSpec };
+    mid: { chord_mm: number; twist_deg: number; airfoil: AirfoilSpec };
+    tip: { chord_mm: number; twist_deg: number; airfoil: AirfoilSpec };
+  };
+  recommended_drivetrain: {
+    gen_preset: GeneratorPresetKey;
+    gear_ratio: number;
+    r_load_ohm: number;
+    site_avg_wind_mps: number;
+  };
+}
+
+export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec> = {
+  low_wind: {
+    key: "low_wind",
+    name: "Low-Speed Wind (3.5 m/s · High Starting Torque · λ 3.5)",
+    badge: "3.5 m/s Low-Wind",
+    description:
+      "Wide root/mid chord (74→58→32 mm) and steep 26° root twist with S833 root + Selig SG6043 low-Re high-lift profile to overcome generator cogging and self-start at 1.8–2.2 m/s.",
+    rotor: {
+      radius_mm: 300,
+      hub_radius_mm: 35,
+      blade_count: 3,
+      design_tsr: 3.5,
+      wind_speed_mps: 3.5,
+      station_count: 13,
+      pitch_axis_ratio: 0.25,
+    },
+    planform: {
+      cosine: true,
+      center_pct: 45,
+      width_pct: 28,
+    },
+    sections: {
+      root: {
+        chord_mm: 74,
+        twist_deg: 26.0,
+        airfoil: { type: "named", name: "S833" },
+      },
+      mid: {
+        chord_mm: 58,
+        twist_deg: 13.0,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+      tip: {
+        chord_mm: 32,
+        twist_deg: 3.5,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+    },
+    recommended_drivetrain: {
+      gen_preset: "kidwind_red",
+      gear_ratio: 3.0,
+      r_load_ohm: 12.0,
+      site_avg_wind_mps: 3.5,
+    },
+  },
+  med_kidwind: {
+    key: "med_kidwind",
+    name: "KidWind Competition Standard (4.5 m/s · Geared 3:1 · λ 4.2)",
+    badge: "4.5 m/s KidWind",
+    description:
+      "Balanced 350 mm radius competition rotor (64→48→25 mm cosine planform, S833 root + SG6043 mid/tip) tuned for 4.0–5.0 m/s KidWind tunnels with a 2.5:1–3.5:1 gear stage.",
+    rotor: {
+      radius_mm: 350,
+      hub_radius_mm: 40,
+      blade_count: 3,
+      design_tsr: 4.2,
+      wind_speed_mps: 4.5,
+      station_count: 13,
+      pitch_axis_ratio: 0.25,
+    },
+    planform: {
+      cosine: true,
+      center_pct: 45,
+      width_pct: 25,
+    },
+    sections: {
+      root: {
+        chord_mm: 64,
+        twist_deg: 22.0,
+        airfoil: { type: "named", name: "S833" },
+      },
+      mid: {
+        chord_mm: 48,
+        twist_deg: 10.5,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+      tip: {
+        chord_mm: 25,
+        twist_deg: 2.5,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+    },
+    recommended_drivetrain: {
+      gen_preset: "kidwind_red",
+      gear_ratio: 3.0,
+      r_load_ohm: 10.0,
+      site_avg_wind_mps: 4.5,
+    },
+  },
+  high_wind: {
+    key: "high_wind",
+    name: "High-Speed Wind (8.0 m/s · Fast TSR Direct-Drive · λ 5.5)",
+    badge: "8.0 m/s High-Speed",
+    description:
+      "Slender low-drag planform (52→36→24 mm) pairing S833 root, SD7062 mid, and Eppler E387 fast tip for high RPM and minimal profile drag at 7–10 m/s.",
+    rotor: {
+      radius_mm: 350,
+      hub_radius_mm: 40,
+      blade_count: 3,
+      design_tsr: 5.5,
+      wind_speed_mps: 8.0,
+      station_count: 13,
+      pitch_axis_ratio: 0.25,
+    },
+    planform: {
+      cosine: true,
+      center_pct: 48,
+      width_pct: 22,
+    },
+    sections: {
+      root: {
+        chord_mm: 52,
+        twist_deg: 16.5,
+        airfoil: { type: "named", name: "S833" },
+      },
+      mid: {
+        chord_mm: 36,
+        twist_deg: 6.5,
+        airfoil: { type: "named", name: "SD7062" },
+      },
+      tip: {
+        chord_mm: 24,
+        twist_deg: 1.0,
+        airfoil: { type: "named", name: "E387" },
+      },
+    },
+    recommended_drivetrain: {
+      gen_preset: "outrunner_bldc",
+      gear_ratio: 1.0,
+      r_load_ohm: 6.0,
+      site_avg_wind_mps: 7.5,
+    },
+  },
+  schmitz_600: {
+    key: "schmitz_600",
+    name: "Reference 600 mm Rotor (8.0 m/s · NACA 4412 · λ 4.5)",
+    badge: "600 mm Reference",
+    description:
+      "Full-scale 600 mm radius 3-blade NACA 4412 reference rotor (70→35 mm linear taper, 20°→3° twist) paired with a 1:1 low-RPM permanent-magnet alternator.",
+    rotor: {
+      radius_mm: 600,
+      hub_radius_mm: 60,
+      blade_count: 3,
+      design_tsr: 4.5,
+      wind_speed_mps: 8.0,
+      station_count: 11,
+      pitch_axis_ratio: 0.25,
+    },
+    planform: {
+      cosine: false,
+      center_pct: 45,
+      width_pct: 25,
+    },
+    sections: {
+      root: {
+        chord_mm: 70,
+        twist_deg: 20.0,
+        airfoil: { type: "naca4", max_camber: 0.04, camber_position: 0.4, thickness_ratio: 0.12 },
+      },
+      mid: {
+        chord_mm: 52.5,
+        twist_deg: 11.5,
+        airfoil: { type: "naca4", max_camber: 0.04, camber_position: 0.4, thickness_ratio: 0.12 },
+      },
+      tip: {
+        chord_mm: 35,
+        twist_deg: 3.0,
+        airfoil: { type: "naca4", max_camber: 0.04, camber_position: 0.4, thickness_ratio: 0.12 },
+      },
+    },
+    recommended_drivetrain: {
+      gen_preset: "low_rpm_pmg",
+      gear_ratio: 1.0,
+      r_load_ohm: 5.0,
+      site_avg_wind_mps: 6.0,
+    },
+  },
+};
+
+/**
+ * Applies a competition Blade Wind Preset (`low_wind`, `med_kidwind`,
+ * `high_wind`, or `schmitz_600`) to `baseDesign`, returning the updated `Design`
+ * along with its recommended planform and drivetrain settings.
+ */
+export function applyBladeWindPreset(
+  baseDesign: Design,
+  presetKey: BladeWindPresetKey,
+): {
+  design: Design;
+  spec: BladeWindPresetSpec;
+} {
+  const spec = BLADE_WIND_PRESETS[presetKey] ?? BLADE_WIND_PRESETS.med_kidwind;
+  let next = cloneDesign(baseDesign);
+  next.overrides = [];
+  next.rotor = {
+    ...next.rotor,
+    ...spec.rotor,
+  };
+  next.hub = {
+    ...next.hub,
+    diameter_mm: Math.max(24, spec.rotor.hub_radius_mm * 2),
+  };
+
+  const center = spec.planform.center_pct / 100;
+  const width = spec.planform.width_pct / 100;
+  if (spec.planform.cosine) {
+    next.distributions.chord_mm = {
+      type: "formula",
+      expr: buildCosinePlateauExpr(
+        spec.sections.root.chord_mm,
+        spec.sections.tip.chord_mm,
+        center,
+        width,
+        spec.sections.mid.chord_mm,
+      ),
+    };
+    next.distributions.twist_deg = {
+      type: "formula",
+      expr: buildCosinePlateauExpr(
+        spec.sections.root.twist_deg,
+        spec.sections.tip.twist_deg,
+        center,
+        width,
+        spec.sections.mid.twist_deg,
+      ),
+    };
+  } else {
+    next.distributions.chord_mm = {
+      type: "linear",
+      root: spec.sections.root.chord_mm,
+      tip: spec.sections.tip.chord_mm,
+    };
+    next.distributions.twist_deg = {
+      type: "linear",
+      root: spec.sections.root.twist_deg,
+      tip: spec.sections.tip.twist_deg,
+    };
+  }
+
+  next = applySectionAirfoils(next, spec.sections, center);
+  return { design: next, spec };
+}
+
+export interface GeneratorPresetSpec {
+  key: GeneratorPresetKey;
+  name: string;
+  kv_rpm_per_v: number;
+  r_int_ohm: number;
+  no_load_current_a: number;
+  default_gear_ratio: number;
+  default_r_load_ohm: number;
+  notes: string;
+}
+
+export const GENERATOR_PRESETS: Record<GeneratorPresetKey, GeneratorPresetSpec> = {
+  kidwind_red: {
+    key: "kidwind_red",
+    name: "KidWind Red Generator (Kv 240 · R_int 6.2 Ω)",
+    kv_rpm_per_v: 240,
+    r_int_ohm: 6.2,
+    no_load_current_a: 0.03,
+    default_gear_ratio: 3.0,
+    default_r_load_ohm: 10.0,
+    notes:
+      "Standard KidWind DC generator. Because Kv=240 RPM/V is high and R_int=6.2 Ω, use a 2.5:1–4:1 gear ratio and 8–15 Ω load resistor so voltage isn't lost as heat.",
+  },
+  kidwind_gen2: {
+    key: "kidwind_gen2",
+    name: "KidWind GEN2 / High-RPM DC (Kv 320 · R_int 4.8 Ω)",
+    kv_rpm_per_v: 320,
+    r_int_ohm: 4.8,
+    no_load_current_a: 0.035,
+    default_gear_ratio: 3.5,
+    default_r_load_ohm: 12.0,
+    notes:
+      "Fast small DC armature (320 RPM/V). Needs 3:1–5:1 step-up gearing in 3.5–4.5 m/s wind tunnels to spin the generator fast enough for high voltage.",
+  },
+  outrunner_bldc: {
+    key: "outrunner_bldc",
+    name: "Gimbal / Drone Outrunner BLDC (Kv 100 · R_int 1.4 Ω)",
+    kv_rpm_per_v: 100,
+    r_int_ohm: 1.4,
+    no_load_current_a: 0.05,
+    default_gear_ratio: 1.5,
+    default_r_load_ohm: 6.0,
+    notes:
+      "3-phase rectified outrunner with low winding resistance (1.4 Ω). Delivers >80% electrical efficiency with 1:1 direct drive or 1.5:1–2:1 gearing.",
+  },
+  low_rpm_pmg: {
+    key: "low_rpm_pmg",
+    name: "Low-RPM Direct-Drive PMG (Kv 35 · R_int 0.8 Ω)",
+    kv_rpm_per_v: 35,
+    r_int_ohm: 0.8,
+    no_load_current_a: 0.08,
+    default_gear_ratio: 1.0,
+    default_r_load_ohm: 5.0,
+    notes:
+      "High-pole-count permanent magnet alternator (Kv=35 RPM/V, R_int=0.8 Ω) designed for 1:1 direct drive at 400–800 RPM.",
+  },
+  custom: {
+    key: "custom",
+    name: "Custom Generator Spec",
+    kv_rpm_per_v: 100,
+    r_int_ohm: 2.0,
+    no_load_current_a: 0.05,
+    default_gear_ratio: 1.0,
+    default_r_load_ohm: 10.0,
+    notes: "Custom Kv, internal winding resistance R_int, gear ratio G:1, and load resistor R_load.",
+  },
+};
+
+export interface DrivetrainMaxOutReport {
+  regime: "stalled_overload" | "overspeed_underload" | "optimal_band";
+  regime_label: string;
+  current_tsr: number;
+  current_rotor_rpm: number;
+  current_gen_rpm: number;
+  current_voltage_v: number;
+  current_current_a: number;
+  current_elec_power_w: number;
+  current_efficiency_pct: number;
+  best_r_load_at_current_gear_ohm: number;
+  power_at_current_gear_best_load_w: number;
+  opt_gear_ratio: number;
+  opt_r_load_ohm: number;
+  opt_tsr: number;
+  opt_rotor_rpm: number;
+  opt_gen_rpm: number;
+  opt_voltage_v: number;
+  opt_elec_power_w: number;
+  opt_efficiency_pct: number;
+  gain_power_w: number;
+  gain_pct: number;
+  how_to_max_out_steps: string[];
+}
+
+function evalCoupledPointOnSweep(
+  sweep: readonly TsrSweepPoint[],
+  peakTsr: number,
+  kv: number,
+  rInt: number,
+  i0: number,
+  gearRatio: number,
+  rLoad: number,
+): {
+  tsr: number;
+  rotor_rpm: number;
+  gen_rpm: number;
+  voltage_v: number;
+  current_a: number;
+  elec_power_w: number;
+  mech_power_w: number;
+  efficiency: number;
+  stalled: boolean;
+} {
+  const kt = 60.0 / (2.0 * Math.PI * Math.max(1e-3, kv));
+  const totalR = Math.max(0.05, rInt + rLoad);
+  const gearEff =
+    Math.abs(gearRatio - 1.0) < 1e-3
+      ? 1.0
+      : Math.max(0.85, 0.97 - 0.012 * Math.abs(gearRatio - 1.0));
+
+  const genReactionTorque = (rotorRpm: number) => {
+    if (rotorRpm <= 0) return 0;
+    const genRpm = rotorRpm * gearRatio;
+    const emf = genRpm / kv;
+    const current = emf / totalR;
+    // Gear step-up reflects Gx torque to rotor shaft, divided by gearbox mesh efficiency
+    return (gearRatio * kt * (current + i0)) / gearEff;
+  };
+
+  if (sweep.length === 0) {
+    return {
+      tsr: peakTsr,
+      rotor_rpm: 0,
+      gen_rpm: 0,
+      voltage_v: 0,
+      current_a: 0,
+      elec_power_w: 0,
+      mech_power_w: 0,
+      efficiency: 0,
+      stalled: true,
+    };
+  }
+
+  // Scan from high TSR down to low TSR to find stable torque crossing (diff = Q_aero - Q_gen)
+  let eqTsr = sweep[0]!.tsr;
+  let eqRpm = sweep[0]!.rpm;
+  let eqMechW = sweep[0]!.power_w;
+  let foundCrossing = false;
+  let bestAbsDiff = Number.POSITIVE_INFINITY;
+
+  for (let i = sweep.length - 1; i >= 1; i--) {
+    const pHi = sweep[i]!;
+    const pLo = sweep[i - 1]!;
+    const diffHi = pHi.torque_nm - genReactionTorque(pHi.rpm);
+    const diffLo = pLo.torque_nm - genReactionTorque(pLo.rpm);
+
+    if (Math.abs(diffHi) < bestAbsDiff) {
+      bestAbsDiff = Math.abs(diffHi);
+      eqTsr = pHi.tsr;
+      eqRpm = pHi.rpm;
+      eqMechW = pHi.power_w;
+    }
+
+    // Stable high-speed branch crossing: diffLo >= 0 and diffHi <= 0
+    if (diffLo >= 0 && diffHi <= 0) {
+      const span = Math.max(1e-9, diffLo - diffHi);
+      const u = diffLo / span;
+      eqTsr = pLo.tsr + u * (pHi.tsr - pLo.tsr);
+      eqRpm = pLo.rpm + u * (pHi.rpm - pLo.rpm);
+      eqMechW = Math.max(0, pLo.power_w + u * (pHi.power_w - pLo.power_w));
+      foundCrossing = true;
+      break;
+    }
+  }
+
+  // Check if generator braking torque exceeds blade torque everywhere (stalled)
+  const maxAeroTorque = Math.max(...sweep.map((s) => s.torque_nm));
+  const peakRow = sweep.reduce((b, c) => (c.cp > b.cp ? c : b), sweep[0]!);
+  const genTorqueAtPeak = genReactionTorque(peakRow.rpm);
+  const stalled = !foundCrossing && genTorqueAtPeak > maxAeroTorque;
+
+  if (stalled) {
+    eqTsr = sweep[0]!.tsr * 0.55;
+    eqRpm = sweep[0]!.rpm * 0.55;
+    eqMechW = sweep[0]!.power_w * 0.35;
+  }
+
+  const genRpm = eqRpm * gearRatio;
+  const emfV = genRpm / kv;
+  const currentA = emfV / totalR;
+  const voltageV = currentA * rLoad;
+  const rawElecW = voltageV * currentA;
+  const elecPowerW = Math.min(Math.max(0, eqMechW * gearEff * 0.94), rawElecW);
+  const efficiency = eqMechW > 1e-6 ? Math.min(0.95, elecPowerW / eqMechW) : 0;
+
+  return {
+    tsr: eqTsr,
+    rotor_rpm: eqRpm,
+    gen_rpm: genRpm,
+    voltage_v: voltageV,
+    current_a: currentA,
+    elec_power_w: elecPowerW,
+    mech_power_w: eqMechW,
+    efficiency,
+    stalled,
+  };
+}
+
+/**
+ * Solves for the optimal Gear Ratio (`G:1`) and Load Resistance (`R_load` in Ω)
+ * that maximize electrical power output ($P_{\text{elec}} = V_{\text{load}} I$)
+ * for the active blade BEM sweep and generator specification, and returns
+ * step-by-step competition tuning instructions on how to max out output.
+ */
+export function optimizeGeneratorAndGearbox(
+  design: Design,
+  bundle: AeroSimulationBundle,
+  spec: {
+    kv: number;
+    r_int: number;
+    r_load: number;
+    gear_ratio: number;
+    i0?: number;
+  },
+): DrivetrainMaxOutReport {
+  const kv = Math.max(1, spec.kv || 35);
+  const rInt = Math.max(0.05, spec.r_int || 0.8);
+  const curRLoad = Math.max(0.1, spec.r_load || 5.0);
+  const curGear = Math.max(0.25, spec.gear_ratio || 1.0);
+  const i0 = Math.max(0, spec.i0 ?? 0.04);
+  const peakTsr = Math.max(0.5, bundle.peak_tsr || design.rotor.design_tsr || 4.5);
+
+  const curEval = evalCoupledPointOnSweep(
+    bundle.sweep,
+    peakTsr,
+    kv,
+    rInt,
+    i0,
+    curGear,
+    curRLoad,
+  );
+
+  // Use wasm generator_match for current point if available, blended with gear efficiency
+  const curTsr = bundle.generator_match?.tip_speed_ratio ?? curEval.tsr;
+  const curRotorRpm = bundle.generator_match?.generator.rotor_rpm ?? curEval.rotor_rpm;
+  const curGenRpm =
+    bundle.generator_match?.generator.generator_rpm ?? curRotorRpm * curGear;
+  const curVolt = bundle.generator_match?.generator.terminal_voltage_v ?? curEval.voltage_v;
+  const curCurr = bundle.generator_match?.generator.current_a ?? curEval.current_a;
+  const curElecW = bundle.generator_match?.generator.electrical_power_w ?? curEval.elec_power_w;
+  const curEffPct =
+    (bundle.generator_match?.generator.efficiency ?? curEval.efficiency) * 100;
+
+  // Candidate load resistances from 0.5 Ω to 120 Ω
+  const loadGrid: number[] = [];
+  for (let r = 0.5; r <= 15.0; r += 0.5) loadGrid.push(Number(r.toFixed(2)));
+  for (let r = 16.0; r <= 50.0; r += 1.0) loadGrid.push(Number(r.toFixed(2)));
+  for (let r = 55.0; r <= 120.0; r += 5.0) loadGrid.push(Number(r.toFixed(2)));
+
+  // 1. Best load resistor at current gear ratio
+  let bestRLoadAtCurGear = curRLoad;
+  let bestPowerAtCurGear = -1;
+  for (const rL of loadGrid) {
+    const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, curGear, rL);
+    const stabilityBonus = !ev.stalled && ev.tsr >= 0.9 * peakTsr ? 1.0 : 0.72;
+    const score = ev.elec_power_w * stabilityBonus;
+    if (score > bestPowerAtCurGear) {
+      bestPowerAtCurGear = score;
+      bestRLoadAtCurGear = rL;
+    }
+  }
+  const curGearOptEval = evalCoupledPointOnSweep(
+    bundle.sweep,
+    peakTsr,
+    kv,
+    rInt,
+    i0,
+    curGear,
+    bestRLoadAtCurGear,
+  );
+
+  // 2. Global search over Gear Ratio G in [1.0 .. 8.0] and Load R_load
+  const gearCandidates = [
+    1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0,
+  ];
+  let optGear = curGear;
+  let optRLoad = bestRLoadAtCurGear;
+  let optEval = curGearOptEval;
+  let bestGlobalScore = -1;
+
+  for (const g of gearCandidates) {
+    for (const rL of loadGrid) {
+      const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, g, rL);
+      // Prefer operating near or slightly above peak_tsr (0.94..1.14 * peakTsr) so the turbine never stalls in tunnel gusts
+      const inSweetSpot = !ev.stalled && ev.tsr >= 0.92 * peakTsr && ev.tsr <= 1.18 * peakTsr;
+      const score = ev.elec_power_w * (inSweetSpot ? 1.05 : ev.stalled ? 0.5 : 0.9);
+      if (score > bestGlobalScore) {
+        bestGlobalScore = score;
+        optGear = g;
+        optRLoad = rL;
+        optEval = ev;
+      }
+    }
+  }
+
+  // Classify current operating regime relative to blade peak TSR
+  let regime: "stalled_overload" | "overspeed_underload" | "optimal_band" = "optimal_band";
+  let regimeLabel = `Matched near Peak Cp (λ=${curTsr.toFixed(2)} vs Opt λ=${peakTsr.toFixed(2)})`;
+  if (curEval.stalled || curTsr < 0.88 * peakTsr) {
+    regime = "stalled_overload";
+    regimeLabel = `Over-Loaded / Braking Stall (λ=${curTsr.toFixed(2)} < Opt λ=${peakTsr.toFixed(2)})`;
+  } else if (curTsr > 1.14 * peakTsr) {
+    regime = "overspeed_underload";
+    regimeLabel = `Under-Loaded / Free-Spinning High TSR (λ=${curTsr.toFixed(2)} > Opt λ=${peakTsr.toFixed(2)})`;
+  }
+
+  const gainPowerW = Math.max(0, optEval.elec_power_w - curElecW);
+  const gainPct = curElecW > 1e-3 ? (gainPowerW / curElecW) * 100 : 0;
+
+  // Build 3 clear "How to Max Out" steps tailored to current state
+  const steps: string[] = [];
+  if (regime === "stalled_overload") {
+    steps.push(
+      `1. Relieve Generator Braking: Your load pulls rotor TSR down to λ=${curTsr.toFixed(2)} (stalling the blades). Increase Load R_load toward ${optRLoad.toFixed(1)} Ω or reduce Gear Ratio to ${optGear.toFixed(2)}:1 so the rotor can spin up to Peak λ=${peakTsr.toFixed(2)} (${optEval.rotor_rpm.toFixed(0)} RPM).`,
+    );
+  } else if (regime === "overspeed_underload") {
+    steps.push(
+      `1. Capture More Shaft Torque: Rotor is overspeeding at λ=${curTsr.toFixed(2)} because generator counter-torque is too weak. Step up Gear Ratio to ${optGear.toFixed(2)}:1 (Gen ${optEval.gen_rpm.toFixed(0)} RPM) and set Load R_load = ${optRLoad.toFixed(1)} Ω to load the blades at Peak λ=${peakTsr.toFixed(2)}.`,
+    );
+  } else {
+    steps.push(
+      `1. Fine-Tune Gear & Load Impedance: Set Gear Ratio = ${optGear.toFixed(2)}:1 and Load Resistor R_load = ${optRLoad.toFixed(1)} Ω (R_load / R_int = ${(optRLoad / rInt).toFixed(1)}×) to reach ${optEval.elec_power_w.toFixed(1)} W (${(optEval.efficiency * 100).toFixed(0)}% efficiency).`,
+    );
+  }
+
+  steps.push(
+    `2. Match Blade Design TSR to Tunnel Equilibrium: Set Rotor Design TSR λ = ${peakTsr.toFixed(2)} and click "Auto-Optimize Blade (Max Cp)" in the BEM section so every station sits at its peak Cl/Cd glide angle (~6°).`,
+  );
+
+  if (design.rotor.wind_speed_mps <= 4.5) {
+    steps.push(
+      `3. Low-Wind Tunnel Tip: At ${design.rotor.wind_speed_mps.toFixed(1)} m/s, keep R_load ≥ ${(1.6 * rInt).toFixed(1)} Ω during start-up so current draw doesn't brake the hub before the blades pass Cut-In.`,
+    );
+  } else {
+    steps.push(
+      `3. High-Wind Tip: At ${design.rotor.wind_speed_mps.toFixed(1)} m/s (${optEval.rotor_rpm.toFixed(0)} RPM), enable a Carbon-Fiber Spar Tube in Fabrication so tip deflection stays < 5% and pitch twist doesn't wash out.`,
+    );
+  }
+
+  return {
+    regime,
+    regime_label: regimeLabel,
+    current_tsr: curTsr,
+    current_rotor_rpm: curRotorRpm,
+    current_gen_rpm: curGenRpm,
+    current_voltage_v: curVolt,
+    current_current_a: curCurr,
+    current_elec_power_w: curElecW,
+    current_efficiency_pct: curEffPct,
+    best_r_load_at_current_gear_ohm: bestRLoadAtCurGear,
+    power_at_current_gear_best_load_w: curGearOptEval.elec_power_w,
+    opt_gear_ratio: optGear,
+    opt_r_load_ohm: optRLoad,
+    opt_tsr: optEval.tsr,
+    opt_rotor_rpm: optEval.rotor_rpm,
+    opt_gen_rpm: optEval.gen_rpm,
+    opt_voltage_v: optEval.voltage_v,
+    opt_elec_power_w: optEval.elec_power_w,
+    opt_efficiency_pct: optEval.efficiency * 100,
+    gain_power_w: gainPowerW,
+    gain_pct: gainPct,
+    how_to_max_out_steps: steps,
+  };
+}
+
 
 

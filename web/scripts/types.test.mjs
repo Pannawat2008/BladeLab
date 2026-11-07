@@ -51,6 +51,10 @@ import {
   updatePrimaryAirfoil,
   updateRotorField,
   upsertSavedSlot,
+  applyBladeWindPreset,
+  BLADE_WIND_PRESETS,
+  GENERATOR_PRESETS,
+  optimizeGeneratorAndGearbox,
 } from "../src/state.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -733,5 +737,86 @@ test("structural mechanics, 3D vertex heatmaps, wind power AEP curve, and printe
   assert.ok(windHover.mech_power_w >= windHover.elec_power_w);
   assert.ok(windHover.readout.includes("m/s"));
 });
+
+test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimizer (T-105)", () => {
+  const require = createRequire(import.meta.url);
+  const { build_mesh, simulate_aero } = require("../../target/glue-node/blade_wasm.js");
+
+  // 1. Verify all 4 blade presets build valid 3D meshes and have tailored parameters
+  for (const presetKey of ["low_wind", "med_kidwind", "high_wind", "schmitz_600"]) {
+    const { design, spec } = applyBladeWindPreset(initialDesign, presetKey);
+    assert.equal(design.rotor.wind_speed_mps, spec.rotor.wind_speed_mps);
+    assert.equal(design.rotor.design_tsr, spec.rotor.design_tsr);
+    assert.equal(design.rotor.radius_mm, spec.rotor.radius_mm);
+    const mesh = build_mesh(JSON.stringify(design), "{}");
+    assert.ok(mesh.positions.length > 300, `preset ${presetKey} should produce valid mesh`);
+  }
+
+  assert.equal(BLADE_WIND_PRESETS.low_wind.rotor.wind_speed_mps, 3.5);
+  assert.equal(BLADE_WIND_PRESETS.med_kidwind.rotor.wind_speed_mps, 4.5);
+  assert.equal(BLADE_WIND_PRESETS.high_wind.rotor.wind_speed_mps, 8.0);
+
+  // 2. Verify WASM simulate_aero couples generator_gear_ratio properly
+  const { design: kwDesign } = applyBladeWindPreset(initialDesign, "med_kidwind");
+  const genRed = GENERATOR_PRESETS.kidwind_red;
+  const bundleDirect = JSON.parse(
+    simulate_aero(
+      JSON.stringify(kwDesign),
+      JSON.stringify({
+        tsr_min: 1.0,
+        tsr_max: 9.0,
+        tsr_steps: 25,
+        generator_kv: genRed.kv_rpm_per_v,
+        generator_r_int: genRed.r_int_ohm,
+        generator_r_load: 10.0,
+        generator_gear_ratio: 1.0,
+      }),
+    ),
+  );
+  const bundleGeared = JSON.parse(
+    simulate_aero(
+      JSON.stringify(kwDesign),
+      JSON.stringify({
+        tsr_min: 1.0,
+        tsr_max: 9.0,
+        tsr_steps: 25,
+        generator_kv: genRed.kv_rpm_per_v,
+        generator_r_int: genRed.r_int_ohm,
+        generator_r_load: 10.0,
+        generator_gear_ratio: 3.0,
+      }),
+    ),
+  );
+  assert.ok(
+    Math.abs(
+      bundleDirect.generator_match.generator.generator_rpm -
+        bundleDirect.generator_match.generator.rotor_rpm * 1.0,
+    ) < 1e-3,
+    "direct-drive generator_rpm must equal rotor_rpm * 1.0",
+  );
+  assert.ok(
+    Math.abs(
+      bundleGeared.generator_match.generator.generator_rpm -
+        bundleGeared.generator_match.generator.rotor_rpm * 3.0,
+    ) < 1e-3,
+    "geared generator_rpm must equal rotor_rpm * 3.0",
+  );
+
+  // 3. Verify optimizeGeneratorAndGearbox diagnoses mismatch and solves for optimal G:1 & R_load
+  const maxOut = optimizeGeneratorAndGearbox(kwDesign, bundleDirect, {
+    kv: genRed.kv_rpm_per_v,
+    r_int: genRed.r_int_ohm,
+    r_load: 2.0,
+    gear_ratio: 1.0,
+  });
+  assert.ok(maxOut.opt_gear_ratio >= 1.0 && maxOut.opt_gear_ratio <= 8.0);
+  assert.ok(maxOut.opt_r_load_ohm >= 0.5 && maxOut.opt_r_load_ohm <= 120.0);
+  assert.ok(
+    maxOut.opt_elec_power_w >= maxOut.current_elec_power_w,
+    `optimal power (${maxOut.opt_elec_power_w}) should be >= unoptimized (${maxOut.current_elec_power_w})`,
+  );
+  assert.equal(maxOut.how_to_max_out_steps.length, 3);
+});
+
 
 

@@ -212,6 +212,10 @@ pub struct AeroOptionsDto {
     pub generator_r_int: Option<f64>,
     /// Optional generator load resistance (Ω).
     pub generator_r_load: Option<f64>,
+    /// Optional step-up gear ratio `G = RPM_gen / RPM_rotor` (defaults to `1.0`).
+    pub generator_gear_ratio: Option<f64>,
+    /// Optional generator no-load current `I_0` in Amperes (defaults to `0.08`).
+    pub generator_i0: Option<f64>,
 }
 
 /// Combined BEM design-point result, TSR sweep curve, and optional generator
@@ -290,7 +294,8 @@ pub fn run_aero_simulation(design_json: &str, options_json: &str) -> Result<Stri
         opts.generator_r_load,
     ) {
         (Some(kv), Some(r_int), Some(r_load)) => {
-            let spec = GeneratorSpec::new(kv, r_int, 0.08);
+            let mut spec = GeneratorSpec::new(kv, r_int, opts.generator_i0.unwrap_or(0.08).max(0.0));
+            spec.gear_ratio = opts.generator_gear_ratio.unwrap_or(1.0).max(0.05);
             Some(
                 match_generator(&blade, &polars, wind, pitch, &spec, r_load)
                     .map_err(|e| format!("generator match error: {e}"))?,

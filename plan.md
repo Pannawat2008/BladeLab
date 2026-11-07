@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 81**
-> **LAST_UPDATED: 2026-11-07 16:31 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 82**
+> **LAST_UPDATED: 2026-11-07 20:03 (UTC+7) by geom-1**
 
 ---
 
@@ -480,6 +480,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Completed 6-point /ui-taste polish & audit pass across web/index.html, web/src/main.ts, web/src/state.ts, and web/scripts/types.test.mjs: (1) split #aero-dock into 4 peer collapsible <section> blocks (BEM, AEP, STR, LAB) with sticky #aero-section-nav quick-jump pills and scroll-spy; (2) added Planform and Sections pills to #panel-section-nav and wired all 6 Left Dock sections into indDockSectionNav; (3) replaced undefined ar(--fg) with ar(--text-primary) and added responsive @media (max-width: 1280px) / (max-width: 1180px) + dynamic ria-hidden rules to #viewport-heatmap-legend; (4) de-crowded #top-dock, made #autosave-badge a clickable <button> that toggles #projects-drawer, and unified Export JSON / Load JSON labels (Anti-Slop Law #6); (5) standardized Title Case headers (Planform & Span Transitions, Blade Sections (Root / Mid / Tip)) and added .scrub-label drag-scrubbing to #sec-chord-num, #sec-twist-num, and #sec-thick-num; and (6) added interactive hover crosshairs (.chart-crosshair) and live mono readouts (#cp-tsr-hover-readout, #wind-power-hover-readout, inspectCpTsrAtSvgX, inspectWindPowerAtSvgX) on #cp-tsr-svg and #wind-power-svg.
   refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs | supersedes: –
 
+- **F-geom1-052** | 2026-11-07 20:03 | geom-1 | T-105
+  Added Competition Wind & Blade Presets, Generator Spec Presets, Gear Ratio (G:1) coupling, and the Drivetrain & Load Max-Out Optimizer across crates/blade-wasm/src/lib.rs, web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs: (1) AeroOptionsDto in lade-wasm now accepts generator_gear_ratio and generator_i0 and passes them into GeneratorSpec during simulate_aero; (2) 4 1-click Wind & Competition Blade Presets in #layer1-rotor (low_wind at 3.5 m/s TSR 3.5, med_kidwind at 4.5 m/s TSR 4.2, high_wind at 8.0 m/s TSR 5.5, and schmitz_600 600 mm reference rotor), each configuring multi-section airfoils (S833, SG6043, SD7062, E387, NACA 4412), cosine/linear planform, and recommended drivetrain; (3) Generator Spec Presets (kidwind_red Kv=240 R_int=6.2Ω, kidwind_gen2 Kv=320 R_int=4.8Ω, outrunner_bldc Kv=100 R_int=1.4Ω, low_rpm_pmg Kv=35 R_int=0.8Ω, custom) plus scrubbable Gear Ratio (#gen-gear-ratio) and 1:1..4:1 quick buttons; and (4) optimizeGeneratorAndGearbox (DrivetrainMaxOutReport) diagnosing Over-Loaded Stall vs Under-Loaded Overspeed vs Optimal Band, solving for optimal (G:1, R_load) and best R_load at current gear, rendering a 3-step "How to Max Out" guide (#gen-maxout-guide), and providing 1-click #btn-max-out-drivetrain (Max Out Gear & Load) and #btn-match-load-only (Match Load Only) actions.
+  refs: crates/blade-wasm/src/lib.rs, web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: –
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -881,3 +885,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-07T16:21:00+07:00 agent=geom-1 mem=v80 last_entry=F-geom1-050 task=T-105 note="lead approved all 6 /ui-taste upgrades: (1) Right Aero Dock section-nav + 4 collapsible sections, (2) Left Dock section-nav Planform & Sections pills + scroll-spy, (3) fix var(--fg) token + responsive/accessible #viewport-heatmap-legend, (4) de-crowd #top-dock + clickable #autosave-badge + unified JSON labels, (5) Title Case headers + scrub-label on #layer2-sections, and (6) interactive hover crosshair & readout on #cp-tsr-svg and #wind-power-svg"
 [END] 2026-11-07T16:31:30+07:00 agent=geom-1 mem=v81 note="completed all 6 /ui-taste polish upgrades across web/index.html, web/src/main.ts, web/src/state.ts, and web/scripts/types.test.mjs; 13/13 Node tests + tsc + vite build pass; F-geom1-051 recorded"
 [RE-ACK] 2026-11-07T19:41:55+07:00 agent=geom-1 mem=v81 last_entry=F-geom1-051 task=T-105 note="lead requested: (1) Blade Presets for Low-Speed Wind vs High-Speed Wind (KidWind Challenge), (2) Generator Spec Presets & Gear Ratio controls, and (3) Drivetrain & Load Max-Out Optimizer (how to max out electrical power via optimal gear ratio, load resistance, and TSR matching)"
+[END] 2026-11-07T20:03:00+07:00 agent=geom-1 mem=v82 last_entry=F-geom1-052 task=T-105 note="Added low-wind/KidWind/high-wind/reference blade presets, generator spec presets, gear ratio coupling in blade-wasm + UI, and Drivetrain & Load Max-Out Optimizer; 14/14 web tests + 29/29 aero/wasm tests + vite build clean"

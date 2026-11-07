@@ -26,6 +26,9 @@ import {
   type AeroSimulationBundle,
   AUTOSAVE_STORAGE_KEY,
   applyBezierCurve,
+  applyBladeWindPreset,
+  BLADE_WIND_PRESETS,
+  type BladeWindPresetKey,
   buildCosinePlateauExpr,
   planformZones,
   parseCosinePlateauExpr,
@@ -51,15 +54,19 @@ import {
   defaultChordBezierPoints,
   defaultTwistBezierPoints,
   DesignHistory,
+  type DrivetrainMaxOutReport,
   evalBezierPoints,
   evaluateExperimentalFit,
   evaluatePrinterBuildFit,
   evaluateStructuralMechanics,
   evaluateWindSpeedCurveAndAep,
   type FabricationSnapshot,
+  GENERATOR_PRESETS,
+  type GeneratorPresetKey,
   type HeatmapMode,
   inspectCpTsrAtSvgX,
   inspectWindPowerAtSvgX,
+  optimizeGeneratorAndGearbox,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
   preserveLockedStations,
@@ -342,10 +349,27 @@ const bemSecMeta = document.getElementById("bem-sec-meta");
 const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
 const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
 const abDeltaSummary = document.getElementById("ab-delta-summary")!;
+const btnPresetLowWind = document.getElementById("btn-preset-low-wind") as HTMLButtonElement | null;
+const btnPresetKidwind = document.getElementById("btn-preset-kidwind") as HTMLButtonElement | null;
+const btnPresetHighWind = document.getElementById("btn-preset-high-wind") as HTMLButtonElement | null;
+const btnPresetRef = document.getElementById("btn-preset-ref") as HTMLButtonElement | null;
+const bladePresetDesc = document.getElementById("blade-preset-desc");
+
+const selectGenPreset = document.getElementById("gen-preset") as HTMLSelectElement;
 const inputGenKv = document.getElementById("gen-kv") as HTMLInputElement;
 const inputGenRInt = document.getElementById("gen-r-int") as HTMLInputElement;
+const inputGenGearRatio = document.getElementById("gen-gear-ratio") as HTMLInputElement;
 const inputGenRLoad = document.getElementById("gen-r-load") as HTMLInputElement;
+const btnGear1 = document.getElementById("btn-gear-1") as HTMLButtonElement | null;
+const btnGear2 = document.getElementById("btn-gear-2") as HTMLButtonElement | null;
+const btnGear3 = document.getElementById("btn-gear-3") as HTMLButtonElement | null;
+const btnGear4 = document.getElementById("btn-gear-4") as HTMLButtonElement | null;
 const genSummary = document.getElementById("gen-summary")!;
+const genOptTarget = document.getElementById("gen-opt-target");
+const genRegimeBadge = document.getElementById("gen-regime-badge");
+const btnMaxOutDrivetrain = document.getElementById("btn-max-out-drivetrain") as HTMLButtonElement | null;
+const btnMatchLoadOnly = document.getElementById("btn-match-load-only") as HTMLButtonElement | null;
+const genMaxoutGuide = document.getElementById("gen-maxout-guide");
 const inputSiteAvgWind = document.getElementById("site-avg-wind") as HTMLInputElement;
 const aepCutinBadge = document.getElementById("aep-cutin-badge")!;
 const kpiAepKwh = document.getElementById("kpi-aep-kwh")!;
@@ -367,11 +391,13 @@ const sectionsSummary = document.getElementById("sections-summary");
 let bezierTarget: "chord_mm" | "twist_deg" = "chord_mm";
 let planformCosine = false;
 let activeSection: SectionKey = "root";
+let activeBladePreset: BladeWindPresetKey = "schmitz_600";
 const lockedSpanRatios: number[] = [];
 let baselineBundleA: AeroSimulationBundle | null = null;
 let latestBundleB: AeroSimulationBundle | null = null;
 let latestStructuralReport: StructuralMechanicsReport | null = null;
 let latestAepReport: WindPowerAepReport | null = null;
+let latestMaxOutReport: DrivetrainMaxOutReport | null = null;
 
 let viewMode: "single" | "rotor" = "rotor";
 let wireframeMode = false;
@@ -941,11 +967,29 @@ function rebuild3D(design: Design) {
   }
 }
 
+function syncGearQuickButtons(gearRatio: number) {
+  for (const [btn, val] of [
+    [btnGear1, 1.0],
+    [btnGear2, 2.0],
+    [btnGear3, 3.0],
+    [btnGear4, 4.0],
+  ] as const) {
+    if (btn) {
+      btn.classList.toggle("active", Math.abs(gearRatio - val) < 0.04);
+    }
+  }
+}
+
 function updateAeroPanel(design: Design) {
   try {
     const kv = Number.parseFloat(inputGenKv.value) || 35;
     const rInt = Number.parseFloat(inputGenRInt.value) || 0.8;
+    const gearRatio = Math.max(0.25, Number.parseFloat(inputGenGearRatio.value) || 1.0);
     const rLoad = Number.parseFloat(inputGenRLoad.value) || 5.0;
+    const presetKey = (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey;
+    const presetI0 = GENERATOR_PRESETS[presetKey]?.no_load_current_a ?? 0.05;
+    syncGearQuickButtons(gearRatio);
+
     const rawJson = simulate_aero(
       JSON.stringify(design),
       JSON.stringify({
@@ -955,6 +999,8 @@ function updateAeroPanel(design: Design) {
         generator_kv: kv,
         generator_r_int: rInt,
         generator_r_load: rLoad,
+        generator_gear_ratio: gearRatio,
+        generator_i0: presetI0,
       }),
     );
     const bundle = JSON.parse(rawJson) as AeroSimulationBundle;
@@ -979,8 +1025,9 @@ function updateAeroPanel(design: Design) {
     if (bundle.generator_match) {
       const gm = bundle.generator_match;
       const st = gm.generator;
-      kpiGenElec.textContent = `${st.terminal_voltage_v.toFixed(1)}V / ${st.electrical_power_w.toFixed(0)}W`;
-      genSummary.textContent = `Eq ${st.rotor_rpm.toFixed(0)} RPM (λ=${gm.tip_speed_ratio.toFixed(
+      const genRpm = st.generator_rpm ?? st.rotor_rpm * gearRatio;
+      kpiGenElec.textContent = `${st.terminal_voltage_v.toFixed(1)}V / ${st.electrical_power_w.toFixed(1)}W`;
+      genSummary.textContent = `Rotor ${st.rotor_rpm.toFixed(0)} RPM · Gen ${genRpm.toFixed(0)} RPM (${gearRatio.toFixed(2)}:1, λ=${gm.tip_speed_ratio.toFixed(
         2,
       )}) / V=${st.terminal_voltage_v.toFixed(1)} V / I=${st.current_a.toFixed(
         2,
@@ -992,12 +1039,38 @@ function updateAeroPanel(design: Design) {
       genSummary.textContent = "Gen: uncoupled";
     }
 
+    // Drivetrain & Load Max-Out Solver ("How to Max Out")
+    const maxOut = optimizeGeneratorAndGearbox(design, bundle, {
+      kv,
+      r_int: rInt,
+      r_load: rLoad,
+      gear_ratio: gearRatio,
+      i0: presetI0,
+    });
+    latestMaxOutReport = maxOut;
+    if (genOptTarget) {
+      genOptTarget.textContent = `Opt ${maxOut.opt_gear_ratio.toFixed(2)}:1 · ${maxOut.opt_r_load_ohm.toFixed(1)} Ω (${maxOut.opt_elec_power_w.toFixed(1)} W)`;
+    }
+    if (genRegimeBadge) {
+      const gainTag =
+        maxOut.gain_power_w >= 0.15
+          ? ` — Max-Out adds +${maxOut.gain_power_w.toFixed(1)} W (+${maxOut.gain_pct.toFixed(0)}%)`
+          : " — Drivetrain at peak output";
+      genRegimeBadge.textContent = `${maxOut.regime_label}${gainTag}`;
+      genRegimeBadge.classList.toggle("ok", maxOut.regime === "optimal_band");
+      genRegimeBadge.classList.toggle("warn", maxOut.regime === "overspeed_underload");
+      genRegimeBadge.classList.toggle("crit", maxOut.regime === "stalled_overload");
+    }
+    if (genMaxoutGuide) {
+      genMaxoutGuide.textContent = maxOut.how_to_max_out_steps.join("\n");
+    }
+
     // Feature #4: Multi-Wind-Speed Power Curve (2–18 m/s), Cut-In & Weibull AEP
     const siteAvgWind = Number.parseFloat(inputSiteAvgWind.value) || 5.5;
     const aepReport = evaluateWindSpeedCurveAndAep(
       design,
       bundle,
-      { kv, r_int: rInt, r_load: rLoad },
+      { kv, r_int: rInt, r_load: rLoad, gear_ratio: gearRatio },
       siteAvgWind,
     );
     latestAepReport = aepReport;
@@ -1678,11 +1751,32 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     site_avg_wind_mps: Number.parseFloat(inputSiteAvgWind.value) || 5.5,
     printer_preset: (selectPrinterPreset.value || "bambu_256") as PrinterPresetKey,
     printer_max_z_mm: Number.parseFloat(inputPrinterMaxZ.value) || 256,
+    blade_preset: activeBladePreset,
+    gen_preset: (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey,
+    gen_gear_ratio: Math.max(0.25, Number.parseFloat(inputGenGearRatio?.value) || 1.0),
     gen_kv: Number.parseFloat(inputGenKv.value) || 35,
     gen_r_int: Number.parseFloat(inputGenRInt.value) || 0.8,
     gen_r_load: Number.parseFloat(inputGenRLoad.value) || 12.0,
     exp_data_log: inputExpData.value || "",
   };
+}
+
+function syncBladePresetButtons(presetKey: BladeWindPresetKey) {
+  activeBladePreset = presetKey;
+  for (const [btn, key] of [
+    [btnPresetLowWind, "low_wind"],
+    [btnPresetKidwind, "med_kidwind"],
+    [btnPresetHighWind, "high_wind"],
+    [btnPresetRef, "schmitz_600"],
+  ] as const) {
+    if (btn) {
+      btn.classList.toggle("active", presetKey === key);
+    }
+  }
+  const spec = BLADE_WIND_PRESETS[presetKey];
+  if (bladePresetDesc && spec) {
+    bladePresetDesc.textContent = spec.description;
+  }
 }
 
 function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
@@ -1721,6 +1815,14 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   selectPrinterPreset.value = wb.printer_preset || "bambu_256";
   inputPrinterMaxZ.value = String(wb.printer_max_z_mm ?? 256);
 
+  syncBladePresetButtons(wb.blade_preset || "schmitz_600");
+  if (selectGenPreset) {
+    selectGenPreset.value = wb.gen_preset || "low_rpm_pmg";
+  }
+  if (inputGenGearRatio) {
+    inputGenGearRatio.value = String(wb.gen_gear_ratio ?? 1.0);
+  }
+  syncGearQuickButtons(wb.gen_gear_ratio ?? 1.0);
   inputGenKv.value = String(wb.gen_kv ?? 35);
   inputGenRInt.value = String(wb.gen_r_int ?? 0.8);
   inputGenRLoad.value = String(wb.gen_r_load ?? 12.0);
@@ -2729,11 +2831,101 @@ btnClearA.addEventListener("click", () => {
   updateAeroPanel(workingDesign);
 });
 
-[inputGenKv, inputGenRInt, inputGenRLoad, inputSiteAvgWind].forEach((el) => {
+function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
+  const { design, spec: preset } = applyBladeWindPreset(workingDesign, presetKey);
+  planformCosine = preset.planform.cosine;
+  sliderPlanformCenter.value = String(preset.planform.center_pct);
+  sliderPlanformWidth.value = String(preset.planform.width_pct);
+  planformCenterVal.textContent = `${preset.planform.center_pct}%`;
+  planformWidthVal.textContent = `${preset.planform.width_pct}%`;
+
+  const genPresetKey = preset.recommended_drivetrain.gen_preset;
+  const genSpec = GENERATOR_PRESETS[genPresetKey];
+  selectGenPreset.value = genPresetKey;
+  if (genSpec) {
+    inputGenKv.value = String(genSpec.kv_rpm_per_v);
+    inputGenRInt.value = String(genSpec.r_int_ohm);
+  }
+  inputGenGearRatio.value = String(preset.recommended_drivetrain.gear_ratio);
+  inputGenRLoad.value = String(preset.recommended_drivetrain.r_load_ohm);
+  inputSiteAvgWind.value = String(preset.recommended_drivetrain.site_avg_wind_mps);
+  syncGearQuickButtons(preset.recommended_drivetrain.gear_ratio);
+  syncBladePresetButtons(presetKey);
+  commitDesign(design);
+}
+
+btnPresetLowWind?.addEventListener("click", () => applySelectedBladePreset("low_wind"));
+btnPresetKidwind?.addEventListener("click", () => applySelectedBladePreset("med_kidwind"));
+btnPresetHighWind?.addEventListener("click", () => applySelectedBladePreset("high_wind"));
+btnPresetRef?.addEventListener("click", () => applySelectedBladePreset("schmitz_600"));
+
+selectGenPreset.addEventListener("change", () => {
+  const key = selectGenPreset.value as GeneratorPresetKey;
+  const spec = GENERATOR_PRESETS[key];
+  if (spec && key !== "custom") {
+    inputGenKv.value = String(spec.kv_rpm_per_v);
+    inputGenRInt.value = String(spec.r_int_ohm);
+    inputGenGearRatio.value = String(spec.default_gear_ratio);
+    inputGenRLoad.value = String(spec.default_r_load_ohm);
+    syncGearQuickButtons(spec.default_gear_ratio);
+  }
+  updateAeroPanel(workingDesign);
+  scheduleAutoSave();
+});
+
+[inputGenKv, inputGenRInt, inputGenGearRatio, inputGenRLoad, inputSiteAvgWind].forEach((el) => {
   el.addEventListener("change", () => {
+    if (el === inputGenKv || el === inputGenRInt) {
+      selectGenPreset.value = "custom";
+    }
+    if (el === inputGenGearRatio) {
+      const g = Math.max(0.25, Math.min(20, parseFloat(inputGenGearRatio.value) || 1.0));
+      inputGenGearRatio.value = String(g);
+      syncGearQuickButtons(g);
+    }
     updateAeroPanel(workingDesign);
     scheduleAutoSave();
   });
+});
+
+[
+  { btn: btnGear1, g: 1 },
+  { btn: btnGear2, g: 2 },
+  { btn: btnGear3, g: 3 },
+  { btn: btnGear4, g: 4 },
+].forEach(({ btn, g }) => {
+  btn?.addEventListener("click", () => {
+    inputGenGearRatio.value = String(g);
+    syncGearQuickButtons(g);
+    updateAeroPanel(workingDesign);
+    scheduleAutoSave();
+  });
+});
+
+btnMaxOutDrivetrain?.addEventListener("click", () => {
+  if (!latestMaxOutReport) return;
+  inputGenGearRatio.value = String(latestMaxOutReport.opt_gear_ratio);
+  inputGenRLoad.value = String(latestMaxOutReport.opt_r_load_ohm);
+  syncGearQuickButtons(latestMaxOutReport.opt_gear_ratio);
+  if (
+    latestBundleB &&
+    Number.isFinite(latestBundleB.peak_tsr) &&
+    Math.abs(workingDesign.rotor.design_tsr - latestBundleB.peak_tsr) > 0.05
+  ) {
+    commitDesign(
+      updateRotorField(workingDesign, "design_tsr", Number(latestBundleB.peak_tsr.toFixed(2))),
+    );
+  } else {
+    updateAeroPanel(workingDesign);
+    scheduleAutoSave();
+  }
+});
+
+btnMatchLoadOnly?.addEventListener("click", () => {
+  if (!latestMaxOutReport) return;
+  inputGenRLoad.value = String(latestMaxOutReport.best_r_load_at_current_gear_ohm);
+  updateAeroPanel(workingDesign);
+  scheduleAutoSave();
 });
 
 selectStructMaterial.addEventListener("change", () => {
