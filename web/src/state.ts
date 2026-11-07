@@ -995,8 +995,29 @@ export interface GeneratorMatchSummary {
   };
 }
 
+export interface StationAeroSummary {
+  span_ratio: number;
+  radius_mm: number;
+  chord_mm: number;
+  twist_deg: number;
+  inflow_angle_deg: number;
+  alpha_deg: number;
+  axial_induction: number;
+  tangential_induction: number;
+  tip_loss_factor: number;
+  reynolds: number;
+  cl: number;
+  cd: number;
+  cn: number;
+  ct: number;
+  relative_speed_mps: number;
+  thrust_per_m_n: number;
+  torque_per_m_nm: number;
+}
+
 export interface AeroSimulationBundle {
   design_point: {
+    omega_rad_s?: number;
     rpm: number;
     cp: number;
     ct: number;
@@ -1004,6 +1025,7 @@ export interface AeroSimulationBundle {
     power_w: number;
     thrust_n: number;
     torque_nm: number;
+    stations?: StationAeroSummary[];
   };
   sweep: TsrSweepPoint[];
   peak_cp: number;
@@ -1474,6 +1496,10 @@ export interface FabricationSnapshot {
   align_min_wall_mm: number;
 }
 
+export type StructuralMaterialKey = "pla" | "petg" | "asa" | "pacf";
+export type HeatmapMode = "segment" | "alpha" | "cl_cd" | "torque" | "wall_stress";
+export type PrinterPresetKey = "bambu_256" | "prusa_mk4" | "ender3" | "voron_350" | "custom";
+
 export interface WorkbenchUiSnapshot {
   planform_cosine: boolean;
   planform_center_pct: number;
@@ -1486,6 +1512,11 @@ export interface WorkbenchUiSnapshot {
   global_light_intensity: number;
   view_mode: "single" | "rotor";
   wireframe_mode: boolean;
+  heatmap_mode?: HeatmapMode;
+  structural_material?: StructuralMaterialKey;
+  site_avg_wind_mps?: number;
+  printer_preset?: PrinterPresetKey;
+  printer_max_z_mm?: number;
   gen_kv: number;
   gen_r_int: number;
   gen_r_load: number;
@@ -1552,6 +1583,11 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     global_light_intensity: 1.35,
     view_mode: "rotor",
     wireframe_mode: false,
+    heatmap_mode: "segment",
+    structural_material: "petg",
+    site_avg_wind_mps: 5.5,
+    printer_preset: "bambu_256",
+    printer_max_z_mm: 256,
     gen_kv: 35,
     gen_r_int: 0.8,
     gen_r_load: 12.0,
@@ -1722,4 +1758,900 @@ export function removeSavedSlot(
 ): SavedSlotEntry[] {
   return slots.filter((s) => s.id !== id);
 }
+
+// ============================================================================
+// Feature #1: Structural & Root-Bending Mechanics + CF Spar Safety Factor
+// ============================================================================
+
+export interface MaterialSpec {
+  name: string;
+  density_kg_m3: number;
+  modulus_gpa: number;
+  yield_mpa: number;
+  shell_infill_factor: number;
+}
+
+export const STRUCTURAL_MATERIALS: Record<StructuralMaterialKey, MaterialSpec> = {
+  pla: {
+    name: "PLA (Standard 3D Print)",
+    density_kg_m3: 1240,
+    modulus_gpa: 3.1,
+    yield_mpa: 45,
+    shell_infill_factor: 0.42,
+  },
+  petg: {
+    name: "PETG (Tough / Outdoor)",
+    density_kg_m3: 1270,
+    modulus_gpa: 2.1,
+    yield_mpa: 42,
+    shell_infill_factor: 0.42,
+  },
+  asa: {
+    name: "ASA (UV / Weather Resistant)",
+    density_kg_m3: 1070,
+    modulus_gpa: 2.2,
+    yield_mpa: 40,
+    shell_infill_factor: 0.42,
+  },
+  pacf: {
+    name: "PA-CF (Carbon-Reinforced Nylon)",
+    density_kg_m3: 1180,
+    modulus_gpa: 6.8,
+    yield_mpa: 85,
+    shell_infill_factor: 0.48,
+  },
+};
+
+export interface StationStructuralRow {
+  span_ratio: number;
+  radius_mm: number;
+  chord_mm: number;
+  thickness_mm: number;
+  bending_moment_nm: number;
+  shell_stress_mpa: number;
+  cf_stress_mpa: number;
+  safety_factor: number;
+}
+
+export interface StructuralMechanicsReport {
+  material: StructuralMaterialKey;
+  material_name: string;
+  root_moment_nm: number;
+  split_moment_nm: number;
+  centrifugal_root_n: number;
+  centrifugal_runaway_n: number;
+  blade_mass_g: number;
+  tip_deflection_mm: number;
+  tip_deflection_pct: number;
+  root_safety_factor: number;
+  joint_safety_factor: number;
+  max_shell_stress_mpa: number;
+  status: "safe" | "caution" | "critical";
+  recommendation: string;
+  stations: StationStructuralRow[];
+}
+
+/**
+ * Integrates spanwise aerodynamic flapwise loads (`thrust_per_m_n / B`) and
+ * centrifugal inertia from tip (`R`) to hub root (`r0`) to compute root &
+ * split-plane bending moments, composite CF-tube + 3D-printed shell stress,
+ * safety factors, and Euler–Bernoulli tip deflection.
+ */
+export function evaluateStructuralMechanics(
+  design: Design,
+  bundle: AeroSimulationBundle,
+  fabrication: FabricationSnapshot,
+  materialKey: StructuralMaterialKey = "petg",
+): StructuralMechanicsReport {
+  const mat = STRUCTURAL_MATERIALS[materialKey] ?? STRUCTURAL_MATERIALS.petg;
+  const { rotor } = design;
+  const B = Math.max(1, rotor.blade_count);
+  const r0Mm = rotor.hub_radius_mm;
+  const rTipMm = rotor.radius_mm;
+  const bladeLenMm = Math.max(10, rTipMm - r0Mm);
+  const bladeLenM = bladeLenMm * 1e-3;
+
+  const previewStations = resolveStationsPreview(design);
+  const aeroStations = bundle.design_point.stations ?? [];
+  const N = previewStations.length;
+
+  // Build radial grid r_i (m), chord c_i (m), thickness t_i (m), and per-blade normal load q_n (N/m)
+  const rM: number[] = [];
+  const cMm: number[] = [];
+  const tMm: number[] = [];
+  const qNormalNPerM: number[] = [];
+
+  const totalThrustPerBladeN = Math.max(0.05, bundle.design_point.thrust_n / B);
+
+  for (let i = 0; i < N; i++) {
+    const st = previewStations[i]!;
+    const rCurrMm = st.radius_mm;
+    const cCurrMm = Math.max(4, st.effective_chord_mm);
+    // Interpolate thickness ratio from design.airfoils
+    const tcRatio = airfoilThicknessRatioAtSpan(design, st.span_ratio);
+    const thickMm = Math.max(1.2, cCurrMm * tcRatio);
+
+    // Match or interpolate thrust_per_m_n from aeroStations
+    let dTdrTotal = 0;
+    if (aeroStations.length > 0) {
+      dTdrTotal = interpolateStationField(aeroStations, st.span_ratio, "thrust_per_m_n");
+    } else {
+      // Triangular spanwise load fallback if stations array absent
+      dTdrTotal = (2 * totalThrustPerBladeN * B * st.span_ratio) / bladeLenM;
+    }
+
+    rM.push(rCurrMm * 1e-3);
+    cMm.push(cCurrMm);
+    tMm.push(thickMm);
+    qNormalNPerM.push(Math.max(0, dTdrTotal / B));
+  }
+
+  // Spanwise integration of bending moment M(r_i) = \int_{r_i}^{R} q_n(\xi) (\xi - r_i) d\xi
+  const momentNm = new Array<number>(N).fill(0);
+  for (let i = 0; i < N; i++) {
+    let m = 0;
+    const ri = rM[i]!;
+    for (let j = i; j < N - 1; j++) {
+      const rA = rM[j]!;
+      const rB = rM[j + 1]!;
+      const dr = Math.max(0, rB - rA);
+      const qA = qNormalNPerM[j]! * (rA - ri);
+      const qB = qNormalNPerM[j + 1]! * (rB - ri);
+      m += 0.5 * (qA + qB) * dr;
+    }
+    momentNm[i] = m;
+  }
+
+  // Carbon-fiber pultruded spar tube properties
+  const cfEnabled = Boolean(fabrication.spar_hole_enabled && fabrication.spar_hole_diameter_mm >= 1);
+  const dCfOutM = cfEnabled ? fabrication.spar_hole_diameter_mm * 1e-3 : 0;
+  const wallCfM = Math.min(0.0012, 0.22 * dCfOutM);
+  const dCfInM = Math.max(0, dCfOutM - 2 * wallCfM);
+  const iCfM4 = cfEnabled ? (Math.PI / 64) * (dCfOutM ** 4 - dCfInM ** 4) : 0;
+  const aCfM2 = cfEnabled ? (Math.PI / 4) * (dCfOutM ** 2 - dCfInM ** 2) : 0;
+  const eCfPa = 115e9;
+  const yieldCfMpa = 850;
+  const cfDepthMm = cfEnabled ? Math.max(0, fabrication.spar_hole_depth_mm) : 0;
+
+  const eShellPa = mat.modulus_gpa * 1e9;
+  const omegaRadS =
+    bundle.design_point.omega_rad_s ?? (bundle.design_point.rpm * 2 * Math.PI) / 60;
+
+  let bladeMassKg = 0;
+  let centrifugalRootN = 0;
+  let maxShellStressMpa = 0;
+  const curvaturePerM = new Array<number>(N).fill(0);
+  const stationRows: StationStructuralRow[] = [];
+
+  for (let i = 0; i < N; i++) {
+    const st = previewStations[i]!;
+    const spanDistMm = st.radius_mm - r0Mm;
+    const hasCfHere = cfEnabled && spanDistMm <= cfDepthMm + 1e-3;
+
+    const cM = cMm[i]! * 1e-3;
+    const tM = tMm[i]! * 1e-3;
+
+    // Effective printed airfoil cross-section area and flapwise second moment of area I_xx
+    const aShellM2 = Math.max(1e-7, 0.65 * cM * tM * mat.shell_infill_factor - (hasCfHere ? (Math.PI / 4) * dCfOutM ** 2 : 0));
+    const iShellM4 = Math.max(
+      1e-13,
+      0.036 * cM * tM ** 3 * (0.55 + 0.45 * mat.shell_infill_factor) -
+        (hasCfHere ? (Math.PI / 64) * dCfOutM ** 4 : 0),
+    );
+
+    const eiTotalNm2 = eShellPa * iShellM4 + (hasCfHere ? eCfPa * iCfM4 : 0);
+    const mNm = momentNm[i]!;
+    const kappa = eiTotalNm2 > 0 ? mNm / eiTotalNm2 : 0;
+    curvaturePerM[i] = kappa;
+
+    // Outer fiber bending stress: \sigma = E * \kappa * (t / 2)
+    const shellStressMpa = (eShellPa * kappa * (0.5 * tM)) * 1e-6;
+    const cfStressMpa = hasCfHere ? (eCfPa * kappa * (0.5 * dCfOutM)) * 1e-6 : 0;
+    maxShellStressMpa = Math.max(maxShellStressMpa, shellStressMpa);
+
+    const sfShell = shellStressMpa > 1e-4 ? mat.yield_mpa / shellStressMpa : 99.9;
+    const sfCf = hasCfHere && cfStressMpa > 1e-4 ? yieldCfMpa / cfStressMpa : 99.9;
+    const sfStation = Math.min(99.9, Math.min(sfShell, sfCf));
+
+    stationRows.push({
+      span_ratio: st.span_ratio,
+      radius_mm: st.radius_mm,
+      chord_mm: cMm[i]!,
+      thickness_mm: tMm[i]!,
+      bending_moment_nm: mNm,
+      shell_stress_mpa: shellStressMpa,
+      cf_stress_mpa: cfStressMpa,
+      safety_factor: sfStation,
+    });
+
+    if (i < N - 1) {
+      const drM = Math.max(0, rM[i + 1]! - rM[i]!);
+      const rMidM = 0.5 * (rM[i]! + rM[i + 1]!);
+      const linearMassKgPerM =
+        mat.density_kg_m3 * aShellM2 + (hasCfHere ? 1550 * aCfM2 : 0);
+      const dmKg = linearMassKgPerM * drM;
+      bladeMassKg += dmKg;
+      centrifugalRootN += dmKg * omegaRadS * omegaRadS * rMidM;
+    }
+  }
+
+  // Double integration of curvature \kappa(r) from root (i=0) to tip (i=N-1)
+  let slopeRad = 0;
+  let tipDeflectionM = 0;
+  for (let i = 0; i < N - 1; i++) {
+    const dr = Math.max(0, rM[i + 1]! - rM[i]!);
+    const kAvg = 0.5 * (curvaturePerM[i]! + curvaturePerM[i + 1]!);
+    const dSlope = kAvg * dr;
+    tipDeflectionM += slopeRad * dr + 0.5 * kAvg * dr * dr;
+    slopeRad += dSlope;
+  }
+
+  const tipDeflectionMm = tipDeflectionM * 1000;
+  const tipDeflectionPct = (tipDeflectionMm / bladeLenMm) * 100;
+
+  // Evaluate first split-plane moment and joint safety factor
+  const splitParts = Math.max(1, fabrication.split_parts || 1);
+  const splitRatio =
+    splitParts === 2
+      ? Math.max(0.12, Math.min(0.88, (fabrication.split_ratio_pct || 50) / 100))
+      : splitParts > 2
+        ? 1 / splitParts
+        : 0.5;
+  const splitIdx = Math.min(N - 1, Math.max(0, Math.round(splitRatio * (N - 1))));
+  const splitRow = stationRows[splitIdx]!;
+  const splitMomentNm = splitParts > 1 ? splitRow.bending_moment_nm : 0;
+
+  const rootSf = stationRows[0]?.safety_factor ?? 99.9;
+  let jointSf = rootSf;
+  if (splitParts > 1) {
+    const splitDistMm = splitRow.radius_mm - r0Mm;
+    const cfBridgesSplit = cfEnabled && cfDepthMm >= splitDistMm + 15;
+    const jointFactor =
+      fabrication.align_shape === "contour"
+        ? 0.78
+        : fabrication.align_shape === "dovetail" || fabrication.align_shape === "cruciform"
+          ? 0.65
+          : fabrication.align_shape === "none"
+            ? 0.35
+            : 0.55;
+    jointSf = Math.min(
+      99.9,
+      splitRow.safety_factor * (cfBridgesSplit ? 0.95 : jointFactor),
+    );
+  }
+
+  const minSf = Math.min(rootSf, jointSf);
+  const status: "safe" | "caution" | "critical" =
+    minSf >= 2.0 && tipDeflectionPct <= 6.0
+      ? "safe"
+      : minSf >= 1.2 && tipDeflectionPct <= 10.0
+        ? "caution"
+        : "critical";
+
+  let recommendation = "Cantilever stress & tip deflection within safe operating envelope.";
+  if (status === "critical") {
+    if (!cfEnabled) {
+      recommendation = "Enable a 6 mm or 8 mm Carbon-Fiber Spar Tube to reinforce root bending.";
+    } else if (splitParts > 1 && cfDepthMm < (splitRow.radius_mm - r0Mm) + 20) {
+      recommendation = "Extend CF Spar Tube depth past the split plane or use Full-Span 85%.";
+    } else {
+      recommendation = "Increase root chord / thickness ratio or switch to PA-CF / larger CF tube.";
+    }
+  } else if (status === "caution") {
+    recommendation = cfEnabled
+      ? "Moderate load: consider increasing CF tube diameter or Contour Lip engagement."
+      : "Consider enabling a Carbon-Fiber Spar Tube for higher safety margin.";
+  }
+
+  return {
+    material: materialKey,
+    material_name: mat.name,
+    root_moment_nm: momentNm[0] ?? 0,
+    split_moment_nm: splitMomentNm,
+    centrifugal_root_n: centrifugalRootN,
+    centrifugal_runaway_n: centrifugalRootN * 2.25, // 1.5x runaway RPM => 2.25x centrifugal pull
+    blade_mass_g: Math.max(5, bladeMassKg * 1000),
+    tip_deflection_mm: tipDeflectionMm,
+    tip_deflection_pct: tipDeflectionPct,
+    root_safety_factor: rootSf,
+    joint_safety_factor: jointSf,
+    max_shell_stress_mpa: maxShellStressMpa,
+    status,
+    recommendation,
+    stations: stationRows,
+  };
+}
+
+function airfoilThicknessRatioAtSpan(design: Design, spanRatio: number): number {
+  const stations = design.airfoils;
+  if (!stations || stations.length === 0) return 0.12;
+  const first = stations[0]!;
+  if (stations.length === 1 || spanRatio <= first.span_ratio) {
+    return airfoilShapeParams(first.airfoil).t;
+  }
+  const last = stations[stations.length - 1]!;
+  if (spanRatio >= last.span_ratio) {
+    return airfoilShapeParams(last.airfoil).t;
+  }
+  for (let i = 0; i < stations.length - 1; i++) {
+    const a = stations[i]!;
+    const b = stations[i + 1]!;
+    if (spanRatio >= a.span_ratio && spanRatio <= b.span_ratio) {
+      const u = (spanRatio - a.span_ratio) / Math.max(1e-9, b.span_ratio - a.span_ratio);
+      return (
+        (1 - u) * airfoilShapeParams(a.airfoil).t + u * airfoilShapeParams(b.airfoil).t
+      );
+    }
+  }
+  return airfoilShapeParams(last.airfoil).t;
+}
+
+function interpolateStationField(
+  stations: readonly StationAeroSummary[],
+  spanRatio: number,
+  field: keyof StationAeroSummary,
+): number {
+  if (stations.length === 0) return 0;
+  if (stations.length === 1 || spanRatio <= stations[0]!.span_ratio) {
+    return Number(stations[0]![field]) || 0;
+  }
+  const last = stations[stations.length - 1]!;
+  if (spanRatio >= last.span_ratio) {
+    return Number(last[field]) || 0;
+  }
+  for (let i = 0; i < stations.length - 1; i++) {
+    const a = stations[i]!;
+    const b = stations[i + 1]!;
+    if (spanRatio >= a.span_ratio && spanRatio <= b.span_ratio) {
+      const u = (spanRatio - a.span_ratio) / Math.max(1e-9, b.span_ratio - a.span_ratio);
+      const va = Number(a[field]) || 0;
+      const vb = Number(b[field]) || 0;
+      return va + u * (vb - va);
+    }
+  }
+  return Number(last[field]) || 0;
+}
+
+// ============================================================================
+// Feature #2: 3D Aerodynamic & Wall-Thickness Color Heatmaps on the Blade
+// ============================================================================
+
+export interface HeatmapResult {
+  mode: HeatmapMode;
+  colors: Float32Array;
+  title: string;
+  minLabel: string;
+  midLabel: string;
+  maxLabel: string;
+  gradientCss: string;
+}
+
+function sampleThermalRamp(t01: number): [number, number, number] {
+  const t = Math.max(0, Math.min(1, t01));
+  // 4-stop scientific ramp: Deep Sky Blue (0.0) -> Emerald Green (0.42) -> Amber Gold (0.75) -> Crimson Red (1.0)
+  if (t <= 0.42) {
+    const u = t / 0.42;
+    return [
+      0.16 + u * (0.29 - 0.16),
+      0.62 + u * (0.78 - 0.62),
+      0.96 + u * (0.54 - 0.96),
+    ];
+  }
+  if (t <= 0.75) {
+    const u = (t - 0.42) / 0.33;
+    return [
+      0.29 + u * (0.96 - 0.29),
+      0.78 + u * (0.62 - 0.78),
+      0.54 + u * (0.05 - 0.54),
+    ];
+  }
+  const u = (t - 0.75) / 0.25;
+  return [
+    0.96 + u * (0.91 - 0.96),
+    0.62 + u * (0.26 - 0.62),
+    0.05 + u * (0.29 - 0.05),
+  ];
+}
+
+function sampleEfficiencyRamp(t01: number): [number, number, number] {
+  const t = Math.max(0, Math.min(1, t01));
+  // Slate Blue (0.0) -> Cyan (0.45) -> Bright Emerald (0.82) -> Warm Gold (1.0)
+  if (t <= 0.45) {
+    const u = t / 0.45;
+    return [
+      0.22 + u * (0.20 - 0.22),
+      0.32 + u * (0.74 - 0.32),
+      0.62 + u * (0.96 - 0.62),
+    ];
+  }
+  if (t <= 0.82) {
+    const u = (t - 0.45) / 0.37;
+    return [
+      0.20 + u * (0.30 - 0.20),
+      0.74 + u * (0.82 - 0.74),
+      0.96 + u * (0.54 - 0.96),
+    ];
+  }
+  const u = (t - 0.82) / 0.18;
+  return [
+    0.30 + u * (0.96 - 0.30),
+    0.82 + u * (0.72 - 0.82),
+    0.54 + u * (0.18 - 0.54),
+  ];
+}
+
+/**
+ * Computes per-vertex RGB `Float32Array` colors (`3 * vertexCount` entries) for
+ * 3D aerodynamic & structural heatmaps on the blade mesh.
+ */
+export function computeVertexHeatmapColors(
+  positions: ArrayLike<number>,
+  design: Design,
+  bundle: AeroSimulationBundle | null,
+  structural: StructuralMechanicsReport | null,
+  mode: HeatmapMode,
+): HeatmapResult {
+  const vCount = Math.floor(positions.length / 3);
+  const colors = new Float32Array(vCount * 3);
+  const r0 = design.rotor.hub_radius_mm;
+  const rTip = Math.max(r0 + 10, design.rotor.radius_mm);
+  const spanLen = rTip - r0;
+  const stations = bundle?.design_point.stations ?? [];
+
+  let title = "Angle of Attack α & Stall Margin";
+  let minLabel = "0° (Low)";
+  let midLabel = "6.5° (Opt)";
+  let maxLabel = "14°+ (Stall)";
+  let gradientCss = "linear-gradient(90deg, #299ef5 0%, #4ac78a 42%, #f59e0b 75%, #e8434a 100%)";
+
+  if (mode === "cl_cd") {
+    let maxLd = 25;
+    for (const st of stations) {
+      if (st.cd > 1e-5) {
+        maxLd = Math.max(maxLd, st.cl / st.cd);
+      }
+    }
+    title = "Aerodynamic Glide Ratio (Cl / Cd)";
+    minLabel = "0";
+    midLabel = `${(0.5 * maxLd).toFixed(0)}`;
+    maxLabel = `${maxLd.toFixed(0)} Peak L/D`;
+    gradientCss = "linear-gradient(90deg, #38529e 0%, #33bdf5 45%, #4cd18a 82%, #f5b82e 100%)";
+
+    for (let i = 0; i < vCount; i++) {
+      const z = Number(positions[i * 3 + 2]) || r0;
+      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
+      const cl = interpolateStationField(stations, s, "cl");
+      const cd = Math.max(1e-4, interpolateStationField(stations, s, "cd"));
+      const ld = Math.max(0, cl / cd);
+      const [r, g, b] = sampleEfficiencyRamp(ld / Math.max(10, maxLd));
+      colors[i * 3] = r;
+      colors[i * 3 + 1] = g;
+      colors[i * 3 + 2] = b;
+    }
+    return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
+  }
+
+  if (mode === "torque") {
+    let maxTq = 0.5;
+    for (const st of stations) {
+      maxTq = Math.max(maxTq, st.torque_per_m_nm);
+    }
+    title = "Spanwise Torque Production (dQ/dr)";
+    minLabel = "0 N·m/m";
+    midLabel = `${(0.5 * maxTq).toFixed(2)}`;
+    maxLabel = `${maxTq.toFixed(2)} N·m/m`;
+    gradientCss = "linear-gradient(90deg, #38529e 0%, #33bdf5 45%, #4cd18a 82%, #f5b82e 100%)";
+
+    for (let i = 0; i < vCount; i++) {
+      const z = Number(positions[i * 3 + 2]) || r0;
+      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
+      const tq = Math.max(0, interpolateStationField(stations, s, "torque_per_m_nm"));
+      const [r, g, b] = sampleEfficiencyRamp(tq / maxTq);
+      colors[i * 3] = r;
+      colors[i * 3 + 1] = g;
+      colors[i * 3 + 2] = b;
+    }
+    return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
+  }
+
+  if (mode === "wall_stress") {
+    const structRows = structural?.stations ?? [];
+    const maxStress = Math.max(5, structural?.max_shell_stress_mpa ?? 20);
+    title = "Bending Stress & Wall Utilization";
+    minLabel = "0 MPa (Low)";
+    midLabel = `${(0.5 * maxStress).toFixed(1)} MPa`;
+    maxLabel = `${maxStress.toFixed(1)} MPa`;
+
+    for (let i = 0; i < vCount; i++) {
+      const y = Number(positions[i * 3 + 1]) || 0;
+      const z = Number(positions[i * 3 + 2]) || r0;
+      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
+      // Interpolate station bending stress, modulated by outer-fiber distance |y|
+      let stStress = 0;
+      let stThick = 6;
+      if (structRows.length > 0) {
+        const idx = Math.min(
+          structRows.length - 1,
+          Math.max(0, Math.round(s * (structRows.length - 1))),
+        );
+        stStress = structRows[idx]!.shell_stress_mpa;
+        stThick = Math.max(1.5, structRows[idx]!.thickness_mm);
+      }
+      const fiberRatio = Math.min(1.15, Math.abs(y) / (0.45 * stThick));
+      const localStress = stStress * (0.35 + 0.65 * fiberRatio);
+      const [r, g, b] = sampleThermalRamp(localStress / Math.max(10, maxStress * 1.1));
+      colors[i * 3] = r;
+      colors[i * 3 + 1] = g;
+      colors[i * 3 + 2] = b;
+    }
+    return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
+  }
+
+  // Default heatmap: "alpha" (Angle of Attack & Stall Margin)
+  for (let i = 0; i < vCount; i++) {
+    const z = Number(positions[i * 3 + 2]) || r0;
+    const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
+    const alpha = stations.length > 0 ? interpolateStationField(stations, s, "alpha_deg") : 6.0;
+    // Map alpha in [-2..15 deg] -> [0..1] where 6 deg -> ~0.42 (optimal green), 13+ deg -> red
+    const t01 = (alpha + 1.0) / 15.0;
+    const [r, g, b] = sampleThermalRamp(t01);
+    colors[i * 3] = r;
+    colors[i * 3 + 1] = g;
+    colors[i * 3 + 2] = b;
+  }
+
+  return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
+}
+
+// ============================================================================
+// Feature #4: Multi-Wind-Speed Power Curve (2–18 m/s), Cut-In & Weibull AEP
+// ============================================================================
+
+export interface WindCurvePoint {
+  wind_mps: number;
+  rpm: number;
+  tsr: number;
+  mech_power_w: number;
+  elec_power_w: number;
+  torque_nm: number;
+}
+
+export interface WindPowerAepReport {
+  cut_in_mps: number;
+  rated_mech_power_w: number;
+  rated_elec_power_w: number;
+  aep_kwh_yr: number;
+  capacity_factor_pct: number;
+  site_avg_wind_mps: number;
+  points: WindCurvePoint[];
+}
+
+/**
+ * Evaluates rotor mechanical & matched generator electrical power across wind
+ * speeds `2..18 m/s`, determines Cut-In wind speed (where starting aerodynamic
+ * torque exceeds cogging/friction torque), and integrates Weibull ($k = 2.0$
+ * Rayleigh) Annual Energy Production ($\text{kWh/yr}$).
+ */
+export function evaluateWindSpeedCurveAndAep(
+  design: Design,
+  bundle: AeroSimulationBundle,
+  genSpec: { kv: number; r_int: number; r_load: number },
+  siteAvgWindMps = 5.5,
+  airDensityKgM3 = 1.225,
+): WindPowerAepReport {
+  const rM = Math.max(0.05, design.rotor.radius_mm * 1e-3);
+  const areaM2 = Math.PI * rM * rM;
+  const peakCp = Math.max(0.05, bundle.peak_cp || bundle.design_point.cp || 0.35);
+  const optTsr = Math.max(0.5, bundle.peak_tsr || design.rotor.design_tsr || 4.5);
+
+  // Estimate low-TSR starting torque coefficient Cq_start from the lowest TSR point in sweep
+  const firstSweep = bundle.sweep[0];
+  const lowTsrCq =
+    firstSweep && firstSweep.tsr > 0.1
+      ? Math.max(0.008, firstSweep.cp / firstSweep.tsr)
+      : Math.max(0.012, peakCp / (optTsr * 2.4));
+
+  // Typical small PMG cogging + bearing static friction torque scales modestly with rotor size
+  const coggingTorqueNm = Math.max(0.015, 0.035 * rM * rM);
+  // 0.5 * rho * A * R * V_cut^2 * Cq_start = coggingTorqueNm
+  const denomStart = Math.max(1e-6, 0.5 * airDensityKgM3 * areaM2 * rM * lowTsrCq);
+  const cutInMps = Math.min(7.5, Math.max(1.4, Math.sqrt(coggingTorqueNm / denomStart)));
+
+  const kv = Math.max(1, genSpec.kv || 35);
+  const rInt = Math.max(0.02, genSpec.r_int || 0.8);
+  const rLoad = Math.max(0.1, genSpec.r_load || 12.0);
+  const rTot = rInt + rLoad;
+
+  const points: WindCurvePoint[] = [];
+  for (let v = 2; v <= 18; v += 1) {
+    if (v < cutInMps) {
+      points.push({
+        wind_mps: v,
+        rpm: 0,
+        tsr: 0,
+        mech_power_w: 0,
+        elec_power_w: 0,
+        torque_nm: 0.5 * airDensityKgM3 * areaM2 * rM * v * v * lowTsrCq,
+      });
+      continue;
+    }
+
+    // Soft ramp just above cut-in and passive furling/stall regulation above 13 m/s
+    const startFactor = Math.min(1, (v - cutInMps) / Math.max(0.8, 0.35 * cutInMps) + 0.25);
+    const highWindDerate = v > 13 ? 1 / (1 + 0.08 * (v - 13) ** 1.6) : 1;
+    const effCp = peakCp * startFactor * highWindDerate;
+    const pWind = 0.5 * airDensityKgM3 * areaM2 * v ** 3;
+    const mechPowerW = pWind * effCp;
+    const omega = (optTsr * v) / rM;
+    const rpm = (omega * 60) / (2 * Math.PI);
+    const torqueNm = omega > 1e-3 ? mechPowerW / omega : 0;
+
+    // Coupled PMG electrical output
+    const emfV = rpm / kv;
+    const currentUnclampedA = emfV / rTot;
+    const pGenInputDemand = emfV * currentUnclampedA;
+    // Generator electrical efficiency at matched load
+    const elecEff = Math.min(0.92, (rLoad / rTot) * 0.94);
+    const elecPowerW =
+      pGenInputDemand > 0
+        ? Math.min(mechPowerW * elecEff, (currentUnclampedA ** 2) * rLoad)
+        : mechPowerW * 0.78;
+
+    points.push({
+      wind_mps: v,
+      rpm,
+      tsr: optTsr,
+      mech_power_w: mechPowerW,
+      elec_power_w: Math.max(0, elecPowerW),
+      torque_nm: torqueNm,
+    });
+  }
+
+  // Weibull (k = 2 Rayleigh) Annual Energy Production integration over 8760 hours/yr
+  const vAvg = Math.max(2.0, Math.min(14.0, siteAvgWindMps || 5.5));
+  const cScale = (2 * vAvg) / Math.sqrt(Math.PI);
+  let expectedElecPowerW = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i]!;
+    const p1 = points[i + 1]!;
+    const cdf0 = 1 - Math.exp(-((p0.wind_mps / cScale) ** 2));
+    const cdf1 = 1 - Math.exp(-((p1.wind_mps / cScale) ** 2));
+    const probBin = Math.max(0, cdf1 - cdf0);
+    expectedElecPowerW += 0.5 * (p0.elec_power_w + p1.elec_power_w) * probBin;
+  }
+
+  const aepKwhYr = (expectedElecPowerW * 8760) / 1000;
+  const ratedPoint = points.find((p) => p.wind_mps === 12) ?? points[points.length - 1]!;
+  const ratedElecW = Math.max(1, ratedPoint.elec_power_w);
+  const capacityFactorPct = Math.min(100, (expectedElecPowerW / ratedElecW) * 100);
+
+  return {
+    cut_in_mps: cutInMps,
+    rated_mech_power_w: ratedPoint.mech_power_w,
+    rated_elec_power_w: ratedPoint.elec_power_w,
+    aep_kwh_yr: aepKwhYr,
+    capacity_factor_pct: capacityFactorPct,
+    site_avg_wind_mps: vAvg,
+    points,
+  };
+}
+
+/**
+ * Renders the Multi-Wind-Speed Power Curve (`2..18 m/s`) SVG showing Mechanical
+ * Power (`P_mech`), Electrical Output (`P_elec`), and Cut-In Wind Speed datum.
+ */
+export function renderWindPowerCurveSvgMarkup(report: WindPowerAepReport): string {
+  const width = 320;
+  const height = 148;
+  const padL = 38;
+  const padR = 14;
+  const padT = 14;
+  const padB = 26;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+
+  const vMin = 2;
+  const vMax = 18;
+  const maxP = Math.max(
+    25,
+    ...report.points.map((p) => Math.max(p.mech_power_w, p.elec_power_w)),
+  ) * 1.1;
+
+  const xOf = (v: number) => padL + ((v - vMin) / (vMax - vMin)) * plotW;
+  const yOf = (p: number) => padT + plotH - (Math.min(maxP, Math.max(0, p)) / maxP) * plotH;
+
+  const mechPath = report.points
+    .map((pt, idx) => `${idx === 0 ? "M" : "L"}${xOf(pt.wind_mps).toFixed(1)},${yOf(pt.mech_power_w).toFixed(1)}`)
+    .join(" ");
+  const elecPath = report.points
+    .map((pt, idx) => `${idx === 0 ? "M" : "L"}${xOf(pt.wind_mps).toFixed(1)},${yOf(pt.elec_power_w).toFixed(1)}`)
+    .join(" ");
+
+  const cutInX = xOf(Math.max(vMin, Math.min(vMax, report.cut_in_mps))).toFixed(1);
+
+  const lines: string[] = [
+    `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#262c3a" stroke-width="1" />`,
+    `<line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="#262c3a" stroke-width="1" />`,
+    `<line x1="${padL}" y1="${(padT + plotH * 0.5).toFixed(1)}" x2="${padL + plotW}" y2="${(padT + plotH * 0.5).toFixed(1)}" stroke="#1b202c" stroke-width="1" stroke-dasharray="3 3" />`,
+    `<line x1="${cutInX}" y1="${padT}" x2="${cutInX}" y2="${padT + plotH}" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3 2" />`,
+    `<path d="${mechPath}" fill="none" stroke="#38bdf8" stroke-width="1.8" />`,
+    `<path d="${elecPath}" fill="none" stroke="#4cc38a" stroke-width="1.8" />`,
+    `<text x="${Number(cutInX) + 4}" y="${padT + 10}" fill="#f59e0b" font-size="9.5" font-family="'IBM Plex Mono', monospace">Cut-in ${report.cut_in_mps.toFixed(1)} m/s</text>`,
+    `<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">${Math.round(maxP)}W</text>`,
+    `<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">0W</text>`,
+    `<text x="${padL}" y="${height - 8}" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">2 m/s</text>`,
+    `<text x="${padL + plotW * 0.5}" y="${height - 8}" text-anchor="middle" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">10 m/s</text>`,
+    `<text x="${padL + plotW}" y="${height - 8}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">18 m/s</text>`,
+  ];
+
+  return lines.join("\n");
+}
+
+// ============================================================================
+// Feature #5: Printer Build-Volume Fit Checker & Auto-Fit Split Calculator
+// ============================================================================
+
+export interface PrinterVolumeSpec {
+  name: string;
+  bed_x_mm: number;
+  bed_y_mm: number;
+  max_z_mm: number;
+}
+
+export const PRINTER_PRESETS: Record<PrinterPresetKey, PrinterVolumeSpec> = {
+  bambu_256: {
+    name: "Bambu X1/P1/A1 (256³ mm)",
+    bed_x_mm: 256,
+    bed_y_mm: 256,
+    max_z_mm: 256,
+  },
+  prusa_mk4: {
+    name: "Prusa MK4 / Core One (250×210×220 mm)",
+    bed_x_mm: 250,
+    bed_y_mm: 210,
+    max_z_mm: 220,
+  },
+  ender3: {
+    name: "Ender 3 / 220 Class (220×220×250 mm)",
+    bed_x_mm: 220,
+    bed_y_mm: 220,
+    max_z_mm: 250,
+  },
+  voron_350: {
+    name: "Voron 2.4 / Large (350³ mm)",
+    bed_x_mm: 350,
+    bed_y_mm: 350,
+    max_z_mm: 350,
+  },
+  custom: {
+    name: "Custom Build Height",
+    bed_x_mm: 250,
+    bed_y_mm: 250,
+    max_z_mm: 250,
+  },
+};
+
+export interface SegmentPrintCheck {
+  part_index: number;
+  span_start_mm: number;
+  span_end_mm: number;
+  body_length_mm: number;
+  joint_protrusion_mm: number;
+  total_print_z_mm: number;
+  max_chord_mm: number;
+  fits_z: boolean;
+  fits_xy: boolean;
+}
+
+export interface PrinterBuildFitReport {
+  preset: PrinterPresetKey;
+  printer_name: string;
+  max_z_mm: number;
+  bed_xy_mm: number;
+  blade_span_mm: number;
+  all_fit: boolean;
+  segments: SegmentPrintCheck[];
+  recommended_split_parts: number;
+  recommended_split_ratio_pct: number;
+  summary: string;
+}
+
+/**
+ * Checks whether every split blade segment (including male interlocking pin /
+ * Contour Lip protrusion along `+Z`) fits within the selected 3D printer's
+ * build volume, and computes the minimum split count (`1..4`) required.
+ */
+export function evaluatePrinterBuildFit(
+  design: Design,
+  fabrication: FabricationSnapshot,
+  preset: PrinterPresetKey = "bambu_256",
+  customMaxZMm?: number,
+): PrinterBuildFitReport {
+  const spec = PRINTER_PRESETS[preset] ?? PRINTER_PRESETS.bambu_256;
+  const maxZMm =
+    preset === "custom" && customMaxZMm && customMaxZMm >= 50
+      ? customMaxZMm
+      : spec.max_z_mm;
+  const bedDiagMm = Math.hypot(spec.bed_x_mm, spec.bed_y_mm) * 0.92;
+
+  const r0 = design.rotor.hub_radius_mm;
+  const rTip = design.rotor.radius_mm;
+  const bladeSpanMm = Math.max(10, rTip - r0);
+  const splitParts = Math.max(1, Math.min(4, fabrication.split_parts || 1));
+  const splitRatio = Math.max(0.12, Math.min(0.88, (fabrication.split_ratio_pct || 50) / 100));
+  const jointPinHeightMm =
+    splitParts > 1 && fabrication.align_shape !== "none"
+      ? Math.max(0, fabrication.align_height_mm || 6.0)
+      : 0;
+
+  // Compute split plane fractions [0, ..., 1]
+  const fractions: number[] = [0];
+  if (splitParts === 2) {
+    fractions.push(splitRatio, 1);
+  } else {
+    for (let k = 1; k <= splitParts; k++) {
+      fractions.push(k / splitParts);
+    }
+  }
+
+  const stations = resolveStationsPreview(design);
+  const maxChordGlobalMm = Math.max(
+    10,
+    ...stations.map((s) => s.effective_chord_mm),
+  );
+
+  const segments: SegmentPrintCheck[] = [];
+  for (let p = 0; p < splitParts; p++) {
+    const f0 = fractions[p]!;
+    const f1 = fractions[p + 1]!;
+    const z0 = r0 + f0 * bladeSpanMm;
+    const z1 = r0 + f1 * bladeSpanMm;
+    const bodyLen = z1 - z0;
+    // Lower segments (p < splitParts - 1) carry the male pin / Contour Lip on their +Z face
+    const protrusion = p < splitParts - 1 ? jointPinHeightMm : 0;
+    const totalPrintZ = bodyLen + protrusion;
+
+    segments.push({
+      part_index: p,
+      span_start_mm: z0,
+      span_end_mm: z1,
+      body_length_mm: bodyLen,
+      joint_protrusion_mm: protrusion,
+      total_print_z_mm: totalPrintZ,
+      max_chord_mm: maxChordGlobalMm,
+      fits_z: totalPrintZ <= maxZMm + 1e-6,
+      fits_xy: maxChordGlobalMm <= bedDiagMm,
+    });
+  }
+
+  const allFit = segments.every((s) => s.fits_z && s.fits_xy);
+
+  // Calculate minimum split parts (1..4) so that every part + pin protrusion fits maxZMm
+  const usableZPerPart = Math.max(30, maxZMm - jointPinHeightMm - 2);
+  const recommendedParts = Math.min(4, Math.max(1, Math.ceil(bladeSpanMm / usableZPerPart)));
+  const recommendedRatioPct = 50;
+
+  const tallestSeg = segments.reduce(
+    (best, cur) => (cur.total_print_z_mm > best.total_print_z_mm ? cur : best),
+    segments[0]!,
+  );
+
+  const summary = allFit
+    ? `All ${splitParts} part(s) fit ${maxZMm} mm Z limit (tallest: Part ${tallestSeg.part_index + 1} at ${tallestSeg.total_print_z_mm.toFixed(1)} mm)`
+    : `Part ${tallestSeg.part_index + 1} is ${tallestSeg.total_print_z_mm.toFixed(1)} mm tall (exceeds ${maxZMm} mm Z limit by ${(tallestSeg.total_print_z_mm - maxZMm).toFixed(1)} mm) — split into ${recommendedParts} parts`;
+
+  return {
+    preset,
+    printer_name: spec.name,
+    max_z_mm: maxZMm,
+    bed_xy_mm: Math.min(spec.bed_x_mm, spec.bed_y_mm),
+    blade_span_mm: bladeSpanMm,
+    all_fit: allFit,
+    segments,
+    recommended_split_parts: recommendedParts,
+    recommended_split_ratio_pct: recommendedRatioPct,
+    summary,
+  };
+}
+
 

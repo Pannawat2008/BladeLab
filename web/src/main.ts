@@ -43,6 +43,7 @@ import {
   clearStationOverride,
   cloneDesign,
   compareABSimulation,
+  computeVertexHeatmapColors,
   createWorkbenchSnapshot,
   defaultFabricationSnapshot,
   defaultWorkbenchUiSnapshot,
@@ -52,20 +53,29 @@ import {
   DesignHistory,
   evalBezierPoints,
   evaluateExperimentalFit,
+  evaluatePrinterBuildFit,
+  evaluateStructuralMechanics,
+  evaluateWindSpeedCurveAndAep,
   type FabricationSnapshot,
+  type HeatmapMode,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
   preserveLockedStations,
+  PRINTER_PRESETS,
+  type PrinterPresetKey,
   RATIO_EPS,
   removeSavedSlot,
   renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
+  renderWindPowerCurveSvgMarkup,
   resolveStationsPreview,
   SAVED_SLOTS_STORAGE_KEY,
   type SavedSlotEntry,
   scaleAllChords,
   setStationOverride,
   shiftAllChordsMm,
+  type StructuralMaterialKey,
+  type StructuralMechanicsReport,
   updateBezierControlPoint,
   updateBladeLengthMm,
   updatePitchAxisRatio,
@@ -300,6 +310,17 @@ const btnFitTight = document.getElementById("btn-fit-tight") as HTMLButtonElemen
 const btnFitStandard = document.getElementById("btn-fit-standard") as HTMLButtonElement;
 const btnFitLoose = document.getElementById("btn-fit-loose") as HTMLButtonElement;
 const alignStatus = document.getElementById("align-status")!;
+const selectPrinterPreset = document.getElementById("printer-preset") as HTMLSelectElement;
+const inputPrinterMaxZ = document.getElementById("printer-max-z") as HTMLInputElement;
+const btnAutoFitPrinter = document.getElementById("btn-auto-fit-printer") as HTMLButtonElement;
+const printerFitStatus = document.getElementById("printer-fit-status")!;
+
+const selectHeatmapMode = document.getElementById("heatmap-mode") as HTMLSelectElement;
+const viewportHeatmapLegend = document.getElementById("viewport-heatmap-legend")!;
+const heatmapLegendTitle = document.getElementById("heatmap-legend-title")!;
+const heatmapLegendMin = document.getElementById("heatmap-legend-min")!;
+const heatmapLegendBar = document.getElementById("heatmap-legend-bar") as HTMLElement;
+const heatmapLegendMax = document.getElementById("heatmap-legend-max")!;
 
 const stationTableBody = document.getElementById("station-table-body")!;
 const errorBanner = document.getElementById("error-banner")!;
@@ -320,6 +341,17 @@ const inputGenKv = document.getElementById("gen-kv") as HTMLInputElement;
 const inputGenRInt = document.getElementById("gen-r-int") as HTMLInputElement;
 const inputGenRLoad = document.getElementById("gen-r-load") as HTMLInputElement;
 const genSummary = document.getElementById("gen-summary")!;
+const inputSiteAvgWind = document.getElementById("site-avg-wind") as HTMLInputElement;
+const aepCutinBadge = document.getElementById("aep-cutin-badge")!;
+const kpiAepKwh = document.getElementById("kpi-aep-kwh")!;
+const windPowerSvg = document.getElementById("wind-power-svg") as unknown as SVGSVGElement;
+const aepSummary = document.getElementById("aep-summary")!;
+const selectStructMaterial = document.getElementById("struct-material") as HTMLSelectElement;
+const structRootMoment = document.getElementById("struct-root-moment")!;
+const structTipDefl = document.getElementById("struct-tip-defl")!;
+const structSf = document.getElementById("struct-sf")!;
+const structMassPull = document.getElementById("struct-mass-pull")!;
+const structStatus = document.getElementById("struct-status")!;
 const inputExpData = document.getElementById("exp-data-input") as HTMLTextAreaElement;
 const expFitSummary = document.getElementById("exp-fit-summary")!;
 
@@ -329,6 +361,7 @@ let activeSection: SectionKey = "root";
 const lockedSpanRatios: number[] = [];
 let baselineBundleA: AeroSimulationBundle | null = null;
 let latestBundleB: AeroSimulationBundle | null = null;
+let latestStructuralReport: StructuralMechanicsReport | null = null;
 
 let viewMode: "single" | "rotor" = "rotor";
 let wireframeMode = false;
@@ -531,6 +564,7 @@ function updateFabricationStatus(design: Design) {
   const holeTag = holeEnabled ? `CF Ø${effDia.toFixed(1)}×${depth.toFixed(0)}mm` : "Solid";
   const splitTag = splitParts > 1 ? `${splitParts} Parts` : "1 Part";
   const tagMap: Record<string, string> = {
+    contour: " / Contour Lip",
     dovetail: " / Dovetail Lock",
     cruciform: " / Cruciform +",
     snaplock: " / 3D Snap-Lock",
@@ -544,6 +578,7 @@ function updateFabricationStatus(design: Design) {
       : "";
   fabSummary.textContent = `${holeTag} / ${splitTag}${alignTag}`;
   updateAlignmentStatus(design);
+  updatePrinterFitStatus(design);
 
   const jointActive = splitParts > 1 && selectAlignShape.value !== "none";
   airfoilPreviewSvg.innerHTML = renderAirfoilSectionSvgMarkup(
@@ -560,6 +595,27 @@ function updateFabricationStatus(design: Design) {
         }
       : undefined,
   );
+}
+
+function updatePrinterFitStatus(design: Design) {
+  const preset = (selectPrinterPreset.value || "bambu_256") as PrinterPresetKey;
+  if (preset !== "custom") {
+    const presetSpec = PRINTER_PRESETS[preset];
+    if (presetSpec) {
+      inputPrinterMaxZ.value = String(presetSpec.max_z_mm);
+    }
+  }
+  const customZ = Number.parseFloat(inputPrinterMaxZ.value) || 256;
+  const fit = evaluatePrinterBuildFit(
+    design,
+    readCurrentFabricationSnapshot(),
+    preset,
+    customZ,
+  );
+  printerFitStatus.textContent = fit.summary;
+  printerFitStatus.classList.toggle("ok", fit.all_fit);
+  printerFitStatus.classList.toggle("warn", !fit.all_fit);
+  btnAutoFitPrinter.disabled = fit.all_fit;
 }
 
 /**
@@ -671,6 +727,7 @@ function buildCleanBladeGeometry(
 function rebuild3D(design: Design) {
   try {
     updateFabricationStatus(design);
+    updateAeroPanel(design);
     const start = performance.now();
     const overridesJson = buildFabricationOverridesJson();
     const data = build_mesh(JSON.stringify(design), overridesJson);
@@ -698,8 +755,30 @@ function rebuild3D(design: Design) {
     const holeEnabled = inputSparHoleEnabled.checked;
     const showRod = holeEnabled && inputSparShowRod.checked;
 
+    const hmMode = (selectHeatmapMode.value || "segment") as HeatmapMode;
+    const useHeatmap = hmMode !== "segment";
+    if (useHeatmap) {
+      const posAttr = bladeGeo.getAttribute("position") as THREE.BufferAttribute;
+      const hm = computeVertexHeatmapColors(
+        posAttr.array as ArrayLike<number>,
+        design,
+        latestBundleB,
+        latestStructuralReport,
+        hmMode,
+      );
+      bladeGeo.setAttribute("color", new THREE.BufferAttribute(hm.colors, 3));
+      viewportHeatmapLegend.classList.add("visible");
+      heatmapLegendTitle.textContent = hm.title;
+      heatmapLegendMin.textContent = hm.minLabel;
+      heatmapLegendBar.style.background = hm.gradientCss;
+      heatmapLegendMax.textContent = hm.maxLabel;
+    } else {
+      viewportHeatmapLegend.classList.remove("visible");
+    }
+
     const bladeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x3b82f6,
+      color: useHeatmap ? 0xffffff : 0x3b82f6,
+      vertexColors: useHeatmap,
       metalness: 0.16,
       roughness: 0.38,
       wireframe: wireframeMode,
@@ -844,7 +923,6 @@ function rebuild3D(design: Design) {
     applyMeshChordOffset();
 
     updateStats(elapsed, data);
-    updateAeroPanel(design);
   } catch (err) {
     errorBanner.style.display = "block";
     errorBanner.textContent = String(err);
@@ -898,6 +976,56 @@ function updateAeroPanel(design: Design) {
       kpiGenElec.textContent = "–";
       genSummary.textContent = "Gen: uncoupled";
     }
+
+    // Feature #4: Multi-Wind-Speed Power Curve (2–18 m/s), Cut-In & Weibull AEP
+    const siteAvgWind = Number.parseFloat(inputSiteAvgWind.value) || 5.5;
+    const aepReport = evaluateWindSpeedCurveAndAep(
+      design,
+      bundle,
+      { kv, r_int: rInt, r_load: rLoad },
+      siteAvgWind,
+    );
+    aepCutinBadge.textContent = `Cut-in ${aepReport.cut_in_mps.toFixed(1)} m/s`;
+    kpiAepKwh.textContent = `${aepReport.aep_kwh_yr.toFixed(0)} kWh/yr`;
+    windPowerSvg.innerHTML = renderWindPowerCurveSvgMarkup(aepReport);
+    aepSummary.textContent = `Rated @12 m/s: ${aepReport.rated_elec_power_w.toFixed(
+      0,
+    )} W elec (${aepReport.rated_mech_power_w.toFixed(
+      0,
+    )} W mech) / CF ${aepReport.capacity_factor_pct.toFixed(1)}% @ V_avg=${aepReport.site_avg_wind_mps.toFixed(
+      1,
+    )} m/s`;
+
+    // Feature #1: Structural & Root-Bending Mechanics + CF Spar Safety Factor
+    const matKey = (selectStructMaterial.value || "petg") as StructuralMaterialKey;
+    const structReport = evaluateStructuralMechanics(
+      design,
+      bundle,
+      readCurrentFabricationSnapshot(),
+      matKey,
+    );
+    latestStructuralReport = structReport;
+    structRootMoment.textContent =
+      structReport.split_moment_nm > 0
+        ? `${structReport.root_moment_nm.toFixed(2)} / ${structReport.split_moment_nm.toFixed(2)} N·m`
+        : `${structReport.root_moment_nm.toFixed(2)} N·m`;
+    structTipDefl.textContent = `${structReport.tip_deflection_mm.toFixed(1)} mm (${structReport.tip_deflection_pct.toFixed(1)}%)`;
+    const rSfStr =
+      structReport.root_safety_factor >= 50
+        ? ">50×"
+        : `${structReport.root_safety_factor.toFixed(1)}×`;
+    const jSfStr =
+      structReport.joint_safety_factor >= 50
+        ? ">50×"
+        : `${structReport.joint_safety_factor.toFixed(1)}×`;
+    structSf.textContent = `${rSfStr} / ${jSfStr}`;
+    structMassPull.textContent = `${structReport.blade_mass_g.toFixed(0)} g / ${structReport.centrifugal_root_n.toFixed(1)} N`;
+    structStatus.textContent = `[${structReport.status.toUpperCase()}] Peak shell σ=${structReport.max_shell_stress_mpa.toFixed(
+      1,
+    )} MPa — ${structReport.recommendation}`;
+    structStatus.classList.toggle("ok", structReport.status === "safe");
+    structStatus.classList.toggle("warn", structReport.status === "caution");
+    structStatus.classList.toggle("crit", structReport.status === "critical");
 
     const expPoints = parseExperimentalDataLog(
       inputExpData.value,
@@ -1520,6 +1648,11 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     global_light_intensity: sliderGlobalLight.valueAsNumber || 1.35,
     view_mode: viewMode,
     wireframe_mode: wireframeMode,
+    heatmap_mode: (selectHeatmapMode.value || "segment") as HeatmapMode,
+    structural_material: (selectStructMaterial.value || "petg") as StructuralMaterialKey,
+    site_avg_wind_mps: Number.parseFloat(inputSiteAvgWind.value) || 5.5,
+    printer_preset: (selectPrinterPreset.value || "bambu_256") as PrinterPresetKey,
+    printer_max_z_mm: Number.parseFloat(inputPrinterMaxZ.value) || 256,
     gen_kv: Number.parseFloat(inputGenKv.value) || 35,
     gen_r_int: Number.parseFloat(inputGenRInt.value) || 0.8,
     gen_r_load: Number.parseFloat(inputGenRLoad.value) || 12.0,
@@ -1556,6 +1689,12 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   wireframeMode = Boolean(wb.wireframe_mode);
   btnViewWireframe.classList.toggle("active", wireframeMode);
   btnViewWireframe.setAttribute("aria-pressed", String(wireframeMode));
+
+  selectHeatmapMode.value = wb.heatmap_mode || "segment";
+  selectStructMaterial.value = wb.structural_material || "petg";
+  inputSiteAvgWind.value = String(wb.site_avg_wind_mps ?? 5.5);
+  selectPrinterPreset.value = wb.printer_preset || "bambu_256";
+  inputPrinterMaxZ.value = String(wb.printer_max_z_mm ?? 256);
 
   inputGenKv.value = String(wb.gen_kv ?? 35);
   inputGenRInt.value = String(wb.gen_r_int ?? 0.8);
@@ -1681,6 +1820,44 @@ btnViewSpin.addEventListener("click", () => {
   spinRotorMode = !spinRotorMode;
   btnViewSpin.classList.toggle("active", spinRotorMode);
   btnViewSpin.setAttribute("aria-pressed", String(spinRotorMode));
+});
+
+selectHeatmapMode.addEventListener("change", () => {
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+});
+
+selectPrinterPreset.addEventListener("change", () => {
+  const preset = (selectPrinterPreset.value || "bambu_256") as PrinterPresetKey;
+  if (preset !== "custom") {
+    const spec = PRINTER_PRESETS[preset];
+    if (spec) {
+      inputPrinterMaxZ.value = String(spec.max_z_mm);
+    }
+  }
+  updatePrinterFitStatus(workingDesign);
+  scheduleAutoSave();
+});
+
+inputPrinterMaxZ.addEventListener("change", () => {
+  selectPrinterPreset.value = "custom";
+  updatePrinterFitStatus(workingDesign);
+  scheduleAutoSave();
+});
+
+btnAutoFitPrinter.addEventListener("click", () => {
+  const preset = (selectPrinterPreset.value || "bambu_256") as PrinterPresetKey;
+  const customZ = Number.parseFloat(inputPrinterMaxZ.value) || 256;
+  const fit = evaluatePrinterBuildFit(
+    workingDesign,
+    readCurrentFabricationSnapshot(),
+    preset,
+    customZ,
+  );
+  selectSplitParts.value = String(fit.recommended_split_parts);
+  sliderSplitRatio.value = String(fit.recommended_split_ratio_pct);
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 btnCamIso.addEventListener("click", () => {
@@ -2510,11 +2687,19 @@ btnClearA.addEventListener("click", () => {
   updateAeroPanel(workingDesign);
 });
 
-[inputGenKv, inputGenRInt, inputGenRLoad].forEach((el) => {
+[inputGenKv, inputGenRInt, inputGenRLoad, inputSiteAvgWind].forEach((el) => {
   el.addEventListener("change", () => {
     updateAeroPanel(workingDesign);
     scheduleAutoSave();
   });
+});
+
+selectStructMaterial.addEventListener("change", () => {
+  updateAeroPanel(workingDesign);
+  if (selectHeatmapMode.value === "wall_stress") {
+    rebuild3D(workingDesign);
+  }
+  scheduleAutoSave();
 });
 
 inputExpData.addEventListener("input", () => {

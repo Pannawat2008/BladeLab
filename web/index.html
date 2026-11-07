@@ -1277,6 +1277,81 @@
         background: rgba(245, 158, 11, 0.1);
         border-color: rgba(245, 158, 11, 0.35);
       }
+      .fit-badge.ok {
+        color: var(--status-ok);
+        background: rgba(76, 195, 138, 0.08);
+        border-color: rgba(76, 195, 138, 0.3);
+      }
+      .fit-badge.crit {
+        color: var(--status-err);
+        background: rgba(229, 72, 77, 0.12);
+        border-color: rgba(229, 72, 77, 0.4);
+      }
+
+      /* 3D Heatmap Floating Legend Bar (above #viewport-datum-hud) */
+      #viewport-heatmap-legend {
+        position: fixed;
+        bottom: calc(var(--dock-gap) + 34px);
+        left: calc(50% + (var(--panel-left-w) - var(--panel-right-w)) / 2);
+        transform: translateX(-50%);
+        z-index: 6;
+        pointer-events: none;
+        display: none;
+        align-items: center;
+        gap: 10px;
+        height: 28px;
+        padding: 0 12px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-control);
+        font: 400 11px/16px var(--font-mono);
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        transition: left 0.28s var(--ease);
+      }
+      #viewport-heatmap-legend.visible {
+        display: inline-flex;
+      }
+      body.hide-left-dock:not(.hide-right-dock) #viewport-heatmap-legend {
+        left: calc((100vw - var(--panel-right-w) - var(--dock-gap)) / 2);
+      }
+      body.hide-right-dock:not(.hide-left-dock) #viewport-heatmap-legend {
+        left: calc(var(--panel-left-w) + var(--dock-gap) + (100vw - var(--panel-left-w) - var(--dock-gap)) / 2);
+      }
+      body.hide-left-dock.hide-right-dock #viewport-heatmap-legend {
+        left: 50%;
+      }
+      .heatmap-gradient-bar {
+        width: 96px;
+        height: 8px;
+        border-radius: var(--radius-tag);
+        border: 1px solid var(--border-strong);
+      }
+      .struct-kpi-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .struct-kpi-cell {
+        padding: 8px 10px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .struct-kpi-cell .kpi-label {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .struct-kpi-cell .kpi-val {
+        font: 500 13px/18px var(--font-mono);
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+      }
 
       /* 3D Viewport Technical Title-Block Datum HUD (Centered inside open 3D canvas column) */
       #viewport-datum-hud {
@@ -1440,6 +1515,14 @@
   <body data-mobile-pane="cad">
     <div id="app"></div>
 
+    <!-- 3D Heatmap Floating Legend Bar -->
+    <div id="viewport-heatmap-legend" aria-hidden="true">
+      <span id="heatmap-legend-title" style="color: var(--text-secondary)">Heatmap</span>
+      <span id="heatmap-legend-min">0</span>
+      <span id="heatmap-legend-bar" class="heatmap-gradient-bar"></span>
+      <span id="heatmap-legend-max">1</span>
+    </div>
+
     <!-- 3D Viewport Technical Title-Block Datum Bar -->
     <div id="viewport-datum-hud" aria-hidden="true">
       <span><span class="datum-key">DATUM</span> X-CHORD / Y-THICK / Z-SPAN</span>
@@ -1475,6 +1558,13 @@
         <button id="btn-view-rotor" class="active" type="button" aria-pressed="true">Full Rotor (B×)</button>
         <button id="btn-view-wireframe" type="button" aria-pressed="false">Wireframe</button>
         <button id="btn-view-spin" type="button" aria-pressed="false">Spin Rotor</button>
+        <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
+          <option value="segment">Color: CAD Segments</option>
+          <option value="alpha">Heatmap: Angle of Attack α</option>
+          <option value="cl_cd">Heatmap: Glide Ratio Cl/Cd</option>
+          <option value="torque">Heatmap: Torque dQ/dr</option>
+          <option value="wall_stress">Heatmap: Bending Stress</option>
+        </select>
         <span class="toolbar-divider"></span>
         <button id="btn-cam-iso" class="btn-mini" type="button" title="Isometric camera view">Iso</button>
         <button id="btn-cam-top" class="btn-mini" type="button" title="Planform top view">Plan</button>
@@ -2001,6 +2091,30 @@
               <button id="btn-export-split-all" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STL)</button>
             </div>
           </div>
+
+          <div class="aero-subbox">
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span style="font-weight: 500; color: var(--text-primary)">3D Printer Build-Volume Fit Check</span>
+              <button id="btn-auto-fit-printer" class="btn-mini" type="button" title="Automatically set split count so every segment + interlocking lip fits your printer Z height">Auto-Fit Split</button>
+            </div>
+            <div class="grid-2" style="margin-top: 6px">
+              <div class="field">
+                <label for="printer-preset">Printer Profile</label>
+                <select id="printer-preset">
+                  <option value="bambu_256" selected>Bambu X1/P1/A1 (256³ mm)</option>
+                  <option value="prusa_mk4">Prusa MK4 / Core One (220Z)</option>
+                  <option value="ender3">Ender 3 / 220 Class (250Z)</option>
+                  <option value="voron_350">Voron 2.4 / Large (350³ mm)</option>
+                  <option value="custom">Custom Max Z Height</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="printer-max-z" class="scrub-label" data-scrub-for="printer-max-z">Max Print Z (mm)</label>
+                <input id="printer-max-z" type="number" min="60" max="1000" step="5" value="256" />
+              </div>
+            </div>
+            <div id="printer-fit-status" class="fit-badge">Checking segment print heights...</div>
+          </div>
         </section>
 
         <!-- Per-Station Override Table -->
@@ -2132,6 +2246,63 @@
               <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
             </div>
             <div id="gen-summary" class="fit-badge">Gen: –</div>
+          </div>
+
+          <!-- Feature #4: Multi-Wind-Speed Power Curve (2–18 m/s), Cut-In & Weibull AEP -->
+          <div class="aero-subbox">
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span style="font-weight: 500; color: var(--text-primary)">Power Curve (2–18 m/s) &amp; AEP</span>
+              <span id="aep-cutin-badge" class="section-meta">Cut-in – m/s</span>
+            </div>
+            <div class="grid-2" style="margin-top: 6px; margin-bottom: 6px">
+              <div class="field">
+                <label for="site-avg-wind" class="scrub-label" data-scrub-for="site-avg-wind">Site Avg Wind (m/s)</label>
+                <input id="site-avg-wind" type="number" min="2.5" max="12.0" step="0.5" value="5.5" />
+              </div>
+              <div class="struct-kpi-cell" style="justify-content: center">
+                <span class="kpi-label">Annual Energy (Weibull)</span>
+                <span id="kpi-aep-kwh" class="kpi-val">– kWh/yr</span>
+              </div>
+            </div>
+            <div class="aero-legend" style="margin-top: 4px">
+              <span><i class="swatch" style="background: #38bdf8"></i>Mech Power</span>
+              <span><i class="swatch" style="background: #4cc38a"></i>Elec Output</span>
+              <span><i class="swatch" style="background: #f59e0b"></i>Cut-In</span>
+            </div>
+            <svg id="wind-power-svg" viewBox="0 0 320 148" role="img" aria-label="Power vs Wind Speed Curve"></svg>
+            <div id="aep-summary" class="fit-badge">AEP: –</div>
+          </div>
+
+          <!-- Feature #1: Structural & Root-Bending Mechanics + CF Spar Safety Factor -->
+          <div class="aero-subbox">
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span style="font-weight: 500; color: var(--text-primary)">Structural &amp; CF Spar Mechanics</span>
+              <select id="struct-material" class="compact-select" aria-label="3D Print Shell Material" title="3D Printed Blade Shell Material">
+                <option value="petg" selected>PETG Shell</option>
+                <option value="pla">PLA Shell</option>
+                <option value="asa">ASA Shell</option>
+                <option value="pacf">PA-CF (Carbon Nylon)</option>
+              </select>
+            </div>
+            <div class="struct-kpi-grid">
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Root Bending / Split</span>
+                <span id="struct-root-moment" class="kpi-val">– N·m</span>
+              </div>
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Tip Deflection</span>
+                <span id="struct-tip-defl" class="kpi-val">– mm</span>
+              </div>
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Safety Factor (Root / Joint)</span>
+                <span id="struct-sf" class="kpi-val">–</span>
+              </div>
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Blade Mass &amp; CF Pull</span>
+                <span id="struct-mass-pull" class="kpi-val">– g / – N</span>
+              </div>
+            </div>
+            <div id="struct-status" class="fit-badge">Evaluating structural loads...</div>
           </div>
 
           <div class="aero-subbox">

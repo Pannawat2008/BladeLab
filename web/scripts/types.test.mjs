@@ -22,17 +22,23 @@ import {
   clearAllOverrides,
   clearStationOverride,
   compareABSimulation,
+  computeVertexHeatmapColors,
   createWorkbenchSnapshot,
   defaultChordBezierPoints,
+  defaultFabricationSnapshot,
   defaultTwistBezierPoints,
   DesignHistory,
   evaluateExperimentalFit,
+  evaluatePrinterBuildFit,
+  evaluateStructuralMechanics,
+  evaluateWindSpeedCurveAndAep,
   interpolateSweepCp,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
   removeSavedSlot,
   renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
+  renderWindPowerCurveSvgMarkup,
   resolveStationsPreview,
   scaleAllChords,
   setStationOverride,
@@ -623,4 +629,96 @@ test("workbench snapshot auto-save/load: full snapshot round-trip, plain Design 
   assert.equal(slots.length, 1);
   assert.equal(slots[0].name, "Slot Beta");
 });
+
+test("structural mechanics, 3D vertex heatmaps, wind power AEP curve, and printer build fit checker", () => {
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  const require = createRequire(import.meta.url);
+  const { simulate_aero, build_mesh } = require(gluePath);
+
+  const bundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(initialDesign),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: 35,
+        generator_r_int: 0.8,
+        generator_r_load: 5.0,
+      }),
+    ),
+  );
+
+  // 1. Structural & Root-Bending Mechanics + CF Spar Safety Factor
+  const fabSolid = defaultFabricationSnapshot();
+  const structSolid = evaluateStructuralMechanics(initialDesign, bundle, fabSolid, "petg");
+  assert.ok(structSolid.root_moment_nm > 0.1, "root flapwise bending moment must be positive");
+  assert.ok(structSolid.tip_deflection_mm > 0.05, "tip deflection must be positive");
+  assert.ok(structSolid.blade_mass_g > 10, "blade mass must be positive");
+
+  const fabCf = {
+    ...defaultFabricationSnapshot(),
+    spar_hole_enabled: true,
+    spar_hole_diameter_mm: 6.0,
+    spar_hole_depth_mm: 480,
+    split_parts: 2,
+    split_ratio_pct: 50,
+    align_shape: "contour",
+  };
+  const structCf = evaluateStructuralMechanics(initialDesign, bundle, fabCf, "petg");
+  assert.ok(
+    structCf.tip_deflection_mm < structSolid.tip_deflection_mm,
+    `CF spar tube should reduce tip deflection: ${structCf.tip_deflection_mm} < ${structSolid.tip_deflection_mm}`,
+  );
+  assert.ok(
+    structCf.root_safety_factor > structSolid.root_safety_factor,
+    `CF spar tube should increase root safety factor: ${structCf.root_safety_factor} > ${structSolid.root_safety_factor}`,
+  );
+  assert.ok(structCf.split_moment_nm > 0 && structCf.split_moment_nm < structCf.root_moment_nm);
+
+  // 2. 3D Aerodynamic & Wall-Stress Vertex Heatmaps
+  const meshData = build_mesh(JSON.stringify(initialDesign), "{}");
+  for (const mode of ["alpha", "cl_cd", "torque", "wall_stress"]) {
+    const hm = computeVertexHeatmapColors(
+      meshData.positions,
+      initialDesign,
+      bundle,
+      structCf,
+      mode,
+    );
+    assert.equal(hm.colors.length, meshData.positions.length);
+    for (let i = 0; i < hm.colors.length; i++) {
+      assert.ok(hm.colors[i] >= 0 && hm.colors[i] <= 1, `RGB out of range at ${i} in mode ${mode}`);
+    }
+  }
+
+  // 3. Multi-Wind-Speed Power Curve (2..18 m/s), Cut-In & Weibull AEP
+  const aep = evaluateWindSpeedCurveAndAep(
+    initialDesign,
+    bundle,
+    { kv: 35, r_int: 0.8, r_load: 5.0 },
+    5.5,
+  );
+  assert.ok(aep.cut_in_mps >= 1.4 && aep.cut_in_mps <= 7.5);
+  assert.ok(aep.aep_kwh_yr > 1.0, `expected positive Weibull AEP, got ${aep.aep_kwh_yr}`);
+  assert.equal(aep.points.length, 17); // 2..18 m/s
+  const windSvg = renderWindPowerCurveSvgMarkup(aep);
+  assert.ok(windSvg.includes("<path"));
+  assert.ok(windSvg.includes("Cut-in"));
+
+  // 4. Printer Build-Volume Fit Checker (540 mm blade vs 256 mm Bambu Z height)
+  const fitUnsplit = evaluatePrinterBuildFit(initialDesign, fabSolid, "bambu_256");
+  assert.equal(fitUnsplit.all_fit, false, "540 mm unsplit blade exceeds 256 mm Z limit");
+  assert.equal(fitUnsplit.recommended_split_parts, 3, "540 mm blade needs 3 parts to fit 256 mm Z with pin protrusion");
+
+  const fab3Part = {
+    ...defaultFabricationSnapshot(),
+    split_parts: fitUnsplit.recommended_split_parts,
+    align_shape: "contour",
+    align_height_mm: 8.0,
+  };
+  const fitSplit = evaluatePrinterBuildFit(initialDesign, fab3Part, "bambu_256");
+  assert.equal(fitSplit.all_fit, true, "3-part split fits 256 mm Z limit including 8 mm Contour Lip");
+});
+
 
