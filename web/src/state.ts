@@ -3569,10 +3569,15 @@ export interface GearboxConfig {
   helix_angle_deg: number;
   backlash_mm: number;
 
+  // Web Cutout Geometry (shared across Spoked Gears 1 & 2)
+  spoke_width_pct: number; // 10..65% of each sector occupied by solid spoke arm (default 26%)
+  rim_wall_mm: number; // radial rim thickness inside tooth root circle r_f (default 3.5 mm)
+  hub_ring_mm: number; // radial solid margin outside hub skirt / coaxial pinion (default 2.5 mm)
+
   // Gear 1: Rotor Bull Gear (Mint 4-spoke wheel + Orange stepped hub boss)
   g1_teeth: number;
   g1_face_width_mm: number;
-  g1_spokes: number; // 0 = solid, 3..6 = spoked cutouts (default 4)
+  g1_spokes: number; // 0 = solid, 3..8 = spoked cutouts (default 4)
   g1_bore_mm: number;
   g1_d_flat_mm: number;
   g1_hub_diameter_mm: number;
@@ -3581,6 +3586,7 @@ export interface GearboxConfig {
   // Gear 2: Compound Idler Gear (Purple Wheel + Lime-Green Coaxial Pinion)
   g2_wheel_teeth: number;
   g2_wheel_face_mm: number;
+  g2_spokes: number; // 0 = solid, 3..8 = spoked cutouts on Purple Wheel (default 4)
   g2_pinion_teeth: number;
   g2_pinion_face_mm: number;
   g2_bore_mm: number;
@@ -3651,6 +3657,10 @@ export function defaultGearboxConfig(): GearboxConfig {
     helix_angle_deg: 15.0,
     backlash_mm: 0.15,
 
+    spoke_width_pct: 26.0,
+    rim_wall_mm: 3.5,
+    hub_ring_mm: 2.5,
+
     g1_teeth: 60,
     g1_face_width_mm: 5.0,
     g1_spokes: 4,
@@ -3661,6 +3671,7 @@ export function defaultGearboxConfig(): GearboxConfig {
 
     g2_wheel_teeth: 56,
     g2_wheel_face_mm: 5.0,
+    g2_spokes: 4,
     g2_pinion_teeth: 15,
     g2_pinion_face_mm: 14.0,
     g2_bore_mm: 5.0,
@@ -4069,6 +4080,8 @@ function buildToothedWheelMesh(opts: {
   boreDiaMm: number;
   dFlatMm: number;
   spokes: number;
+  spokeWidthPct?: number;
+  rimWallMm?: number;
   hubOuterRadiusMm: number;
   zOffsetMm: number;
 }): MeshBuilder {
@@ -4084,9 +4097,10 @@ function buildToothedWheelMesh(opts: {
   const n = angles.length;
   const rp = 0.5 * opts.moduleMm * opts.teeth;
   const rf = Math.max(0.35 * rp, rp - 1.2 * opts.moduleMm);
-  const rimInnerR = Math.max(opts.hubOuterRadiusMm + 2.5, rf - 2.8 * opts.moduleMm);
+  const rimWall = Math.max(1.2, opts.rimWallMm ?? 2.8 * opts.moduleMm);
+  const rimInnerR = Math.max(opts.hubOuterRadiusMm + 2.0, rf - rimWall);
   const useSpokes =
-    opts.spokes >= 3 && opts.spokes <= 8 && rimInnerR > opts.hubOuterRadiusMm + 3.5;
+    opts.spokes >= 3 && opts.spokes <= 8 && rimInnerR > opts.hubOuterRadiusMm + 2.5;
 
   const boreRadii = sampleBoreRadiusRing(angles, opts.boreDiaMm, opts.dFlatMm);
   const z0 = opts.zOffsetMm;
@@ -4141,12 +4155,14 @@ function buildToothedWheelMesh(opts: {
 
   // Classify each angular sector i into spoke vs window cutout
   const spokeCount = opts.spokes;
+  const spokeFrac = Math.max(0.1, Math.min(0.65, (opts.spokeWidthPct ?? 26) / 100));
+  const halfSpoke = 0.5 * spokeFrac;
   const isSpokeSector = new Array<boolean>(n);
   for (let i = 0; i < n; i++) {
     const thMid = (2 * Math.PI * (i + 0.5)) / n;
     const sectorPhase = ((thMid * spokeCount) / (2 * Math.PI)) % 1;
-    // Spoke occupies 26% of each quadrant, window cutout occupies 74% (matching the 4 wide windows in Image 1 & 2)
-    isSpokeSector[i] = sectorPhase < 0.13 || sectorPhase > 0.87;
+    // Spoke occupies spokeFrac of each sector (default 26%), window cutout occupies the remaining (1 - spokeFrac)
+    isSpokeSector[i] = sectorPhase < halfSpoke || sectorPhase > 1.0 - halfSpoke;
   }
 
   for (let i = 0; i < n; i++) {
@@ -4290,8 +4306,13 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     }
   }
 
-  // ---- Gear 1: Mint-Green 4-Spoked Bull Gear + Orange Stepped Hub Boss ----
-  const hubOuterR = Math.max(cfg.g1_bore_mm * 0.85, 0.5 * cfg.g1_hub_diameter_mm * 1.2);
+  const spokeWidthPct = Math.max(10, Math.min(65, cfg.spoke_width_pct ?? 26));
+  const rimWallMm = Math.max(1.5, Math.min(12.0, cfg.rim_wall_mm ?? 3.5));
+  const hubRingMm = Math.max(1.0, Math.min(12.0, cfg.hub_ring_mm ?? 2.5));
+
+  // ---- Gear 1: Mint-Green Spoked Bull Gear + Orange Stepped Hub Boss ----
+  const g1BossBaseR = cfg.g1_hub_height_mm > 0.5 ? 0.5 * cfg.g1_hub_diameter_mm : 0.5 * cfg.g1_bore_mm;
+  const hubOuterR = Math.max(cfg.g1_bore_mm * 0.75, g1BossBaseR + hubRingMm);
   const g1RimBuilder = buildToothedWheelMesh({
     teeth: cfg.g1_teeth,
     moduleMm: cfg.module_mm,
@@ -4303,6 +4324,8 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     boreDiaMm: cfg.g1_bore_mm,
     dFlatMm: cfg.g1_d_flat_mm,
     spokes: cfg.g1_spokes,
+    spokeWidthPct,
+    rimWallMm,
     hubOuterRadiusMm: hubOuterR,
     zOffsetMm: 0,
   });
@@ -4351,6 +4374,11 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
   if (cfg.stage_mode !== "direct_1stage") {
     const g2SpinRatio = -metrics.stage1_ratio;
     const g2Phase = Math.PI / Math.max(8, cfg.g2_wheel_teeth);
+    // Keep a solid purple hub collar outside the Lime-Green coaxial pinion's outer diameter
+    const g2HubOuterR = Math.max(
+      cfg.g2_bore_mm * 0.75,
+      0.5 * metrics.g2_pinion_outer_dia_mm + hubRingMm,
+    );
 
     const g2WheelBuilder = buildToothedWheelMesh({
       teeth: cfg.g2_wheel_teeth,
@@ -4362,8 +4390,10 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       faceWidthMm: cfg.g2_wheel_face_mm,
       boreDiaMm: cfg.g2_bore_mm,
       dFlatMm: cfg.g2_d_flat_mm,
-      spokes: 0,
-      hubOuterRadiusMm: cfg.g2_bore_mm,
+      spokes: cfg.g2_spokes ?? 0,
+      spokeWidthPct,
+      rimWallMm,
+      hubOuterRadiusMm: g2HubOuterR,
       zOffsetMm: 0,
     });
     submeshes.push(

@@ -428,6 +428,10 @@ const inputGearPressure = document.getElementById("gear-pressure") as HTMLInputE
 const inputGearBacklash = document.getElementById("gear-backlash") as HTMLInputElement | null;
 const btnGearSolveRatio = document.getElementById("btn-gear-solve-ratio") as HTMLButtonElement | null;
 const btnGearSyncAero = document.getElementById("btn-gear-sync-aero") as HTMLButtonElement | null;
+const gearCutoutBadge = document.getElementById("gear-cutout-badge");
+const inputGearSpokeWidth = document.getElementById("gear-spoke-width") as HTMLInputElement | null;
+const inputGearRimWall = document.getElementById("gear-rim-wall") as HTMLInputElement | null;
+const inputGearHubRing = document.getElementById("gear-hub-ring") as HTMLInputElement | null;
 
 const g1DiaBadge = document.getElementById("g1-dia-badge");
 const inputG1Teeth = document.getElementById("g1-teeth") as HTMLInputElement | null;
@@ -442,6 +446,7 @@ const gear2Card = document.getElementById("gear2-card");
 const g2DiaBadge = document.getElementById("g2-dia-badge");
 const inputG2WheelTeeth = document.getElementById("g2-wheel-teeth") as HTMLInputElement | null;
 const inputG2WheelFace = document.getElementById("g2-wheel-face") as HTMLInputElement | null;
+const selectG2Spokes = document.getElementById("g2-spokes") as HTMLSelectElement | null;
 const inputG2PinionTeeth = document.getElementById("g2-pinion-teeth") as HTMLInputElement | null;
 const inputG2PinionFace = document.getElementById("g2-pinion-face") as HTMLInputElement | null;
 const inputG2Bore = document.getElementById("g2-bore") as HTMLInputElement | null;
@@ -836,6 +841,18 @@ function readCurrentGearboxConfig(): GearboxConfig {
       0,
       Math.min(0.6, Number.parseFloat(inputGearBacklash?.value || "0") || 0),
     ),
+    spoke_width_pct: Math.max(
+      10,
+      Math.min(65, Number.parseFloat(inputGearSpokeWidth?.value || "") || def.spoke_width_pct),
+    ),
+    rim_wall_mm: Math.max(
+      1.5,
+      Math.min(12, Number.parseFloat(inputGearRimWall?.value || "") || def.rim_wall_mm),
+    ),
+    hub_ring_mm: Math.max(
+      1.0,
+      Math.min(12, Number.parseFloat(inputGearHubRing?.value || "") || def.hub_ring_mm),
+    ),
 
     g1_teeth: Math.max(10, Math.round(Number.parseFloat(inputG1Teeth?.value || "") || def.g1_teeth)),
     g1_face_width_mm: Math.max(
@@ -859,6 +876,7 @@ function readCurrentGearboxConfig(): GearboxConfig {
       2,
       Number.parseFloat(inputG2WheelFace?.value || "") || def.g2_wheel_face_mm,
     ),
+    g2_spokes: Number.parseInt(selectG2Spokes?.value ?? String(def.g2_spokes), 10) || 0,
     g2_pinion_teeth: Math.max(
       8,
       Math.round(Number.parseFloat(inputG2PinionTeeth?.value || "") || def.g2_pinion_teeth),
@@ -890,6 +908,9 @@ function applyGearboxConfigToDom(cfg: GearboxConfig) {
   if (inputGearHelix) inputGearHelix.value = String(cfg.helix_angle_deg);
   if (inputGearPressure) inputGearPressure.value = String(cfg.pressure_angle_deg);
   if (inputGearBacklash) inputGearBacklash.value = String(cfg.backlash_mm);
+  if (inputGearSpokeWidth) inputGearSpokeWidth.value = String(cfg.spoke_width_pct ?? 26);
+  if (inputGearRimWall) inputGearRimWall.value = String(cfg.rim_wall_mm ?? 3.5);
+  if (inputGearHubRing) inputGearHubRing.value = String(cfg.hub_ring_mm ?? 2.5);
 
   if (inputG1Teeth) inputG1Teeth.value = String(cfg.g1_teeth);
   if (inputG1Face) inputG1Face.value = String(cfg.g1_face_width_mm);
@@ -901,6 +922,7 @@ function applyGearboxConfigToDom(cfg: GearboxConfig) {
 
   if (inputG2WheelTeeth) inputG2WheelTeeth.value = String(cfg.g2_wheel_teeth);
   if (inputG2WheelFace) inputG2WheelFace.value = String(cfg.g2_wheel_face_mm);
+  if (selectG2Spokes) selectG2Spokes.value = String(cfg.g2_spokes ?? 4);
   if (inputG2PinionTeeth) inputG2PinionTeeth.value = String(cfg.g2_pinion_teeth);
   if (inputG2PinionFace) inputG2PinionFace.value = String(cfg.g2_pinion_face_mm);
   if (inputG2Bore) inputG2Bore.value = String(cfg.g2_bore_mm);
@@ -925,6 +947,10 @@ function updateGearboxPanelUi(): GearboxConfig {
       cfg.helix_angle_deg > 0.1
         ? `Helical ${cfg.helix_angle_deg.toFixed(0)}°`
         : `Spur 0°`;
+  }
+  if (gearCutoutBadge) {
+    const sw = Math.round(cfg.spoke_width_pct);
+    gearCutoutBadge.textContent = `${sw}% Spoke · ${100 - sw}% Window`;
   }
   if (g1DiaBadge) {
     g1DiaBadge.textContent = `Øp ${m.g1_pitch_dia_mm.toFixed(1)} · Øo ${m.g1_outer_dia_mm.toFixed(1)} mm`;
@@ -2264,6 +2290,9 @@ btnGearLayoutMesh?.addEventListener("click", () => {
   inputGearHelix,
   inputGearPressure,
   inputGearBacklash,
+  inputGearSpokeWidth,
+  inputGearRimWall,
+  inputGearHubRing,
   inputG1Teeth,
   inputG1Face,
   selectG1Spokes,
@@ -2273,6 +2302,7 @@ btnGearLayoutMesh?.addEventListener("click", () => {
   inputG1HubH,
   inputG2WheelTeeth,
   inputG2WheelFace,
+  selectG2Spokes,
   inputG2PinionTeeth,
   inputG2PinionFace,
   inputG2Bore,

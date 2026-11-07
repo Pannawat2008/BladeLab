@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 84**
-> **LAST_UPDATED: 2026-11-07 21:34 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 85**
+> **LAST_UPDATED: 2026-11-07 21:49 (UTC+7) by geom-1**
 
 ---
 
@@ -492,6 +492,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added the **Gearbox Prototype (Spur & Helical)** CAD generator, 3D viewport mode, 2-way BEM Aero ratio sync, and binary STL export across web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs: (1) GearboxConfig, defaultGearboxConfig, computeGearboxMetrics, solveGearTeethForTargetRatio, uildGearboxMeshes, and exportGearStlBytes model the 3-gear reference train — **Gear 1** (60T Mint-Green #8fd9b6 4-spoke bull gear with quadrant lightening cutouts + Orange #d95326 stepped rotor hub boss), **Gear 2** (56T Purple #b84ba1 driven wheel + 15T Lime-Green #72c455 coaxial tall helical pinion with top collar), and **Gear 3** (20T Slate-Grey #6d8388 generator motor pinion + top boss) — with true involute tooth flanks, adjustable Module $, Pressure Angle $\alpha_0$, Helix Angle $\beta$ (auto-flipping /R$ hand across meshing pairs), FDM backlash clearance, and Round or D-Flat shaft bores; (2) #btn-view-gearbox (Gearbox view mode in #top-dock) and #layer-gearbox (Gears tab in #panel-section-nav) render the 3D gears in the Three.js viewport with Side-by-Side (Reference CAD layout) vs Meshed (exact center-to-center shaft distances {12}, a_{23}$) toggles and counter-rotating Spin animation; (3) #btn-gear-solve-ratio and #btn-gear-sync-aero link integer tooth ratios bidirectionally with #gen-gear-ratio in the BEM generator solver; and (4) #btn-export-gears-all, #btn-export-gear1, #btn-export-gear2, and #btn-export-gear3 export 3D-printable IEEE-754 binary STLs.
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: –
 
+- **F-geom1-055** | 2026-11-07 21:49 | geom-1 | T-105
+  Extended the Gearbox Prototype (`#layer-gearbox`, `GearboxConfig`, `buildToothedWheelMesh`, `buildGearboxMeshes`) with **Web Cutouts on Gear 2 (Purple Compound Wheel)** and **Customizable Web Cutout Geometry Settings** across Gear 1 & Gear 2: (1) added `g2_spokes` (`#g2-spokes`: `0 = Solid Disk`, `3`, `4`, `5`, `6`, `8` spokes; default `4`) on Gear 2's Purple Compound Wheel while automatically sizing its inner solid hub collar to `0.5 * g2_pinion_outer_dia_mm + hub_ring_mm` so the coaxial Lime-Green Pinion's teeth sit on a solid purple ring and never overhang the cutout windows; (2) expanded `#g1-spokes` options to `0, 3, 4, 5, 6, 8` spokes; and (3) added `spoke_width_pct` (`#gear-spoke-width`, `10%–65%` of each sector, default `26%`), `rim_wall_mm` (`#gear-rim-wall`, `1.5–12.0 mm` solid radial wall inside the tooth root circle $r_f$, default `3.5 mm`), and `hub_ring_mm` (`#gear-hub-ring`, `1.0–12.0 mm` solid radial collar margin outside the hub boss / coaxial pinion, default `2.5 mm`).
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-054
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -899,3 +903,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-07T21:22:35+07:00 agent=geom-1 mem=v83 last_entry=F-geom1-053 task=T-105 note="lead requested Gearbox Prototype tab (/grill-me): 2-Stage Compound Step-Up Train (Gear 1 Mint 4-spoked Rotor Bull Gear + Orange Stepped Hub -> Gear 2 Purple+Lime Coaxial Compound Wheel/Pinion -> Gear 3 Slate Generator Pinion), True Involute Spur/Helical teeth with auto L/R hand + FDM backlash, Round/D-Flat shaft bores, 3D Viewport Gearbox Mode (Meshed & Side-by-Side + Spin animation), 2-way G:1 Aero Sync, and per-gear + full-plate binary STL export"
 [END] 2026-11-07T21:34:30+07:00 agent=geom-1 mem=v84 last_entry=F-geom1-054 task=T-105 note="Implemented Gearbox Prototype tab (#layer-gearbox), 3D Viewport Gearbox mode (#btn-view-gearbox), true involute spur/helical 3-gear mesh builder (4-spoked Mint+Orange G1, Purple+Lime compound G2, Slate pinion G3), 2-way Aero G:1 sync, and per-gear + full-plate binary STL export; 15/15 Node tests + tsc + vite build pass"
 [RE-ACK] 2026-11-07T21:40:30+07:00 agent=geom-1 mem=v84 last_entry=F-geom1-054 task=T-105 note="lead requested adding Web Cutouts to Gear 2 (Purple Compound Wheel) and adding more customization settings for Web Cutouts (spoke count 0..8, spoke width %, outer rim wall mm, inner hub ring margin mm)"
+[END] 2026-11-07T21:48:30+07:00 agent=geom-1 mem=v85 last_entry=F-geom1-055 task=T-105 note="Added Web Cutouts to Gear 2 (g2_spokes 0..8 with automatic coaxial pinion collar clearance) and Web Cutout Settings (spoke_width_pct, rim_wall_mm, hub_ring_mm) across Gear 1 & Gear 2; 15/15 Node tests + tsc + vite build pass"

@@ -838,8 +838,12 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
   assert.equal(cfg.g1_teeth, 60);
   assert.equal(cfg.g1_spokes, 4);
   assert.equal(cfg.g2_wheel_teeth, 56);
+  assert.equal(cfg.g2_spokes, 4);
   assert.equal(cfg.g2_pinion_teeth, 15);
   assert.equal(cfg.g3_teeth, 20);
+  assert.equal(cfg.spoke_width_pct, 26.0);
+  assert.equal(cfg.rim_wall_mm, 3.5);
+  assert.equal(cfg.hub_ring_mm, 2.5);
 
   const metrics = computeGearboxMetrics(cfg);
   assert.equal(metrics.total_ratio, 3.0); // 60 / 20 = 3.0:1 in idler_reference mode
@@ -849,10 +853,28 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
   assert.equal(metrics.center_distance_12_mm, 72.5);
   assert.equal(metrics.center_distance_23_mm, 47.5);
 
-  // Build 3D submeshes (Gear 1 spoked rim + orange stepped hub, Gear 2 purple wheel + green pinion + collar, Gear 3 grey pinion + boss)
+  // Build 3D submeshes (Gear 1 spoked rim + orange stepped hub, Gear 2 spoked purple wheel + green pinion + collar, Gear 3 grey pinion + boss)
   const bundle = buildGearboxMeshes(cfg);
   assert.equal(bundle.submeshes.length, 7);
   assert.ok(bundle.total_triangles > 3000, `expected > 3000 triangles, got ${bundle.total_triangles}`);
+
+  // Verify Gear 2 solid vs spoked (0, 3, 4, 5, 6, 8 spokes) and custom Web Cutout geometry settings
+  const g2SolidBundle = buildGearboxMeshes({ ...cfg, g2_spokes: 0 });
+  const g2Spoke6Bundle = buildGearboxMeshes({
+    ...cfg,
+    g1_spokes: 6,
+    g2_spokes: 6,
+    spoke_width_pct: 20,
+    rim_wall_mm: 4.5,
+    hub_ring_mm: 3.0,
+  });
+  const g2WheelSolidTris = g2SolidBundle.submeshes.find((s) => s.id === "gear2-wheel").indices.length / 3;
+  const g2WheelSpokedTris = bundle.submeshes.find((s) => s.id === "gear2-wheel").indices.length / 3;
+  assert.ok(
+    g2WheelSpokedTris > g2WheelSolidTris,
+    `spoked Gear 2 wheel (${g2WheelSpokedTris} tris) should have inner/outer cutout walls vs solid (${g2WheelSolidTris} tris)`,
+  );
+  assert.equal(g2Spoke6Bundle.submeshes.length, 7);
 
   // Verify tooth solver for compound_2stage mode targeting 4.5:1
   const compoundSolved = solveGearTeethForTargetRatio(

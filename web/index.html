@@ -2251,6 +2251,28 @@
             </div>
           </div>
 
+          <!-- Web Cutout Geometry Settings (Shared across Spoked Gears 1 & 2) -->
+          <div class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #38bdf8">
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span style="font-weight: 500; color: var(--text-primary)">Web Cutout Settings (Gear 1 &amp; Gear 2)</span>
+              <span id="gear-cutout-badge" class="section-meta">26% Spoke · 74% Window</span>
+            </div>
+            <div class="grid-3" style="margin-top: 6px">
+              <div class="field">
+                <label for="gear-spoke-width" class="scrub-label" data-scrub-for="gear-spoke-width" title="Percentage of each angular sector occupied by the solid spoke arm (lower = wider window cutouts)">Spoke Width (%)</label>
+                <input id="gear-spoke-width" type="number" min="10" max="65" step="1" value="26" />
+              </div>
+              <div class="field">
+                <label for="gear-rim-wall" class="scrub-label" data-scrub-for="gear-rim-wall" title="Solid radial wall thickness inside the tooth root circle before window cutouts begin">Outer Rim (mm)</label>
+                <input id="gear-rim-wall" type="number" min="1.5" max="12" step="0.25" value="3.5" />
+              </div>
+              <div class="field">
+                <label for="gear-hub-ring" class="scrub-label" data-scrub-for="gear-hub-ring" title="Solid radial collar margin outside the hub boss (Gear 1) or coaxial pinion (Gear 2)">Hub Margin (mm)</label>
+                <input id="gear-hub-ring" type="number" min="1.0" max="12" step="0.25" value="2.5" />
+              </div>
+            </div>
+          </div>
+
           <!-- Gear 1: Mint-Green 4-Spoked Bull Gear + Orange Stepped Hub Boss -->
           <div class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #8fd9b6">
             <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
@@ -2269,9 +2291,11 @@
               <div class="field">
                 <label for="g1-spokes">Web Cutouts</label>
                 <select id="g1-spokes">
-                  <option value="4" selected>4 Spokes (Ref CAD)</option>
                   <option value="3">3 Spokes</option>
+                  <option value="4" selected>4 Spokes (Ref CAD)</option>
+                  <option value="5">5 Spokes</option>
                   <option value="6">6 Spokes</option>
+                  <option value="8">8 Spokes</option>
                   <option value="0">Solid Disk (0)</option>
                 </select>
               </div>
@@ -2308,6 +2332,17 @@
               <div class="field">
                 <label for="g2-wheel-face" class="scrub-label" data-scrub-for="g2-wheel-face">Wheel Face (mm)</label>
                 <input id="g2-wheel-face" type="number" min="2" max="25" step="0.5" value="5.0" />
+              </div>
+              <div class="field">
+                <label for="g2-spokes">Web Cutouts (Purple)</label>
+                <select id="g2-spokes">
+                  <option value="3">3 Spokes</option>
+                  <option value="4" selected>4 Spokes (Cutouts)</option>
+                  <option value="5">5 Spokes</option>
+                  <option value="6">6 Spokes</option>
+                  <option value="8">8 Spokes</option>
+                  <option value="0">Solid Disk (Ref CAD)</option>
+                </select>
               </div>
               <div class="field">
                 <label for="g2-pinion-teeth" class="scrub-label" data-scrub-for="g2-pinion-teeth">Lime Pinion Z2p</label>
