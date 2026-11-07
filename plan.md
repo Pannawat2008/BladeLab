@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 77**
-> **LAST_UPDATED: 2026-11-06 22:50 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 78**
+> **LAST_UPDATED: 2026-11-07 13:33 (UTC+7) by geom-1**
 
 ---
 
@@ -464,6 +464,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Added `S833` (NREL 18% thick root airfoil, `t/c = 18.0%` at `36.3%` chord, `m = 2.52%` at `78.7%` chord) across the full stack: (1) embedded Selig coordinates in `data/airfoils/S833.dat` and registered `"S833"` in `blade-geom::airfoil::dat::LIBRARY_AIRFOIL_NAMES` and `library_airfoil`; (2) added `"S833"` resolution (`max_camber: 0.0252`, `camber_position: 0.787`, `thickness_ratio: 0.1800`) in `blade-model::resolve::resolve_airfoil`; (3) updated `blade-aero::PolarSet::resolve_for_station` so library airfoils without a pre-tabulated polar (`S833`) fall back cleanly to a Viterna-extrapolated table synthesized from station camber and thickness; (4) rebuilt both web (`web/pkg`) and Node (`target/glue-node`) wasm bundles; and (5) exposed `S833 (NREL Thick Root, 18%)` in both `#airfoil-family` and `#sec-airfoil` selectors and SVG preview helpers in `web/index.html`, `web/src/main.ts`, and `web/src/state.ts`.
   refs: data/airfoils/S833.dat, crates/blade-geom/src/airfoil/dat.rs, crates/blade-model/src/resolve.rs, crates/blade-aero/src/polar.rs, web/index.html, web/src/main.ts, web/src/state.ts | supersedes: F-geom1-046
 
+- **F-geom1-048** | 2026-11-07 13:33 | geom-1 | T-105
+  Added `AlignmentShape::AirfoilLip` (`align_shape: "contour"`, UI preset `Contour Lip` / `Airfoil Contour Lip (Stepped Sleeve)`): (1) computes an inward-offset airfoil-shaped stepped lip / spigot (`pin_rings`, offset inward by `min_wall_mm + clearance_mm`) on the lower segment and a matching airfoil-contoured recessed pocket (`socket_rings`, offset inward by `min_wall_mm`) on the upper segment across non-crossing paired upper/lower chord stations `[d_le..=d_te]`, terminating with a clean flat step before the thin trailing edge and rounding smoothly around the leading-edge nose; (2) when a carbon-fiber spar tube bore (`seg_hole`) crosses the split plane, `append_segment_mesh` extends the bore through the male lip tip cap (`z1 + pin_height`) and starts the upper bore at the female socket ceiling (`z0 + socket_depth`) via `encloses_tube: true`, preserving 100% 2-manifold watertightness (`boundary_edges == 0`, `non_manifold_edges == 0`); and (3) tightened `triangulate_cap` Pass 2 in `crates/blade-mesh/src/tessellate.rs` so only near-collinear (`|cross| <= epsilon`) triples bypass `ear_is_valid`.
+  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-mesh/src/tessellate.rs, crates/blade-wasm/src/mesh.rs, web/index.html, web/src/main.ts | supersedes: F-geom1-047
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -857,3 +861,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [RE-ACK] 2026-11-06T22:43:35+07:00 agent=geom-1 mem=v76 last_entry=F-geom1-046 task=T-105 note="lead requested adding NREL S833 root airfoil to kernel library and web UI"
 [END] 2026-11-06T22:50+07:00 agent=geom-1 mem=v77 note="added NREL S833 (18% thick root airfoil) to data/airfoils/S833.dat, blade-geom, blade-model, blade-aero polar fallback, rebuilt wasm, and wired into web UI; all Rust & Node tests + vite build pass; F-geom1-047 recorded"
 [RE-ACK] 2026-11-07T13:23:00+07:00 agent=geom-1 mem=v77 last_entry=F-geom1-047 task=T-105 note="lead requested airfoil-contour offset interlocking lip/socket joint around the blade shape; implementing AlignmentShape::AirfoilLip in blade-mesh, blade-wasm, and web UI"
+[END] 2026-11-07T13:33+07:00 agent=geom-1 mem=v78 note="implemented AlignmentShape::AirfoilLip full-contour offset stepped lip and socket in blade-mesh, blade-wasm, and web UI; all Rust & Node tests + vite build pass; F-geom1-048 recorded"

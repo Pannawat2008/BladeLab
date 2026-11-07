@@ -67,6 +67,11 @@ pub enum AlignmentShape {
     /// retention ridge at `70%` height, and tapered lead-in tip, paired with a
     /// matching undercut socket cavity to resist spanwise pull-out.
     SnapLock,
+    /// Full-perimeter airfoil-contoured stepped lip / spigot boss offset inward
+    /// from the blade skin around the upper surface, leading-edge nose, and
+    /// lower surface (clipped before the thin trailing edge) and matching
+    /// airfoil-shaped recessed socket cavity.
+    AirfoilLip,
 }
 
 /// Alignment pins / keys placed on every split face.
@@ -471,6 +476,9 @@ fn ring_points(circle: &TubeCircle) -> Vec<Point3> {
 struct Feature {
     pin_rings: Vec<(f64, Vec<[f64; 2]>)>,
     socket_rings: Vec<(f64, Vec<[f64; 2]>)>,
+    /// True when this feature is a full-contour airfoil lip/socket that encloses
+    /// the central carbon-fiber spar tube bore.
+    encloses_tube: bool,
 }
 
 /// All alignment / interlocking features of one split face.
@@ -506,12 +514,14 @@ fn outline_with_clearance(
     };
 
     match shape {
-        AlignmentShape::Round | AlignmentShape::SnapLock => (0..PIN_CIRCLE_SEGMENTS)
-            .map(|k| {
-                let a = 2.0 * PI * (k as f64) / (PIN_CIRCLE_SEGMENTS as f64);
-                [center[0] + half_w * a.cos(), center[1] + half_w * a.sin()]
-            })
-            .collect(),
+        AlignmentShape::Round | AlignmentShape::SnapLock | AlignmentShape::AirfoilLip => {
+            (0..PIN_CIRCLE_SEGMENTS)
+                .map(|k| {
+                    let a = 2.0 * PI * (k as f64) / (PIN_CIRCLE_SEGMENTS as f64);
+                    [center[0] + half_w * a.cos(), center[1] + half_w * a.sin()]
+                })
+                .collect()
+        }
         AlignmentShape::Key | AlignmentShape::Tapered => vec![
             pt(half_l, -half_w),
             pt(half_l, half_w),
@@ -568,7 +578,8 @@ fn build_feature_rings(
         AlignmentShape::Round
         | AlignmentShape::Key
         | AlignmentShape::Dovetail
-        | AlignmentShape::Cruciform => &[(0.0, 1.0), (1.0, 1.0)],
+        | AlignmentShape::Cruciform
+        | AlignmentShape::AirfoilLip => &[(0.0, 1.0), (1.0, 1.0)],
     };
 
     let pin_rings = stages
@@ -594,7 +605,210 @@ fn build_feature_rings(
     Feature {
         pin_rings,
         socket_rings,
+        encloses_tube: false,
     }
+}
+
+/// Computes unit inward vertex normals in the `x`/`y` plane for a closed section contour.
+fn inward_normals_xy(sec: &[Point3]) -> Vec<[f64; 2]> {
+    let n = sec.len();
+    let sign = if signed_area_xy(sec) >= 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    (0..n)
+        .map(|k| {
+            let prev = sec[(k + n - 1) % n];
+            let curr = sec[k];
+            let next = sec[(k + 1) % n];
+            let dx1 = curr.x - prev.x;
+            let dy1 = curr.y - prev.y;
+            let l1 = dx1.hypot(dy1).max(1e-12);
+            let n1 = [sign * (-dy1 / l1), sign * (dx1 / l1)];
+
+            let dx2 = next.x - curr.x;
+            let dy2 = next.y - curr.y;
+            let l2 = dx2.hypot(dy2).max(1e-12);
+            let n2 = [sign * (-dy2 / l2), sign * (dx2 / l2)];
+
+            let bx = n1[0] + n2[0];
+            let by = n1[1] + n2[1];
+            let bl = bx.hypot(by);
+            if bl > 1e-9 {
+                [bx / bl, by / bl]
+            } else {
+                n1
+            }
+        })
+        .collect()
+}
+
+/// Evaluates the upper point, lower point, and remaining interior width of an
+/// inward-offset airfoil section at chordwise station `d` (`1..n_le`).
+fn eval_lip_station(
+    sec: &[Point3],
+    norms: &[[f64; 2]],
+    u_chord: [f64; 2],
+    tc: Option<TubeCircle>,
+    d: usize,
+    delta: f64,
+) -> ([f64; 2], [f64; 2], f64) {
+    let n_le = sec.len() / 2;
+    let iu = n_le - d;
+    let il = n_le + d;
+    let up = sec[iu];
+    let lo = sec[il];
+    let tx = up.x - lo.x;
+    let ty = up.y - lo.y;
+    let t = tx.hypot(ty).max(1e-9);
+    let vx = tx / t;
+    let vy = ty / t;
+
+    let nu = norms[iu];
+    let nl = norms[il];
+    let cu = (-(vx * nu[0] + vy * nu[1])).clamp(0.55, 1.0);
+    let cl = (vx * nl[0] + vy * nl[1]).clamp(0.55, 1.0);
+
+    let mut du = delta / cu;
+    let mut dl = delta / cl;
+
+    if let Some(circle) = tc {
+        let mx = 0.5 * (up.x + lo.x);
+        let my = 0.5 * (up.y + lo.y);
+        let dx_tube = ((mx - circle.cx) * u_chord[0] + (my - circle.cy) * u_chord[1]).abs();
+        let r_req = circle.radius + 0.45;
+        if dx_tube < r_req {
+            let dy_req = (r_req * r_req - dx_tube * dx_tube).max(0.0).sqrt() + 0.15;
+            let dist_u = (up.x - circle.cx) * vx + (up.y - circle.cy) * vy;
+            let dist_l = (circle.cx - lo.x) * vx + (circle.cy - lo.y) * vy;
+            du = du.min((dist_u - dy_req).max(0.42));
+            dl = dl.min((dist_l - dy_req).max(0.42));
+        }
+    }
+
+    let up_pt = [up.x - du * vx, up.y - du * vy];
+    let lo_pt = [lo.x + dl * vx, lo.y + dl * vy];
+    let width = t - du - dl;
+    (up_pt, lo_pt, width)
+}
+
+/// Builds a counter-clockwise inward-offset airfoil contour ring across `d_list`.
+fn build_lip_ring_for_section(
+    sec: &[Point3],
+    norms: &[[f64; 2]],
+    u_chord: [f64; 2],
+    tc: Option<TubeCircle>,
+    d_list: &[usize],
+    delta: f64,
+) -> Vec<[f64; 2]> {
+    let mut ring = Vec::with_capacity(2 * d_list.len() + 1);
+    for &d in d_list.iter().rev() {
+        let (up_pt, _, _) = eval_lip_station(sec, norms, u_chord, tc, d, delta);
+        ring.push(up_pt);
+    }
+
+    // Rounded leading-edge nose vertex strictly ahead of station `d_le`.
+    let d_le = d_list[0];
+    let (up_le, lo_le, w_le) = eval_lip_station(sec, norms, u_chord, tc, d_le, delta);
+    let mid_le = [0.5 * (up_le[0] + lo_le[0]), 0.5 * (up_le[1] + lo_le[1])];
+    let le = sec[sec.len() / 2];
+    let dist_to_le = (mid_le[0] - le.x).hypot(mid_le[1] - le.y);
+    let bow = (dist_to_le - delta - 0.15).clamp(0.05, (0.42 * w_le).max(0.08));
+    ring.push([
+        mid_le[0] - bow * u_chord[0],
+        mid_le[1] - bow * u_chord[1],
+    ]);
+
+    for &d in d_list {
+        let (_, lo_pt, _) = eval_lip_station(sec, norms, u_chord, tc, d, delta);
+        ring.push(lo_pt);
+    }
+    ring
+}
+
+/// Builds a full-perimeter airfoil-contoured stepped lip (`pin_rings`) and
+/// matching recessed socket (`socket_rings`).
+fn build_airfoil_lip_feature(
+    sec_base: &[Point3],
+    sec_pin_top: &[Point3],
+    sec_sock_top: &[Point3],
+    tube_base: Option<TubeCircle>,
+    tube_pin_top: Option<TubeCircle>,
+    tube_sock_top: Option<TubeCircle>,
+    spec: &AlignmentSpec,
+) -> Option<Feature> {
+    let n_le = sec_base.len() / 2;
+    if n_le < 12 {
+        return None;
+    }
+    let (_, _, upper_core, _) = section_core_station(sec_base);
+    let d_core = (n_le - upper_core).clamp(4, n_le - 4);
+
+    let norms_base = inward_normals_xy(sec_base);
+    let norms_pin = inward_normals_xy(sec_pin_top);
+    let norms_sock = inward_normals_xy(sec_sock_top);
+    let u_base = chord_axis(sec_base);
+    let u_pin = chord_axis(sec_pin_top);
+    let u_sock = chord_axis(sec_sock_top);
+
+    let clearance = spec.clearance_mm.max(0.0);
+    let base_wall = spec.min_wall_mm.max(0.6);
+
+    for shrink in FIT_SHRINK_STEPS {
+        let wall = (base_wall * shrink).max(0.5);
+        let delta_sock = wall;
+        let delta_pin = wall + clearance;
+
+        let valid_d = |d: usize| -> bool {
+            let (_, _, w0) = eval_lip_station(sec_base, &norms_base, u_base, tube_base, d, delta_pin);
+            let (_, _, w1) = eval_lip_station(sec_pin_top, &norms_pin, u_pin, tube_pin_top, d, delta_pin);
+            let (_, _, w2) = eval_lip_station(sec_sock_top, &norms_sock, u_sock, tube_sock_top, d, delta_sock);
+            w0 >= 0.85 && w1 >= 0.85 && w2 >= 0.85 + 2.0 * clearance
+        };
+
+        if !valid_d(d_core) {
+            continue;
+        }
+
+        let mut d_le = d_core;
+        while d_le > 2 && valid_d(d_le - 1) {
+            d_le -= 1;
+        }
+        let mut d_te = d_core;
+        while d_te + 3 < n_le && valid_d(d_te + 1) {
+            d_te += 1;
+        }
+        if d_te < d_le + 6 {
+            continue;
+        }
+
+        let mut d_list = Vec::new();
+        let mut d = d_le;
+        while d <= d_te {
+            d_list.push(d);
+            if d < d_le + 8 {
+                d += 1;
+            } else {
+                d += 2;
+            }
+        }
+        if *d_list.last().unwrap_or(&0) != d_te {
+            d_list.push(d_te);
+        }
+
+        let pin_r0 = build_lip_ring_for_section(sec_base, &norms_base, u_base, tube_base, &d_list, delta_pin);
+        let pin_r1 = build_lip_ring_for_section(sec_pin_top, &norms_pin, u_pin, tube_pin_top, &d_list, delta_pin);
+        let sock_r0 = build_lip_ring_for_section(sec_base, &norms_base, u_base, tube_base, &d_list, delta_sock);
+        let sock_r1 = build_lip_ring_for_section(sec_sock_top, &norms_sock, u_sock, tube_sock_top, &d_list, delta_sock);
+
+        return Some(Feature {
+            pin_rings: vec![(0.0, pin_r0), (1.0, pin_r1)],
+            socket_rings: vec![(0.0, sock_r0), (1.0, sock_r1)],
+            encloses_tube: true,
+        });
+    }
+    None
 }
 
 /// Places pins / interlocking joints on a split face. Features that cannot keep
@@ -625,7 +839,9 @@ fn plan_features(
         for shrink in FIT_SHRINK_STEPS {
             let half_w = (0.5 * spec.size_mm * shrink).max(0.3);
             let half_l = match spec.shape {
-                AlignmentShape::Round | AlignmentShape::SnapLock => half_w,
+                AlignmentShape::Round | AlignmentShape::SnapLock | AlignmentShape::AirfoilLip => {
+                    half_w
+                }
                 AlignmentShape::Key
                 | AlignmentShape::Dovetail
                 | AlignmentShape::Cruciform
@@ -634,7 +850,9 @@ fn plan_features(
             let sock_w = half_w + clearance;
             let sock_l = half_l + clearance;
             let bound = match spec.shape {
-                AlignmentShape::Round | AlignmentShape::SnapLock => sock_w,
+                AlignmentShape::Round | AlignmentShape::SnapLock | AlignmentShape::AirfoilLip => {
+                    sock_w
+                }
                 AlignmentShape::Key
                 | AlignmentShape::Dovetail
                 | AlignmentShape::Cruciform
@@ -675,10 +893,46 @@ fn plan_plane(
     hole_axis: Option<SparTubeAxis>,
 ) -> Result<Option<PlaneFeatures>, MeshError> {
     let dc = spec.depth_clearance_mm.max(0.0);
-    let max_depth = (0.6 * len_upper).max(1.0);
+    let max_depth = (0.45 * len_upper).max(1.0);
     let depth = (spec.height_mm.max(0.5) + dc).min(max_depth).max(1.0);
     let pin_height = (depth - dc).max(0.5);
+    let z_pin_top = (z_s + pin_height).min(span_end);
     let z_deep = (z_s + depth).min(span_end);
+
+    if spec.shape == AlignmentShape::AirfoilLip {
+        let sec_base = evaluate_section_at_span(surface, z_s)?;
+        let sec_pin = evaluate_section_at_span(surface, z_pin_top)?;
+        let sec_sock = evaluate_section_at_span(surface, z_deep)?;
+        let tube_base = hole_axis.and_then(|axis| {
+            if axis.z_end >= z_s - 1e-3 {
+                Some(axis.circle_at(z_s))
+            } else {
+                None
+            }
+        });
+        let tube_pin = hole_axis.and_then(|axis| {
+            if axis.z_end >= z_s - 1e-3 {
+                Some(axis.circle_at(z_pin_top))
+            } else {
+                None
+            }
+        });
+        let tube_sock = hole_axis.and_then(|axis| {
+            if axis.z_end >= z_s - 1e-3 {
+                Some(axis.circle_at(z_deep))
+            } else {
+                None
+            }
+        });
+        return Ok(build_airfoil_lip_feature(
+            &sec_base, &sec_pin, &sec_sock, tube_base, tube_pin, tube_sock, spec,
+        )
+        .map(|f| PlaneFeatures {
+            features: vec![f],
+            pin_height,
+            socket_depth: depth,
+        }));
+    }
 
     let contours = vec![
         evaluate_section_at_span(surface, z_s)?,
@@ -800,7 +1054,11 @@ pub fn alignment_report(
         )?;
         out.push(AlignmentReport {
             span_mm: bounds[i],
-            requested: align.count.clamp(1, 2),
+            requested: if align.shape == AlignmentShape::AirfoilLip {
+                1
+            } else {
+                align.count.clamp(1, 2)
+            },
             placed: plane.as_ref().map_or(0, |p| p.features.len()),
             pin_height_mm: plane.as_ref().map_or(0.0, |p| p.pin_height),
             socket_depth_mm: plane.as_ref().map_or(0.0, |p| p.socket_depth),
@@ -1087,51 +1345,80 @@ fn append_segment_mesh(
     let top_outer_start = outer_base + (sec_count - 1) * point_count;
     let mut bottom_holes: Vec<CapHole> = Vec::new();
     let mut top_holes: Vec<CapHole> = Vec::new();
+    let mut bore_bottom_cap_hole: Option<CapHole> = None;
+    let mut bore_top_cap_hole: Option<CapHole> = None;
+
+    let bottom_encloses_tube = ctx
+        .bottom
+        .is_some_and(|p| p.features.iter().any(|f| f.encloses_tube));
+    let top_encloses_tube = ctx
+        .top
+        .is_some_and(|p| p.features.iter().any(|f| f.encloses_tube));
 
     // Carbon tube bore: straight coaxial inward-facing wall, blind end disc if it stops here.
     if let Some((hole_axis, z_hole_top)) = ctx.seg_hole {
-        let mut hole_last_sec = 0;
-        for (idx, &z) in seg_spans.iter().enumerate() {
-            if z <= z_hole_top + 1e-3 {
-                hole_last_sec = idx;
+        let z_bore_start = match (bottom_encloses_tube, ctx.bottom) {
+            (true, Some(plane)) => seg_spans[0] + plane.socket_depth,
+            _ => seg_spans[0],
+        };
+        if z_hole_top > z_bore_start + 0.5 {
+            let is_through_hole = z_hole_top >= seg_spans[sec_count - 1] - 1e-3;
+            let mut bore_spans = vec![z_bore_start];
+            for &z in seg_spans {
+                if z > z_bore_start + 1e-3 && z <= z_hole_top + 1e-3 {
+                    bore_spans.push(z);
+                }
             }
-        }
-        let hole_last_sec = hole_last_sec.clamp(1, sec_count - 1);
-        let is_through_hole = hole_last_sec == sec_count - 1;
+            if is_through_hole {
+                if let (true, Some(plane)) = (top_encloses_tube, ctx.top) {
+                    bore_spans.push(seg_spans[sec_count - 1] + plane.pin_height);
+                }
+            }
+            if bore_spans.len() < 2 {
+                bore_spans.push(z_hole_top);
+            }
 
-        let mut ring_starts: Vec<usize> = Vec::with_capacity(hole_last_sec + 1);
-        for &z_unshifted in seg_spans.iter().take(hole_last_sec + 1) {
-            let mut circle = hole_axis.circle_at(z_unshifted);
-            circle.cz += ctx.z_shift;
-            let ring = ring_points(&circle);
-            ring_starts.push(vertices.len());
-            vertices.extend_from_slice(&ring);
-        }
-        for s in 0..hole_last_sec {
-            push_wall(
-                triangles,
-                ring_starts[s],
-                ring_starts[s + 1],
-                HOLE_CIRCLE_SEGMENTS,
-                false,
-            );
-        }
-        bottom_holes.push(CapHole {
-            start: ring_starts[0],
-            len: HOLE_CIRCLE_SEGMENTS,
-        });
-        if is_through_hole {
-            top_holes.push(CapHole {
-                start: ring_starts[hole_last_sec],
+            let mut ring_starts: Vec<usize> = Vec::with_capacity(bore_spans.len());
+            for &z_unshifted in &bore_spans {
+                let mut circle = hole_axis.circle_at(z_unshifted);
+                circle.cz += ctx.z_shift;
+                let ring = ring_points(&circle);
+                ring_starts.push(vertices.len());
+                vertices.extend_from_slice(&ring);
+            }
+            for s in 0..(ring_starts.len() - 1) {
+                push_wall(
+                    triangles,
+                    ring_starts[s],
+                    ring_starts[s + 1],
+                    HOLE_CIRCLE_SEGMENTS,
+                    false,
+                );
+            }
+            let first_hole = CapHole {
+                start: ring_starts[0],
                 len: HOLE_CIRCLE_SEGMENTS,
-            });
-        } else {
-            push_disc(
-                triangles,
-                ring_starts[hole_last_sec],
-                HOLE_CIRCLE_SEGMENTS,
-                false,
-            );
+            };
+            if bottom_encloses_tube {
+                bore_bottom_cap_hole = Some(first_hole);
+            } else {
+                bottom_holes.push(first_hole);
+            }
+
+            let last_start = *ring_starts.last().unwrap();
+            let last_hole = CapHole {
+                start: last_start,
+                len: HOLE_CIRCLE_SEGMENTS,
+            };
+            if is_through_hole {
+                if top_encloses_tube {
+                    bore_top_cap_hole = Some(last_hole);
+                } else {
+                    top_holes.push(last_hole);
+                }
+            } else {
+                push_disc(triangles, last_start, HOLE_CIRCLE_SEGMENTS, false);
+            }
         }
     }
 
@@ -1151,7 +1438,15 @@ fn append_segment_mesh(
                 push_wall(triangles, w[0], w[1], n, false);
             }
             if let Some(&ceiling) = starts.last() {
-                push_polygon_cap(vertices, triangles, ceiling, n, false, 0)?;
+                if feature.encloses_tube {
+                    if let Some(h) = bore_bottom_cap_hole {
+                        append_cap_with_holes(vertices, ceiling, n, &[h], false, 0, triangles)?;
+                    } else {
+                        push_polygon_cap(vertices, triangles, ceiling, n, false, 0)?;
+                    }
+                } else {
+                    push_polygon_cap(vertices, triangles, ceiling, n, false, 0)?;
+                }
             }
             bottom_holes.push(CapHole {
                 start: starts[0],
@@ -1176,7 +1471,23 @@ fn append_segment_mesh(
                 push_wall(triangles, w[0], w[1], n, true);
             }
             if let Some(&tip) = starts.last() {
-                push_polygon_cap(vertices, triangles, tip, n, true, sec_count - 1)?;
+                if feature.encloses_tube {
+                    if let Some(h) = bore_top_cap_hole {
+                        append_cap_with_holes(
+                            vertices,
+                            tip,
+                            n,
+                            &[h],
+                            true,
+                            sec_count - 1,
+                            triangles,
+                        )?;
+                    } else {
+                        push_polygon_cap(vertices, triangles, tip, n, true, sec_count - 1)?;
+                    }
+                } else {
+                    push_polygon_cap(vertices, triangles, tip, n, true, sec_count - 1)?;
+                }
             }
             top_holes.push(CapHole {
                 start: starts[0],
@@ -1665,6 +1976,44 @@ mod tests {
                 p1 < baseline_p1 - 1.0,
                 "{shape:?} upper part must lose mortise volume: {p1} vs {baseline_p1}"
             );
+        }
+    }
+
+    #[test]
+    fn airfoil_lip_contour_joint_is_watertight_with_and_without_spar_hole() {
+        let surface = fixture_surface();
+        let align = AlignmentSpec {
+            shape: AlignmentShape::AirfoilLip,
+            count: 1,
+            height_mm: 8.0,
+            clearance_mm: 0.2,
+            depth_clearance_mm: 0.5,
+            min_wall_mm: 1.2,
+            ..AlignmentSpec::default()
+        };
+
+        // 1. With carbon-fiber spar hole crossing the split plane
+        let with_tube_all = two_part(Some(align), None);
+        let rep = alignment_report(&surface, &with_tube_all).unwrap();
+        assert_eq!(rep.len(), 1);
+        assert_eq!(rep[0].requested, 1);
+        assert_eq!(rep[0].placed, 1);
+        let _ = volume_of(&surface, &with_tube_all);
+        let p0_tube = volume_of(&surface, &two_part(Some(align), Some(0)));
+        let p1_tube = volume_of(&surface, &two_part(Some(align), Some(1)));
+        let base0_tube = volume_of(&surface, &two_part(None, Some(0)));
+        let base1_tube = volume_of(&surface, &two_part(None, Some(1)));
+        assert!(p0_tube > base0_tube + 50.0, "lower part gains airfoil lip volume");
+        assert!(p1_tube < base1_tube - 50.0, "upper part loses airfoil socket volume");
+
+        // 2. Without carbon-fiber spar hole (solid airfoil lip spigot + pocket)
+        let mut no_tube = with_tube_all;
+        no_tube.spar_hole = None;
+        let _ = volume_of(&surface, &no_tube);
+        for part in [0, 1] {
+            let mut single = no_tube;
+            single.active_part = Some(part);
+            let _ = volume_of(&surface, &single);
         }
     }
 }

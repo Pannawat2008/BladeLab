@@ -213,7 +213,7 @@ pub(crate) fn triangulate_cap(
             let c = points[next];
             let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
             let dot = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
-            if cross >= -1e-9 * scale * scale && dot > 0.0 {
+            if (-1e-9 * scale * scale..=epsilon).contains(&cross) && dot > 0.0 {
                 triangles.push([previous, current, next]);
                 order.remove(position);
                 clipped = true;

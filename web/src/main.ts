@@ -404,9 +404,13 @@ interface AlignmentPlaneReport {
 function updateAlignmentStatus(design: Design) {
   const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
   const shape = selectAlignShape.value;
+  const isContour = shape === "contour";
   const usesLength =
     shape === "key" || shape === "dovetail" || shape === "cruciform" || shape === "tapered";
   inputAlignKeyLength.disabled = !usesLength;
+  selectAlignCount.disabled = isContour;
+  inputAlignSize.disabled = isContour;
+  inputAlignSpacing.disabled = isContour;
   if (shape === "none") {
     alignStatus.textContent = "Alignment / interlocking joints off";
     alignStatus.classList.remove("warn");
@@ -424,6 +428,7 @@ function updateAlignmentStatus(design: Design) {
     const placedTotal = rows.reduce((n, r) => n + r.placed, 0);
     const requestedTotal = rows.reduce((n, r) => n + r.requested, 0);
     const labelMap: Record<string, string> = {
+      contour: "airfoil contour lip sleeves",
       dovetail: "dovetail interlocks",
       cruciform: "cruciform (+) interlocks",
       snaplock: "3D snap-lock joints",
@@ -1626,6 +1631,7 @@ for (const [btn, clearance, tubeTol] of [
 }
 
 for (const [btnId, shapeVal, sizeMm, lenMm] of [
+  ["btn-joint-contour", "contour", 3.0, 6.0],
   ["btn-joint-dovetail", "dovetail", 3.2, 6.5],
   ["btn-joint-cruciform", "cruciform", 3.6, 6.5],
   ["btn-joint-snaplock", "snaplock", 3.4, 6.0],
@@ -1638,8 +1644,13 @@ for (const [btnId, shapeVal, sizeMm, lenMm] of [
       selectSplitParts.value = "2";
     }
     selectAlignShape.value = shapeVal;
-    inputAlignSize.value = sizeMm.toFixed(1);
-    inputAlignKeyLength.value = lenMm.toFixed(1);
+    if (shapeVal === "contour") {
+      inputAlignMinWall.value = "1.2";
+      inputAlignHeight.value = "8.0";
+    } else {
+      inputAlignSize.value = sizeMm.toFixed(1);
+      inputAlignKeyLength.value = lenMm.toFixed(1);
+    }
     rebuild3D(workingDesign);
   });
 }

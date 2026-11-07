@@ -106,6 +106,7 @@ impl Overrides {
             Some("cruciform") | Some("cross") => Some(AlignmentShape::Cruciform),
             Some("tapered") | Some("wedge") => Some(AlignmentShape::Tapered),
             Some("snaplock") | Some("snap") => Some(AlignmentShape::SnapLock),
+            Some("contour") | Some("lip") | Some("airfoil") => Some(AlignmentShape::AirfoilLip),
             _ => None,
         };
         let defaults = AlignmentSpec::default();
