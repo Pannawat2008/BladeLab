@@ -856,3 +856,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-06T22:46+07:00 agent=geom-1 mem=v76 note="added Blade sections panel with per-section airfoil/chord/twist/thickness and to-scale section stack; 11 tests + tsc + build clean; F-geom1-046 recorded"
 [RE-ACK] 2026-11-06T22:43:35+07:00 agent=geom-1 mem=v76 last_entry=F-geom1-046 task=T-105 note="lead requested adding NREL S833 root airfoil to kernel library and web UI"
 [END] 2026-11-06T22:50+07:00 agent=geom-1 mem=v77 note="added NREL S833 (18% thick root airfoil) to data/airfoils/S833.dat, blade-geom, blade-model, blade-aero polar fallback, rebuilt wasm, and wired into web UI; all Rust & Node tests + vite build pass; F-geom1-047 recorded"
+[RE-ACK] 2026-11-07T13:23:00+07:00 agent=geom-1 mem=v77 last_entry=F-geom1-047 task=T-105 note="lead requested airfoil-contour offset interlocking lip/socket joint around the blade shape; implementing AlignmentShape::AirfoilLip in blade-mesh, blade-wasm, and web UI"
