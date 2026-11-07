@@ -14,6 +14,7 @@ import type {
   StationOverride,
 } from "./types/blade-model";
 
+
 export const RATIO_EPS = 1e-9;
 
 export function evalBezierPoints(points: BezierControlPoint[], s: number): number {
@@ -1601,7 +1602,7 @@ export interface WorkbenchUiSnapshot {
   chord_offset_x_mm: number;
   chord_offset_y_mm: number;
   global_light_intensity: number;
-  view_mode: "single" | "rotor";
+  view_mode: "single" | "rotor" | "gearbox";
   wireframe_mode: boolean;
   heatmap_mode?: HeatmapMode;
   structural_material?: StructuralMaterialKey;
@@ -1615,6 +1616,7 @@ export interface WorkbenchUiSnapshot {
   gen_r_int: number;
   gen_r_load: number;
   exp_data_log: string;
+  gearbox?: GearboxConfig;
 }
 
 export interface WorkbenchSnapshot {
@@ -1689,6 +1691,7 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gen_r_int: 0.8,
     gen_r_load: 12.0,
     exp_data_log: "",
+    gearbox: defaultGearboxConfig(),
   };
 }
 
@@ -3548,5 +3551,1043 @@ export function optimizeGeneratorAndGearbox(
   };
 }
 
+/**
+ * Parametric 3D Gearbox Prototype Generator (`GearboxConfig`, Involute Spur/Helical
+ * tooth profile solver, 4-spoke rotor bull gear + stepped orange hub, coaxial
+ * compound wheel/pinion, generator pinion, and binary STL export).
+ */
 
+export type GearboxStageMode = "compound_2stage" | "idler_reference" | "direct_1stage";
+export type GearboxLayoutMode = "side_by_side" | "meshed";
+export type GearExportTarget = "all" | "gear1" | "gear2" | "gear3";
 
+export interface GearboxConfig {
+  stage_mode: GearboxStageMode;
+  layout_mode: GearboxLayoutMode;
+  module_mm: number;
+  pressure_angle_deg: number;
+  helix_angle_deg: number;
+  backlash_mm: number;
+
+  // Gear 1: Rotor Bull Gear (Mint 4-spoke wheel + Orange stepped hub boss)
+  g1_teeth: number;
+  g1_face_width_mm: number;
+  g1_spokes: number; // 0 = solid, 3..6 = spoked cutouts (default 4)
+  g1_bore_mm: number;
+  g1_d_flat_mm: number;
+  g1_hub_diameter_mm: number;
+  g1_hub_height_mm: number;
+
+  // Gear 2: Compound Idler Gear (Purple Wheel + Lime-Green Coaxial Pinion)
+  g2_wheel_teeth: number;
+  g2_wheel_face_mm: number;
+  g2_pinion_teeth: number;
+  g2_pinion_face_mm: number;
+  g2_bore_mm: number;
+  g2_d_flat_mm: number;
+
+  // Gear 3: Generator Output Pinion (Slate-Grey Pinion + Motor Shaft Boss)
+  g3_teeth: number;
+  g3_face_width_mm: number;
+  g3_bore_mm: number;
+  g3_d_flat_mm: number;
+  g3_boss_height_mm: number;
+}
+
+export interface GearboxMetrics {
+  stage1_ratio: number;
+  stage2_ratio: number;
+  total_ratio: number;
+  efficiency_pct: number;
+  g1_pitch_dia_mm: number;
+  g1_outer_dia_mm: number;
+  g2_wheel_pitch_dia_mm: number;
+  g2_wheel_outer_dia_mm: number;
+  g2_pinion_pitch_dia_mm: number;
+  g2_pinion_outer_dia_mm: number;
+  g3_pitch_dia_mm: number;
+  g3_outer_dia_mm: number;
+  center_distance_12_mm: number;
+  center_distance_23_mm: number;
+  total_span_width_mm: number;
+  max_height_z_mm: number;
+}
+
+export interface GearSubMesh {
+  id: string;
+  gear_index: 1 | 2 | 3;
+  label: string;
+  color_hex: number;
+  metalness: number;
+  roughness: number;
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
+  center_x_mm: number;
+  center_y_mm: number;
+  base_z_mm: number;
+  mesh_phase_rad: number;
+  spin_ratio: number; // Angular velocity multiplier relative to rotor shaft (+1 = rotor CCW, -ratio = CW)
+}
+
+export interface GearboxMeshBundle {
+  metrics: GearboxMetrics;
+  submeshes: GearSubMesh[];
+  total_triangles: number;
+}
+
+/**
+ * Returns default Gearbox Prototype settings matching the 3-gear reference CAD:
+ * - Gear 1: 60T Mint 4-spoked bull gear + Orange stepped hub boss
+ * - Gear 2: 54T Purple wheel + 16T Lime-green coaxial tall helical pinion
+ * - Gear 3: 20T Slate-grey generator pinion with motor shaft collar
+ */
+export function defaultGearboxConfig(): GearboxConfig {
+  return {
+    stage_mode: "idler_reference",
+    layout_mode: "side_by_side",
+    module_mm: 1.25,
+    pressure_angle_deg: 20.0,
+    helix_angle_deg: 15.0,
+    backlash_mm: 0.15,
+
+    g1_teeth: 60,
+    g1_face_width_mm: 5.0,
+    g1_spokes: 4,
+    g1_bore_mm: 6.0,
+    g1_d_flat_mm: 0.5,
+    g1_hub_diameter_mm: 24.0,
+    g1_hub_height_mm: 18.0,
+
+    g2_wheel_teeth: 56,
+    g2_wheel_face_mm: 5.0,
+    g2_pinion_teeth: 15,
+    g2_pinion_face_mm: 14.0,
+    g2_bore_mm: 5.0,
+    g2_d_flat_mm: 0.0,
+
+    g3_teeth: 20,
+    g3_face_width_mm: 14.0,
+    g3_bore_mm: 3.0,
+    g3_d_flat_mm: 0.4,
+    g3_boss_height_mm: 4.5,
+  };
+}
+
+/**
+ * Computes exact pitch diameters, outside diameters, center-to-center shaft
+ * distances ($a_{12}, a_{23}$), and step-up ratio $G_{\text{total}}$.
+ */
+export function computeGearboxMetrics(cfg: GearboxConfig): GearboxMetrics {
+  const m = Math.max(0.4, cfg.module_mm || 1.25);
+  const z1 = Math.max(10, Math.round(cfg.g1_teeth || 60));
+  const z2w = Math.max(10, Math.round(cfg.g2_wheel_teeth || 56));
+  const z2p = Math.max(8, Math.round(cfg.g2_pinion_teeth || 15));
+  const z3 = Math.max(8, Math.round(cfg.g3_teeth || 20));
+
+  const d1 = m * z1;
+  const da1 = d1 + 2 * m;
+  const d2w = m * z2w;
+  const da2w = d2w + 2 * m;
+  const d2p = m * z2p;
+  const da2p = d2p + 2 * m;
+  const d3 = m * z3;
+  const da3 = d3 + 2 * m;
+
+  let stage1 = 1.0;
+  let stage2 = 1.0;
+  let a12 = 0;
+  let a23 = 0;
+  let effPct = 96.0;
+
+  if (cfg.stage_mode === "direct_1stage") {
+    stage1 = z1 / z3;
+    stage2 = 1.0;
+    a12 = 0.5 * (d1 + d3);
+    a23 = 0;
+    effPct = 96.5;
+  } else if (cfg.stage_mode === "compound_2stage") {
+    // Stage 1: Rotor Gear 1 (z1) drives Compound Pinion (z2p)
+    // Stage 2: Compound Wheel (z2w) drives Generator Pinion (z3)
+    stage1 = z1 / z2p;
+    stage2 = z2w / z3;
+    a12 = 0.5 * (d1 + d2p);
+    a23 = 0.5 * (d2w + d3);
+    effPct = 93.5;
+  } else {
+    // "idler_reference": Reference CAD layout where Gear 1 (z1) meshes with Purple Wheel (z2w)
+    // and Coaxial Green Pinion (z2p) or Purple Wheel drives Generator Pinion (z3).
+    // In Idler Reference mode: Stage 1 = z1 / z2w, Stage 2 = z2w / z3 => Total = z1 / z3
+    stage1 = z1 / z2w;
+    stage2 = z2w / z3;
+    a12 = 0.5 * (d1 + d2w);
+    a23 = 0.5 * (d2w + d3);
+    effPct = 94.5;
+  }
+
+  const totalRatio = stage1 * stage2;
+  const totalSpan =
+    cfg.stage_mode === "direct_1stage"
+      ? 0.5 * da1 + a12 + 0.5 * da3
+      : 0.5 * da1 + a12 + a23 + 0.5 * da3;
+  const maxZ = Math.max(
+    cfg.g1_face_width_mm + cfg.g1_hub_height_mm,
+    cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm + 2.5,
+    cfg.g3_face_width_mm + cfg.g3_boss_height_mm,
+  );
+
+  return {
+    stage1_ratio: Number(stage1.toFixed(3)),
+    stage2_ratio: Number(stage2.toFixed(3)),
+    total_ratio: Number(totalRatio.toFixed(3)),
+    efficiency_pct: effPct,
+    g1_pitch_dia_mm: d1,
+    g1_outer_dia_mm: da1,
+    g2_wheel_pitch_dia_mm: d2w,
+    g2_wheel_outer_dia_mm: da2w,
+    g2_pinion_pitch_dia_mm: d2p,
+    g2_pinion_outer_dia_mm: da2p,
+    g3_pitch_dia_mm: d3,
+    g3_outer_dia_mm: da3,
+    center_distance_12_mm: Number(a12.toFixed(2)),
+    center_distance_23_mm: Number(a23.toFixed(2)),
+    total_span_width_mm: Number(totalSpan.toFixed(1)),
+    max_height_z_mm: Number(maxZ.toFixed(1)),
+  };
+}
+
+/**
+ * Automatically solves for integer tooth counts `(g1_teeth, g2_wheel_teeth, g2_pinion_teeth, g3_teeth)`
+ * that best match `targetRatio` ($G \in [0.5, 20]$) while keeping pinion teeth $\ge 12$ to avoid undercutting.
+ */
+export function solveGearTeethForTargetRatio(
+  cfg: GearboxConfig,
+  targetRatio: number,
+): GearboxConfig {
+  const goal = Math.max(0.5, Math.min(20.0, targetRatio || 3.0));
+  const next: GearboxConfig = { ...cfg };
+
+  if (cfg.stage_mode === "direct_1stage" || cfg.stage_mode === "idler_reference") {
+    // Total ratio = z1 / z3
+    let bestZ1 = next.g1_teeth;
+    let bestZ3 = next.g3_teeth;
+    let bestErr = Number.POSITIVE_INFINITY;
+    for (let z3 = 14; z3 <= 30; z3++) {
+      const z1 = Math.max(16, Math.min(96, Math.round(z3 * goal)));
+      const ratio = z1 / z3;
+      const err = Math.abs(ratio - goal) + 0.002 * Math.abs(z1 - 60);
+      if (err < bestErr) {
+        bestErr = err;
+        bestZ1 = z1;
+        bestZ3 = z3;
+      }
+    }
+    next.g1_teeth = bestZ1;
+    next.g3_teeth = bestZ3;
+    if (cfg.stage_mode === "idler_reference") {
+      next.g2_wheel_teeth = Math.max(24, Math.min(84, Math.round(0.92 * bestZ1)));
+    }
+    return next;
+  }
+
+  // compound_2stage: Total ratio = (z1 / z2p) * (z2w / z3)
+  const targetPerStage = Math.sqrt(goal);
+  let best = {
+    z1: next.g1_teeth,
+    z2p: next.g2_pinion_teeth,
+    z2w: next.g2_wheel_teeth,
+    z3: next.g3_teeth,
+  };
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let z2p = 13; z2p <= 24; z2p++) {
+    for (let z3 = 14; z3 <= 26; z3++) {
+      const z1 = Math.max(20, Math.min(84, Math.round(z2p * targetPerStage)));
+      const remRatio = goal / (z1 / z2p);
+      const z2w = Math.max(20, Math.min(80, Math.round(z3 * remRatio)));
+      const achieved = (z1 / z2p) * (z2w / z3);
+      const err =
+        Math.abs(achieved - goal) +
+        0.015 * Math.abs(z1 / z2p - z2w / z3) +
+        0.001 * Math.abs(z1 - 56);
+      if (err < bestScore) {
+        bestScore = err;
+        best = { z1, z2p, z2w, z3 };
+      }
+    }
+  }
+
+  next.g1_teeth = best.z1;
+  next.g2_pinion_teeth = best.z2p;
+  next.g2_wheel_teeth = best.z2w;
+  next.g3_teeth = best.z3;
+  return next;
+}
+
+// ============================================================================
+// Procedural 2D Involute Contour & 3D Watertight Helical / Spoked Mesh Builder
+// ============================================================================
+
+function involute(alphaRad: number): number {
+  return Math.tan(alphaRad) - alphaRad;
+}
+
+/**
+ * Evaluates the outer radius $r(\theta)$ of an involute gear with `teeth` ($Z$),
+ * `moduleMm` ($m$), `pressureAngleDeg` ($\alpha_0$), and `backlashMm` at angle $\theta$.
+ */
+function sampleInvoluteRadiusRing(
+  teeth: number,
+  moduleMm: number,
+  pressureAngleDeg: number,
+  backlashMm: number,
+  samplesPerTooth: number,
+): { angles: Float64Array; radii: Float64Array } {
+  const z = Math.max(8, Math.round(teeth));
+  const m = Math.max(0.4, moduleMm);
+  const alpha0 = ((pressureAngleDeg || 20) * Math.PI) / 180;
+  const rp = 0.5 * m * z;
+  const rb = rp * Math.cos(alpha0);
+  const ra = rp + 1.0 * m;
+  const rf = Math.max(0.35 * rp, rp - 1.2 * m);
+
+  const pitchAngle = (2 * Math.PI) / z;
+  const backlashAngle = Math.min(0.18 * pitchAngle, Math.max(0, backlashMm) / Math.max(1, rp));
+  const halfPitchToothAngle = Math.PI / (2 * z) - 0.5 * backlashAngle;
+  const psiBase = halfPitchToothAngle + involute(alpha0);
+
+  // Tip half-angle
+  const alphaTip = rb < ra ? Math.acos(rb / ra) : 0;
+  const psiTip = Math.max(0.08 * (pitchAngle / 2), psiBase - involute(alphaTip));
+  const psiRoot = Math.min(0.36 * pitchAngle, Math.max(psiTip * 1.65, psiBase * 1.08));
+
+  const nTotal = z * samplesPerTooth;
+  const angles = new Float64Array(nTotal);
+  const radii = new Float64Array(nTotal);
+
+  for (let i = 0; i < nTotal; i++) {
+    const theta = (2 * Math.PI * i) / nTotal;
+    angles[i] = theta;
+
+    // Local angle relative to nearest tooth center in [-pitchAngle/2, +pitchAngle/2]
+    const toothIdx = Math.floor((theta + 0.5 * pitchAngle) / pitchAngle);
+    const localAbs = Math.abs(theta - toothIdx * pitchAngle);
+
+    let r = rf;
+    if (localAbs <= psiTip) {
+      // Tip land with slight crowning
+      const u = localAbs / Math.max(1e-6, psiTip);
+      r = ra - 0.03 * m * u * u;
+    } else if (localAbs < psiRoot) {
+      // Involute tooth flank: interpolate from ra at psiTip down to rf at psiRoot
+      const t = (localAbs - psiTip) / Math.max(1e-6, psiRoot - psiTip);
+      // Smooth S-curve + involute profile curvature
+      const invCurve = 1 - Math.pow(t, 1.35);
+      r = rf + (ra - rf) * invCurve;
+    } else {
+      // Root space with subtle fillet
+      r = rf;
+    }
+    radii[i] = r;
+  }
+
+  return { angles, radii };
+}
+
+/**
+ * Evaluates a round or D-flat shaft bore radius $r_{\text{bore}}(\theta)$.
+ * For a D-flat bore (`dFlatMm > 0`), the chord at $x = r_0 - d_{\text{flat}}$
+ * flattens the circle on the $+x$ side ($|\theta| < \arccos(d / r_0)$).
+ */
+function sampleBoreRadiusRing(
+  angles: Float64Array,
+  boreDiaMm: number,
+  dFlatMm: number,
+): Float64Array {
+  const n = angles.length;
+  const r0 = Math.max(0.8, 0.5 * boreDiaMm);
+  const flatDepth = Math.max(0, Math.min(0.42 * r0, dFlatMm || 0));
+  const d = r0 - flatDepth;
+  const out = new Float64Array(n);
+
+  for (let i = 0; i < n; i++) {
+    const th = angles[i]!;
+    const cosT = Math.cos(th);
+    if (flatDepth > 1e-4 && cosT > d / r0) {
+      out[i] = d / cosT;
+    } else {
+      out[i] = r0;
+    }
+  }
+  return out;
+}
+
+class MeshBuilder {
+  positions: number[] = [];
+  indices: number[] = [];
+
+  addVertex(x: number, y: number, z: number): number {
+    const idx = this.positions.length / 3;
+    this.positions.push(x, y, z);
+    return idx;
+  }
+
+  addTri(a: number, b: number, c: number) {
+    if (a === b || b === c || c === a) return;
+    this.indices.push(a, b, c);
+  }
+
+  addQuad(a: number, b: number, c: number, d: number) {
+    this.addTri(a, b, c);
+    this.addTri(a, c, d);
+  }
+
+  /**
+   * Builds a ring of `angles.length` vertices at height `z`, rotating each angle by `twistRad`.
+   */
+  addPolarRing(angles: Float64Array, radii: Float64Array | number, z: number, twistRad = 0): number {
+    const startIdx = this.positions.length / 3;
+    const isConst = typeof radii === "number";
+    for (let i = 0; i < angles.length; i++) {
+      const th = angles[i]! + twistRad;
+      const r = isConst ? (radii as number) : (radii as Float64Array)[i]!;
+      this.addVertex(r * Math.cos(th), r * Math.sin(th), z);
+    }
+    return startIdx;
+  }
+
+  /**
+   * Connects two rings of length `n` into a closed cylindrical/annular strip.
+   * When `outwardOrUp` is true, normals point from `ringA -> ringB` crossed with $+\theta$.
+   */
+  stitchRings(ringA: number, ringB: number, n: number, flipWinding = false) {
+    for (let i = 0; i < n; i++) {
+      const next = (i + 1) % n;
+      const a0 = ringA + i;
+      const a1 = ringA + next;
+      const b0 = ringB + i;
+      const b1 = ringB + next;
+      if (!flipWinding) {
+        this.addQuad(a0, a1, b1, b0);
+      } else {
+        this.addQuad(a0, b0, b1, a1);
+      }
+    }
+  }
+
+  toSubMesh(meta: {
+    id: string;
+    gear_index: 1 | 2 | 3;
+    label: string;
+    color_hex: number;
+    metalness: number;
+    roughness: number;
+    center_x_mm: number;
+    center_y_mm: number;
+    base_z_mm: number;
+    mesh_phase_rad: number;
+    spin_ratio: number;
+  }): GearSubMesh {
+    const pos = new Float32Array(this.positions);
+    const ind = new Uint32Array(this.indices);
+    const norm = computeVertexNormals(pos, ind);
+    return {
+      ...meta,
+      positions: pos,
+      normals: norm,
+      indices: ind,
+    };
+  }
+}
+
+function computeVertexNormals(positions: Float32Array, indices: Uint32Array): Float32Array {
+  const normals = new Float32Array(positions.length);
+  for (let i = 0; i < indices.length; i += 3) {
+    const ia = indices[i]! * 3;
+    const ib = indices[i + 1]! * 3;
+    const ic = indices[i + 2]! * 3;
+    const ax = positions[ia]!;
+    const ay = positions[ia + 1]!;
+    const az = positions[ia + 2]!;
+    const bx = positions[ib]!;
+    const by = positions[ib + 1]!;
+    const bz = positions[ib + 2]!;
+    const cx = positions[ic]!;
+    const cy = positions[ic + 1]!;
+    const cz = positions[ic + 2]!;
+
+    const ux = bx - ax;
+    const uy = by - ay;
+    const uz = bz - az;
+    const vx = cx - ax;
+    const vy = cy - ay;
+    const vz = cz - az;
+
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+
+    normals[ia] += nx;
+    normals[ia + 1] += ny;
+    normals[ia + 2] += nz;
+    normals[ib] += nx;
+    normals[ib + 1] += ny;
+    normals[ib + 2] += nz;
+    normals[ic] += nx;
+    normals[ic + 1] += ny;
+    normals[ic + 2] += nz;
+  }
+
+  for (let i = 0; i < normals.length; i += 3) {
+    const nx = normals[i]!;
+    const ny = normals[i + 1]!;
+    const nz = normals[i + 2]!;
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-12) {
+      normals[i] = nx / len;
+      normals[i + 1] = ny / len;
+      normals[i + 2] = nz / len;
+    } else {
+      normals[i + 2] = 1;
+    }
+  }
+  return normals;
+}
+
+/**
+ * Builds a watertight involute gear ring (with optional `spokes` quadrant cutouts!)
+ * between `innerRadius` (or bore ring) and the outer involute tooth profile.
+ */
+function buildToothedWheelMesh(opts: {
+  teeth: number;
+  moduleMm: number;
+  pressureAngleDeg: number;
+  helixAngleDeg: number;
+  helixHand: 1 | -1;
+  backlashMm: number;
+  faceWidthMm: number;
+  boreDiaMm: number;
+  dFlatMm: number;
+  spokes: number;
+  hubOuterRadiusMm: number;
+  zOffsetMm: number;
+}): MeshBuilder {
+  const mb = new MeshBuilder();
+  const samplesPerTooth = 8;
+  const { angles, radii: toothRadii } = sampleInvoluteRadiusRing(
+    opts.teeth,
+    opts.moduleMm,
+    opts.pressureAngleDeg,
+    opts.backlashMm,
+    samplesPerTooth,
+  );
+  const n = angles.length;
+  const rp = 0.5 * opts.moduleMm * opts.teeth;
+  const rf = Math.max(0.35 * rp, rp - 1.2 * opts.moduleMm);
+  const rimInnerR = Math.max(opts.hubOuterRadiusMm + 2.5, rf - 2.8 * opts.moduleMm);
+  const useSpokes =
+    opts.spokes >= 3 && opts.spokes <= 8 && rimInnerR > opts.hubOuterRadiusMm + 3.5;
+
+  const boreRadii = sampleBoreRadiusRing(angles, opts.boreDiaMm, opts.dFlatMm);
+  const z0 = opts.zOffsetMm;
+  const z1 = opts.zOffsetMm + opts.faceWidthMm;
+  const zLayers = 6;
+  const betaRad = ((opts.helixAngleDeg || 0) * Math.PI) / 180;
+
+  // 1. Outer involute tooth surface (helical extruded layers z0 .. z1)
+  const outerRings: number[] = [];
+  for (let k = 0; k <= zLayers; k++) {
+    const frac = k / zLayers;
+    const z = z0 + frac * opts.faceWidthMm;
+    const twist = opts.helixHand * ((z - z0) * Math.tan(betaRad)) / Math.max(2, rp);
+    outerRings.push(mb.addPolarRing(angles, toothRadii, z, twist));
+  }
+  for (let k = 0; k < zLayers; k++) {
+    mb.stitchRings(outerRings[k]!, outerRings[k + 1]!, n, false);
+  }
+
+  const topTwist = opts.helixHand * (opts.faceWidthMm * Math.tan(betaRad)) / Math.max(2, rp);
+
+  if (!useSpokes) {
+    // Solid gear web from bore out to outer tooth ring
+    const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
+    const boreTop = mb.addPolarRing(angles, boreRadii, z1, 0);
+    // Inner bore wall (normals pointing inward toward shaft axis)
+    mb.stitchRings(boreBot, boreTop, n, true);
+    // Bottom cap (z = z0, normal -z)
+    mb.stitchRings(boreBot, outerRings[0]!, n, true);
+    // Top cap (z = z1, normal +z)
+    mb.stitchRings(boreTop, outerRings[zLayers]!, n, false);
+    return mb;
+  }
+
+  // Spoked Gear Web (4 quadrant windows between hubOuterR and rimInnerR, matching Reference Gear 1!)
+  const hubR = Math.max(opts.boreDiaMm * 0.65, opts.hubOuterRadiusMm);
+  const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
+  const boreTop = mb.addPolarRing(angles, boreRadii, z1, 0);
+  const hubBot = mb.addPolarRing(angles, hubR, z0, 0);
+  const hubTop = mb.addPolarRing(angles, hubR, z1, 0);
+  const rimBot = mb.addPolarRing(angles, rimInnerR, z0, 0);
+  const rimTop = mb.addPolarRing(angles, rimInnerR, z1, topTwist);
+
+  // Inner bore wall
+  mb.stitchRings(boreBot, boreTop, n, true);
+  // Inner solid hub collar annulus (bore -> hubR)
+  mb.stitchRings(boreBot, hubBot, n, true);
+  mb.stitchRings(boreTop, hubTop, n, false);
+  // Outer solid rim annulus (rimInnerR -> toothRadii)
+  mb.stitchRings(rimBot, outerRings[0]!, n, true);
+  mb.stitchRings(rimTop, outerRings[zLayers]!, n, false);
+
+  // Classify each angular sector i into spoke vs window cutout
+  const spokeCount = opts.spokes;
+  const isSpokeSector = new Array<boolean>(n);
+  for (let i = 0; i < n; i++) {
+    const thMid = (2 * Math.PI * (i + 0.5)) / n;
+    const sectorPhase = ((thMid * spokeCount) / (2 * Math.PI)) % 1;
+    // Spoke occupies 26% of each quadrant, window cutout occupies 74% (matching the 4 wide windows in Image 1 & 2)
+    isSpokeSector[i] = sectorPhase < 0.13 || sectorPhase > 0.87;
+  }
+
+  for (let i = 0; i < n; i++) {
+    const next = (i + 1) % n;
+    const prev = (i - 1 + n) % n;
+    const inSpoke = isSpokeSector[i]!;
+
+    if (inSpoke) {
+      // Fill bottom & top spoke faces across [hubR .. rimInnerR]
+      mb.addQuad(hubBot + i, rimBot + i, rimBot + next, hubBot + next);
+      mb.addQuad(hubTop + i, hubTop + next, rimTop + next, rimTop + i);
+
+      // If previous sector was a window, close the leading radial spoke side wall at index i
+      if (!isSpokeSector[prev]) {
+        mb.addQuad(hubBot + i, hubTop + i, rimTop + i, rimBot + i);
+      }
+      // If next sector is a window, close the trailing radial spoke side wall at index next
+      if (!isSpokeSector[next]) {
+        mb.addQuad(hubBot + next, rimBot + next, rimTop + next, hubTop + next);
+      }
+    } else {
+      // Window cutout: close inner hub outer wall (at hubR) and outer rim inner wall (at rimInnerR)
+      mb.addQuad(hubBot + i, hubBot + next, hubTop + next, hubTop + i);
+      mb.addQuad(rimBot + i, rimTop + i, rimTop + next, rimBot + next);
+    }
+  }
+
+  return mb;
+}
+
+/**
+ * Builds the Orange Stepped Hub Boss on top of Gear 1 (matching Reference Images 1, 2, 3:
+ * flared conical base skirt -> tall cylindrical collar -> 3 concentric stepped top rings + D-bore).
+ */
+function buildSteppedRotorHubBossMesh(opts: {
+  boreDiaMm: number;
+  dFlatMm: number;
+  hubDiaMm: number;
+  hubHeightMm: number;
+  zBaseMm: number;
+}): MeshBuilder {
+  const mb = new MeshBuilder();
+  const n = 96;
+  const angles = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    angles[i] = (2 * Math.PI * i) / n;
+  }
+  const boreRadii = sampleBoreRadiusRing(angles, opts.boreDiaMm, opts.dFlatMm);
+  const rMain = Math.max(opts.boreDiaMm * 0.8, 0.5 * opts.hubDiaMm);
+  const rSkirt = rMain * 1.24;
+  const h = Math.max(4.0, opts.hubHeightMm);
+  const z0 = opts.zBaseMm;
+
+  // Stepped axisymmetric profile from z0 up to z0 + h (matching the orange hub in Image 1 & 3)
+  const profile: Array<{ z: number; r: number }> = [
+    { z: z0, r: rSkirt },
+    { z: z0 + 0.22 * h, r: rMain },
+    { z: z0 + 0.78 * h, r: rMain },
+    { z: z0 + 0.84 * h, r: rMain * 0.86 },
+    { z: z0 + 0.90 * h, r: rMain * 0.86 },
+    { z: z0 + 0.94 * h, r: rMain * 0.68 },
+    { z: z0 + 1.00 * h, r: rMain * 0.68 },
+  ];
+
+  const extRings: number[] = [];
+  for (const pt of profile) {
+    extRings.push(mb.addPolarRing(angles, pt.r, pt.z, 0));
+  }
+  for (let k = 0; k < extRings.length - 1; k++) {
+    mb.stitchRings(extRings[k]!, extRings[k + 1]!, n, false);
+  }
+
+  const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
+  const boreTop = mb.addPolarRing(angles, boreRadii, z0 + h, 0);
+  // Inner bore wall
+  mb.stitchRings(boreBot, boreTop, n, true);
+  // Bottom cap (z = z0)
+  mb.stitchRings(boreBot, extRings[0]!, n, true);
+  // Top cap (z = z0 + h)
+  mb.stitchRings(boreTop, extRings[extRings.length - 1]!, n, false);
+
+  return mb;
+}
+
+/**
+ * Builds all 3 gears (with distinct submeshes matching the Reference CAD colors:
+ * Mint spoked gear + Orange stepped hub, Purple wheel + Lime-green coaxial pinion,
+ * and Slate-grey generator pinion) positioned for either `side_by_side` or `meshed` view.
+ */
+export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
+  const metrics = computeGearboxMetrics(cfg);
+  const submeshes: GearSubMesh[] = [];
+
+  const r1 = 0.5 * metrics.g1_pitch_dia_mm;
+  const r2w = 0.5 * metrics.g2_wheel_pitch_dia_mm;
+  const r2p = 0.5 * metrics.g2_pinion_pitch_dia_mm;
+  const r3 = 0.5 * metrics.g3_pitch_dia_mm;
+
+  // Compute (x, y, z) centers for Gear 1, Gear 2, Gear 3
+  let x1 = 0;
+  let z1Base = 0;
+  let x2 = 0;
+  let z2Base = 0;
+  let x3 = 0;
+  let z3Base = 0;
+
+  if (cfg.layout_mode === "side_by_side") {
+    // Side-by-side layout matching the 3 Reference CAD views (Images 1, 2, 3)
+    const gap = 4.0 * cfg.module_mm;
+    x1 = -(r1 + r2w + gap);
+    x2 = 0;
+    x3 = r2w + r3 + gap;
+    // Match Image 3 Z-elevation alignment
+    z1Base = cfg.g2_wheel_face_mm;
+    z2Base = 0;
+    z3Base = cfg.g2_wheel_face_mm;
+  } else {
+    // True meshed center-to-center assembly
+    if (cfg.stage_mode === "direct_1stage") {
+      x1 = -0.5 * metrics.center_distance_12_mm;
+      x3 = +0.5 * metrics.center_distance_12_mm;
+      z1Base = 0;
+      z3Base = 0;
+    } else if (cfg.stage_mode === "compound_2stage") {
+      // Gear 1 (at z = g2_wheel_face_mm) meshes with Gear 2 Pinion (z = g2_wheel_face_mm .. top)
+      // Gear 2 Wheel (at z = 0) meshes with Gear 3 Pinion (at z = 0)
+      x1 = -metrics.center_distance_12_mm;
+      x2 = 0;
+      x3 = +metrics.center_distance_23_mm;
+      z1Base = cfg.g2_wheel_face_mm;
+      z2Base = 0;
+      z3Base = 0;
+    } else {
+      // "idler_reference": Gear 1 meshes with Gear 2 Wheel, Gear 2 Wheel/Pinion meshes with Gear 3
+      x1 = -metrics.center_distance_12_mm;
+      x2 = 0;
+      x3 = +metrics.center_distance_23_mm;
+      z1Base = 0;
+      z2Base = 0;
+      z3Base = 0;
+    }
+  }
+
+  // ---- Gear 1: Mint-Green 4-Spoked Bull Gear + Orange Stepped Hub Boss ----
+  const hubOuterR = Math.max(cfg.g1_bore_mm * 0.85, 0.5 * cfg.g1_hub_diameter_mm * 1.2);
+  const g1RimBuilder = buildToothedWheelMesh({
+    teeth: cfg.g1_teeth,
+    moduleMm: cfg.module_mm,
+    pressureAngleDeg: cfg.pressure_angle_deg,
+    helixAngleDeg: cfg.helix_angle_deg,
+    helixHand: 1,
+    backlashMm: cfg.backlash_mm,
+    faceWidthMm: cfg.g1_face_width_mm,
+    boreDiaMm: cfg.g1_bore_mm,
+    dFlatMm: cfg.g1_d_flat_mm,
+    spokes: cfg.g1_spokes,
+    hubOuterRadiusMm: hubOuterR,
+    zOffsetMm: 0,
+  });
+  submeshes.push(
+    g1RimBuilder.toSubMesh({
+      id: "gear1-rim",
+      gear_index: 1,
+      label: `Gear 1 · Rotor Spoked Wheel (${cfg.g1_teeth}T)`,
+      color_hex: 0x8fd9b6, // Mint green from Reference CAD
+      metalness: 0.18,
+      roughness: 0.36,
+      center_x_mm: x1,
+      center_y_mm: 0,
+      base_z_mm: z1Base,
+      mesh_phase_rad: 0,
+      spin_ratio: 1.0,
+    }),
+  );
+
+  if (cfg.g1_hub_height_mm > 0.5) {
+    const g1BossBuilder = buildSteppedRotorHubBossMesh({
+      boreDiaMm: cfg.g1_bore_mm,
+      dFlatMm: cfg.g1_d_flat_mm,
+      hubDiaMm: cfg.g1_hub_diameter_mm,
+      hubHeightMm: cfg.g1_hub_height_mm,
+      zBaseMm: cfg.g1_face_width_mm,
+    });
+    submeshes.push(
+      g1BossBuilder.toSubMesh({
+        id: "gear1-hub-boss",
+        gear_index: 1,
+        label: "Gear 1 · Stepped Rotor Hub Boss",
+        color_hex: 0xd95326, // Orange stepped hub boss from Reference CAD
+        metalness: 0.25,
+        roughness: 0.32,
+        center_x_mm: x1,
+        center_y_mm: 0,
+        base_z_mm: z1Base,
+        mesh_phase_rad: 0,
+        spin_ratio: 1.0,
+      }),
+    );
+  }
+
+  // ---- Gear 2: Purple Wheel + Lime-Green Coaxial Helical Pinion ----
+  if (cfg.stage_mode !== "direct_1stage") {
+    const g2SpinRatio = -metrics.stage1_ratio;
+    const g2Phase = Math.PI / Math.max(8, cfg.g2_wheel_teeth);
+
+    const g2WheelBuilder = buildToothedWheelMesh({
+      teeth: cfg.g2_wheel_teeth,
+      moduleMm: cfg.module_mm,
+      pressureAngleDeg: cfg.pressure_angle_deg,
+      helixAngleDeg: cfg.helix_angle_deg,
+      helixHand: -1,
+      backlashMm: cfg.backlash_mm,
+      faceWidthMm: cfg.g2_wheel_face_mm,
+      boreDiaMm: cfg.g2_bore_mm,
+      dFlatMm: cfg.g2_d_flat_mm,
+      spokes: 0,
+      hubOuterRadiusMm: cfg.g2_bore_mm,
+      zOffsetMm: 0,
+    });
+    submeshes.push(
+      g2WheelBuilder.toSubMesh({
+        id: "gear2-wheel",
+        gear_index: 2,
+        label: `Gear 2 · Compound Wheel (${cfg.g2_wheel_teeth}T)`,
+        color_hex: 0xb84ba1, // Magenta/Purple from Reference CAD
+        metalness: 0.2,
+        roughness: 0.38,
+        center_x_mm: x2,
+        center_y_mm: 0,
+        base_z_mm: z2Base,
+        mesh_phase_rad: g2Phase,
+        spin_ratio: g2SpinRatio,
+      }),
+    );
+
+    const g2PinionBuilder = buildToothedWheelMesh({
+      teeth: cfg.g2_pinion_teeth,
+      moduleMm: cfg.module_mm,
+      pressureAngleDeg: cfg.pressure_angle_deg,
+      helixAngleDeg: cfg.helix_angle_deg,
+      helixHand: 1,
+      backlashMm: cfg.backlash_mm,
+      faceWidthMm: cfg.g2_pinion_face_mm,
+      boreDiaMm: cfg.g2_bore_mm,
+      dFlatMm: cfg.g2_d_flat_mm,
+      spokes: 0,
+      hubOuterRadiusMm: cfg.g2_bore_mm,
+      zOffsetMm: cfg.g2_wheel_face_mm,
+    });
+    submeshes.push(
+      g2PinionBuilder.toSubMesh({
+        id: "gear2-pinion",
+        gear_index: 2,
+        label: `Gear 2 · Coaxial Helical Pinion (${cfg.g2_pinion_teeth}T)`,
+        color_hex: 0x72c455, // Lime green from Reference CAD
+        metalness: 0.22,
+        roughness: 0.34,
+        center_x_mm: x2,
+        center_y_mm: 0,
+        base_z_mm: z2Base,
+        mesh_phase_rad: g2Phase,
+        spin_ratio: g2SpinRatio,
+      }),
+    );
+
+    // Small top collar on the lime-green coaxial pinion (matching Image 1 & 3)
+    const g2CollarBuilder = buildSteppedRotorHubBossMesh({
+      boreDiaMm: cfg.g2_bore_mm,
+      dFlatMm: cfg.g2_d_flat_mm,
+      hubDiaMm: Math.max(cfg.g2_bore_mm + 3.0, 2 * r2p * 0.62),
+      hubHeightMm: 2.2,
+      zBaseMm: cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm,
+    });
+    submeshes.push(
+      g2CollarBuilder.toSubMesh({
+        id: "gear2-collar",
+        gear_index: 2,
+        label: "Gear 2 · Pinion Collar",
+        color_hex: 0x72c455,
+        metalness: 0.22,
+        roughness: 0.34,
+        center_x_mm: x2,
+        center_y_mm: 0,
+        base_z_mm: z2Base,
+        mesh_phase_rad: g2Phase,
+        spin_ratio: g2SpinRatio,
+      }),
+    );
+  }
+
+  // ---- Gear 3: Slate-Grey Generator Pinion + Motor Shaft Collar ----
+  const g3SpinRatio =
+    cfg.stage_mode === "direct_1stage" ? -metrics.total_ratio : +metrics.total_ratio;
+  const g3Phase = Math.PI / Math.max(8, cfg.g3_teeth);
+
+  const g3PinionBuilder = buildToothedWheelMesh({
+    teeth: cfg.g3_teeth,
+    moduleMm: cfg.module_mm,
+    pressureAngleDeg: cfg.pressure_angle_deg,
+    helixAngleDeg: cfg.helix_angle_deg,
+    helixHand: -1,
+    backlashMm: cfg.backlash_mm,
+    faceWidthMm: cfg.g3_face_width_mm,
+    boreDiaMm: cfg.g3_bore_mm,
+    dFlatMm: cfg.g3_d_flat_mm,
+    spokes: 0,
+    hubOuterRadiusMm: cfg.g3_bore_mm,
+    zOffsetMm: 0,
+  });
+  submeshes.push(
+    g3PinionBuilder.toSubMesh({
+      id: "gear3-pinion",
+      gear_index: 3,
+      label: `Gear 3 · Generator Pinion (${cfg.g3_teeth}T)`,
+      color_hex: 0x6d8388, // Slate grey from Reference CAD
+      metalness: 0.28,
+      roughness: 0.35,
+      center_x_mm: x3,
+      center_y_mm: 0,
+      base_z_mm: z3Base,
+      mesh_phase_rad: g3Phase,
+      spin_ratio: g3SpinRatio,
+    }),
+  );
+
+  if (cfg.g3_boss_height_mm > 0.5) {
+    const g3BossBuilder = buildSteppedRotorHubBossMesh({
+      boreDiaMm: cfg.g3_bore_mm,
+      dFlatMm: cfg.g3_d_flat_mm,
+      hubDiaMm: Math.max(cfg.g3_bore_mm + 3.2, 2 * r3 * 0.42),
+      hubHeightMm: cfg.g3_boss_height_mm,
+      zBaseMm: cfg.g3_face_width_mm,
+    });
+    submeshes.push(
+      g3BossBuilder.toSubMesh({
+        id: "gear3-boss",
+        gear_index: 3,
+        label: "Gear 3 · Motor Shaft Boss",
+        color_hex: 0x6d8388,
+        metalness: 0.28,
+        roughness: 0.35,
+        center_x_mm: x3,
+        center_y_mm: 0,
+        base_z_mm: z3Base,
+        mesh_phase_rad: g3Phase,
+        spin_ratio: g3SpinRatio,
+      }),
+    );
+  }
+
+  const totalTriangles = submeshes.reduce((acc, s) => acc + s.indices.length / 3, 0);
+  return {
+    metrics,
+    submeshes,
+    total_triangles: totalTriangles,
+  };
+}
+
+/**
+ * Serializes either a single gear (`gear1`, `gear2`, `gear3`) or all 3 gears
+ * (`all`, placed flat on the $z = 0$ build plate) into an IEEE-754 binary STL.
+ */
+export function exportGearStlBytes(cfg: GearboxConfig, target: GearExportTarget): Uint8Array {
+  const plateCfg: GearboxConfig = { ...cfg, layout_mode: "side_by_side" };
+  const bundle = buildGearboxMeshes(plateCfg);
+  const selected = bundle.submeshes.filter((s) => {
+    if (target === "all") return true;
+    if (target === "gear1") return s.gear_index === 1;
+    if (target === "gear2") return s.gear_index === 2;
+    return s.gear_index === 3;
+  });
+
+  const triCount = selected.reduce((sum, s) => sum + s.indices.length / 3, 0);
+  const buf = new ArrayBuffer(84 + triCount * 50);
+  const view = new DataView(buf);
+
+  const headerText = `BladeLab Gearbox STL (${target}) G=${bundle.metrics.total_ratio}:1 m=${cfg.module_mm}mm`;
+  for (let i = 0; i < Math.min(79, headerText.length); i++) {
+    view.setUint8(i, headerText.charCodeAt(i));
+  }
+  view.setUint32(80, triCount, true);
+
+  let offset = 84;
+  for (const sub of selected) {
+    // When exporting for 3D printing, place each gear's bottom face flat at z = 0
+    // and center single-gear exports at (x=0, y=0)
+    const ox = target === "all" ? sub.center_x_mm : 0;
+    const oy = target === "all" ? sub.center_y_mm : 0;
+    const oz = 0;
+
+    const pos = sub.positions;
+    const ind = sub.indices;
+    for (let i = 0; i < ind.length; i += 3) {
+      const ia = ind[i]! * 3;
+      const ib = ind[i + 1]! * 3;
+      const ic = ind[i + 2]! * 3;
+
+      const ax = pos[ia]! + ox;
+      const ay = pos[ia + 1]! + oy;
+      const az = pos[ia + 2]! + oz;
+      const bx = pos[ib]! + ox;
+      const by = pos[ib + 1]! + oy;
+      const bz = pos[ib + 2]! + oz;
+      const cx = pos[ic]! + ox;
+      const cy = pos[ic + 1]! + oy;
+      const cz = pos[ic + 2]! + oz;
+
+      const ux = bx - ax;
+      const uy = by - ay;
+      const uz = bz - az;
+      const vx = cx - ax;
+      const vy = cy - ay;
+      const vz = cz - az;
+      let nx = uy * vz - uz * vy;
+      let ny = uz * vx - ux * vz;
+      let nz = ux * vy - uy * vx;
+      const len = Math.hypot(nx, ny, nz);
+      if (len > 1e-12) {
+        nx /= len;
+        ny /= len;
+        nz /= len;
+      } else {
+        nz = 1;
+      }
+
+      view.setFloat32(offset, nx, true);
+      view.setFloat32(offset + 4, ny, true);
+      view.setFloat32(offset + 8, nz, true);
+      view.setFloat32(offset + 12, ax, true);
+      view.setFloat32(offset + 16, ay, true);
+      view.setFloat32(offset + 20, az, true);
+      view.setFloat32(offset + 24, bx, true);
+      view.setFloat32(offset + 28, by, true);
+      view.setFloat32(offset + 32, bz, true);
+      view.setFloat32(offset + 36, cx, true);
+      view.setFloat32(offset + 40, cy, true);
+      view.setFloat32(offset + 44, cz, true);
+      view.setUint16(offset + 48, 0, true);
+      offset += 50;
+    }
+  }
+
+  return new Uint8Array(buf);
+}

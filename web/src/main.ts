@@ -61,6 +61,15 @@ import {
   evaluateStructuralMechanics,
   evaluateWindSpeedCurveAndAep,
   type FabricationSnapshot,
+  buildGearboxMeshes,
+  computeGearboxMetrics,
+  defaultGearboxConfig,
+  exportGearStlBytes,
+  type GearExportTarget,
+  type GearboxConfig,
+  type GearboxLayoutMode,
+  type GearboxStageMode,
+  solveGearTeethForTargetRatio,
   GENERATOR_PRESETS,
   type GeneratorPresetKey,
   type HeatmapMode,
@@ -172,6 +181,7 @@ const btnClearOverrides = document.getElementById("btn-clear-overrides") as HTML
 
 const btnViewSingle = document.getElementById("btn-view-single") as HTMLButtonElement;
 const btnViewRotor = document.getElementById("btn-view-rotor") as HTMLButtonElement;
+const btnViewGearbox = document.getElementById("btn-view-gearbox") as HTMLButtonElement | null;
 const btnViewWireframe = document.getElementById("btn-view-wireframe") as HTMLButtonElement;
 const btnViewSpin = document.getElementById("btn-view-spin") as HTMLButtonElement;
 const btnCamIso = document.getElementById("btn-cam-iso") as HTMLButtonElement;
@@ -400,9 +410,56 @@ let latestStructuralReport: StructuralMechanicsReport | null = null;
 let latestAepReport: WindPowerAepReport | null = null;
 let latestMaxOutReport: DrivetrainMaxOutReport | null = null;
 
-let viewMode: "single" | "rotor" = "rotor";
+let viewMode: "single" | "rotor" | "gearbox" = "rotor";
 let wireframeMode = false;
 let spinRotorMode = false;
+let gearSpinAngleRad = 0;
+
+// ---- Gearbox Prototype DOM Elements ----
+const gearboxSummary = document.getElementById("gearbox-summary");
+const btnGearbox3dView = document.getElementById("btn-gearbox-3d-view") as HTMLButtonElement | null;
+const btnGearLayoutSide = document.getElementById("btn-gear-layout-side") as HTMLButtonElement | null;
+const btnGearLayoutMesh = document.getElementById("btn-gear-layout-mesh") as HTMLButtonElement | null;
+const gearToothBadge = document.getElementById("gear-tooth-badge");
+const selectGearStageMode = document.getElementById("gear-stage-mode") as HTMLSelectElement | null;
+const inputGearModule = document.getElementById("gear-module") as HTMLInputElement | null;
+const inputGearHelix = document.getElementById("gear-helix") as HTMLInputElement | null;
+const inputGearPressure = document.getElementById("gear-pressure") as HTMLInputElement | null;
+const inputGearBacklash = document.getElementById("gear-backlash") as HTMLInputElement | null;
+const btnGearSolveRatio = document.getElementById("btn-gear-solve-ratio") as HTMLButtonElement | null;
+const btnGearSyncAero = document.getElementById("btn-gear-sync-aero") as HTMLButtonElement | null;
+
+const g1DiaBadge = document.getElementById("g1-dia-badge");
+const inputG1Teeth = document.getElementById("g1-teeth") as HTMLInputElement | null;
+const inputG1Face = document.getElementById("g1-face") as HTMLInputElement | null;
+const selectG1Spokes = document.getElementById("g1-spokes") as HTMLSelectElement | null;
+const inputG1Bore = document.getElementById("g1-bore") as HTMLInputElement | null;
+const inputG1DFlat = document.getElementById("g1-dflat") as HTMLInputElement | null;
+const inputG1HubDia = document.getElementById("g1-hub-dia") as HTMLInputElement | null;
+const inputG1HubH = document.getElementById("g1-hub-h") as HTMLInputElement | null;
+
+const gear2Card = document.getElementById("gear2-card");
+const g2DiaBadge = document.getElementById("g2-dia-badge");
+const inputG2WheelTeeth = document.getElementById("g2-wheel-teeth") as HTMLInputElement | null;
+const inputG2WheelFace = document.getElementById("g2-wheel-face") as HTMLInputElement | null;
+const inputG2PinionTeeth = document.getElementById("g2-pinion-teeth") as HTMLInputElement | null;
+const inputG2PinionFace = document.getElementById("g2-pinion-face") as HTMLInputElement | null;
+const inputG2Bore = document.getElementById("g2-bore") as HTMLInputElement | null;
+const inputG2DFlat = document.getElementById("g2-dflat") as HTMLInputElement | null;
+
+const g3DiaBadge = document.getElementById("g3-dia-badge");
+const inputG3Teeth = document.getElementById("g3-teeth") as HTMLInputElement | null;
+const inputG3Face = document.getElementById("g3-face") as HTMLInputElement | null;
+const inputG3Bore = document.getElementById("g3-bore") as HTMLInputElement | null;
+const inputG3DFlat = document.getElementById("g3-dflat") as HTMLInputElement | null;
+const inputG3BossH = document.getElementById("g3-boss-h") as HTMLInputElement | null;
+
+const gearboxMetricsReadout = document.getElementById("gearbox-metrics-readout");
+const btnExportGearsAll = document.getElementById("btn-export-gears-all") as HTMLButtonElement | null;
+const btnExportGear1 = document.getElementById("btn-export-gear1") as HTMLButtonElement | null;
+const btnExportGear2 = document.getElementById("btn-export-gear2") as HTMLButtonElement | null;
+const btnExportGear3 = document.getElementById("btn-export-gear3") as HTMLButtonElement | null;
+let activeGearLayoutMode: GearboxLayoutMode = "side_by_side";
 
 function isStationLocked(spanRatio: number): boolean {
   return lockedSpanRatios.some((r) => Math.abs(r - spanRatio) <= RATIO_EPS);
@@ -761,10 +818,223 @@ function buildCleanBladeGeometry(
   return geo;
 }
 
+function readCurrentGearboxConfig(): GearboxConfig {
+  const def = defaultGearboxConfig();
+  return {
+    stage_mode: (selectGearStageMode?.value as GearboxStageMode) || def.stage_mode,
+    layout_mode: activeGearLayoutMode,
+    module_mm: Math.max(0.4, Number.parseFloat(inputGearModule?.value || "") || def.module_mm),
+    pressure_angle_deg: Math.max(
+      14.5,
+      Math.min(25, Number.parseFloat(inputGearPressure?.value || "") || def.pressure_angle_deg),
+    ),
+    helix_angle_deg: Math.max(
+      0,
+      Math.min(35, Number.parseFloat(inputGearHelix?.value || "0") || 0),
+    ),
+    backlash_mm: Math.max(
+      0,
+      Math.min(0.6, Number.parseFloat(inputGearBacklash?.value || "0") || 0),
+    ),
+
+    g1_teeth: Math.max(10, Math.round(Number.parseFloat(inputG1Teeth?.value || "") || def.g1_teeth)),
+    g1_face_width_mm: Math.max(
+      2,
+      Number.parseFloat(inputG1Face?.value || "") || def.g1_face_width_mm,
+    ),
+    g1_spokes: Number.parseInt(selectG1Spokes?.value ?? String(def.g1_spokes), 10) || 0,
+    g1_bore_mm: Math.max(1.5, Number.parseFloat(inputG1Bore?.value || "") || def.g1_bore_mm),
+    g1_d_flat_mm: Math.max(0, Number.parseFloat(inputG1DFlat?.value || "0") || 0),
+    g1_hub_diameter_mm: Math.max(
+      8,
+      Number.parseFloat(inputG1HubDia?.value || "") || def.g1_hub_diameter_mm,
+    ),
+    g1_hub_height_mm: Math.max(0, Number.parseFloat(inputG1HubH?.value || "0") || 0),
+
+    g2_wheel_teeth: Math.max(
+      10,
+      Math.round(Number.parseFloat(inputG2WheelTeeth?.value || "") || def.g2_wheel_teeth),
+    ),
+    g2_wheel_face_mm: Math.max(
+      2,
+      Number.parseFloat(inputG2WheelFace?.value || "") || def.g2_wheel_face_mm,
+    ),
+    g2_pinion_teeth: Math.max(
+      8,
+      Math.round(Number.parseFloat(inputG2PinionTeeth?.value || "") || def.g2_pinion_teeth),
+    ),
+    g2_pinion_face_mm: Math.max(
+      2,
+      Number.parseFloat(inputG2PinionFace?.value || "") || def.g2_pinion_face_mm,
+    ),
+    g2_bore_mm: Math.max(1.5, Number.parseFloat(inputG2Bore?.value || "") || def.g2_bore_mm),
+    g2_d_flat_mm: Math.max(0, Number.parseFloat(inputG2DFlat?.value || "0") || 0),
+
+    g3_teeth: Math.max(8, Math.round(Number.parseFloat(inputG3Teeth?.value || "") || def.g3_teeth)),
+    g3_face_width_mm: Math.max(
+      2,
+      Number.parseFloat(inputG3Face?.value || "") || def.g3_face_width_mm,
+    ),
+    g3_bore_mm: Math.max(1.2, Number.parseFloat(inputG3Bore?.value || "") || def.g3_bore_mm),
+    g3_d_flat_mm: Math.max(0, Number.parseFloat(inputG3DFlat?.value || "0") || 0),
+    g3_boss_height_mm: Math.max(0, Number.parseFloat(inputG3BossH?.value || "0") || 0),
+  };
+}
+
+function applyGearboxConfigToDom(cfg: GearboxConfig) {
+  activeGearLayoutMode = cfg.layout_mode || "side_by_side";
+  btnGearLayoutSide?.classList.toggle("active", activeGearLayoutMode === "side_by_side");
+  btnGearLayoutMesh?.classList.toggle("active", activeGearLayoutMode === "meshed");
+  if (selectGearStageMode) selectGearStageMode.value = cfg.stage_mode;
+  if (inputGearModule) inputGearModule.value = String(cfg.module_mm);
+  if (inputGearHelix) inputGearHelix.value = String(cfg.helix_angle_deg);
+  if (inputGearPressure) inputGearPressure.value = String(cfg.pressure_angle_deg);
+  if (inputGearBacklash) inputGearBacklash.value = String(cfg.backlash_mm);
+
+  if (inputG1Teeth) inputG1Teeth.value = String(cfg.g1_teeth);
+  if (inputG1Face) inputG1Face.value = String(cfg.g1_face_width_mm);
+  if (selectG1Spokes) selectG1Spokes.value = String(cfg.g1_spokes);
+  if (inputG1Bore) inputG1Bore.value = String(cfg.g1_bore_mm);
+  if (inputG1DFlat) inputG1DFlat.value = String(cfg.g1_d_flat_mm);
+  if (inputG1HubDia) inputG1HubDia.value = String(cfg.g1_hub_diameter_mm);
+  if (inputG1HubH) inputG1HubH.value = String(cfg.g1_hub_height_mm);
+
+  if (inputG2WheelTeeth) inputG2WheelTeeth.value = String(cfg.g2_wheel_teeth);
+  if (inputG2WheelFace) inputG2WheelFace.value = String(cfg.g2_wheel_face_mm);
+  if (inputG2PinionTeeth) inputG2PinionTeeth.value = String(cfg.g2_pinion_teeth);
+  if (inputG2PinionFace) inputG2PinionFace.value = String(cfg.g2_pinion_face_mm);
+  if (inputG2Bore) inputG2Bore.value = String(cfg.g2_bore_mm);
+  if (inputG2DFlat) inputG2DFlat.value = String(cfg.g2_d_flat_mm);
+
+  if (inputG3Teeth) inputG3Teeth.value = String(cfg.g3_teeth);
+  if (inputG3Face) inputG3Face.value = String(cfg.g3_face_width_mm);
+  if (inputG3Bore) inputG3Bore.value = String(cfg.g3_bore_mm);
+  if (inputG3DFlat) inputG3DFlat.value = String(cfg.g3_d_flat_mm);
+  if (inputG3BossH) inputG3BossH.value = String(cfg.g3_boss_height_mm);
+}
+
+function updateGearboxPanelUi(): GearboxConfig {
+  const cfg = readCurrentGearboxConfig();
+  const m = computeGearboxMetrics(cfg);
+
+  if (gearboxSummary) {
+    gearboxSummary.textContent = `${m.total_ratio.toFixed(2)}:1 · m ${cfg.module_mm}`;
+  }
+  if (gearToothBadge) {
+    gearToothBadge.textContent =
+      cfg.helix_angle_deg > 0.1
+        ? `Helical ${cfg.helix_angle_deg.toFixed(0)}°`
+        : `Spur 0°`;
+  }
+  if (g1DiaBadge) {
+    g1DiaBadge.textContent = `Øp ${m.g1_pitch_dia_mm.toFixed(1)} · Øo ${m.g1_outer_dia_mm.toFixed(1)} mm`;
+  }
+  if (g2DiaBadge) {
+    g2DiaBadge.textContent = `Øp ${m.g2_wheel_pitch_dia_mm.toFixed(1)} / ${m.g2_pinion_pitch_dia_mm.toFixed(1)} mm`;
+  }
+  if (g3DiaBadge) {
+    g3DiaBadge.textContent = `Øp ${m.g3_pitch_dia_mm.toFixed(1)} · Øo ${m.g3_outer_dia_mm.toFixed(1)} mm`;
+  }
+  if (gear2Card) {
+    gear2Card.style.display = cfg.stage_mode === "direct_1stage" ? "none" : "block";
+  }
+  if (btnExportGear2) {
+    btnExportGear2.disabled = cfg.stage_mode === "direct_1stage";
+  }
+  if (btnGearbox3dView) {
+    btnGearbox3dView.textContent =
+      viewMode === "gearbox" ? "Viewing 3D Gearbox (Switch to Rotor)" : "Show Gearbox in 3D Viewport";
+  }
+  if (gearboxMetricsReadout) {
+    const centerInfo =
+      cfg.stage_mode === "direct_1stage"
+        ? `Shaft Center Distance: a₁₃ = ${m.center_distance_12_mm.toFixed(2)} mm`
+        : `Shaft Centers: a₁₂ = ${m.center_distance_12_mm.toFixed(2)} mm · a₂₃ = ${m.center_distance_23_mm.toFixed(2)} mm`;
+    gearboxMetricsReadout.textContent = `Total Ratio G = ${m.total_ratio.toFixed(2)}:1 (Stage 1: ${m.stage1_ratio.toFixed(2)}× · Stage 2: ${m.stage2_ratio.toFixed(2)}×) · ${centerInfo}`;
+  }
+  return cfg;
+}
+
 function rebuild3D(design: Design) {
   try {
     updateFabricationStatus(design);
     updateAeroPanel(design);
+    const gearCfg = updateGearboxPanelUi();
+
+    if (viewMode === "gearbox") {
+      const start = performance.now();
+      const gearBundle = buildGearboxMeshes(gearCfg);
+      const elapsed = performance.now() - start;
+
+      errorBanner.style.display = "none";
+      errorBanner.textContent = "";
+      viewportHeatmapLegend.classList.remove("visible");
+      viewportHeatmapLegend.setAttribute("aria-hidden", "true");
+
+      if (rotorGroup !== null) {
+        scene.remove(rotorGroup);
+      }
+      rotorGroup = new THREE.Group();
+      rotorGroup.userData.isGearboxGroup = true;
+
+      const edgeMat = new THREE.LineBasicMaterial({
+        color: 0x0f172a,
+        transparent: true,
+        opacity: 0.35,
+      });
+
+      // Group submeshes by gear_index (1, 2, 3) so each gear spins around its own shaft axis
+      const pivots = new Map<number, THREE.Group>();
+      for (const sub of gearBundle.submeshes) {
+        let pivot = pivots.get(sub.gear_index);
+        if (!pivot) {
+          pivot = new THREE.Group();
+          // Map gear CAD (x, y, z_height) -> Three.js (x, z_height, -y) so shaft axis is +Y
+          pivot.position.set(sub.center_x_mm, sub.base_z_mm, -sub.center_y_mm);
+          pivot.userData.isGearPivot = true;
+          pivot.userData.spinRatio = sub.spin_ratio;
+          pivot.userData.meshPhaseRad = sub.mesh_phase_rad;
+          pivot.rotation.y = gearSpinAngleRad * sub.spin_ratio + sub.mesh_phase_rad;
+          pivots.set(sub.gear_index, pivot);
+          rotorGroup.add(pivot);
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(sub.positions, 3));
+        geo.setAttribute("normal", new THREE.BufferAttribute(sub.normals, 3));
+        geo.setIndex(new THREE.BufferAttribute(sub.indices, 1));
+        // Rotate gear local Z height axis onto Three.js +Y vertical axis
+        geo.rotateX(-Math.PI / 2);
+
+        const mat = new THREE.MeshStandardMaterial({
+          color: sub.color_hex,
+          metalness: sub.metalness,
+          roughness: sub.roughness,
+          wireframe: wireframeMode,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        pivot.add(mesh);
+
+        if (!wireframeMode) {
+          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat);
+          pivot.add(edges);
+        }
+      }
+
+      scene.add(rotorGroup);
+      updateStats(elapsed, {
+        triangle_count: gearBundle.total_triangles,
+        volume_mm3: 0,
+        span_min_mm: 0,
+        span_max_mm: gearBundle.metrics.total_span_width_mm,
+      });
+      return;
+    }
+
     const start = performance.now();
     const overridesJson = buildFabricationOverridesJson();
     const data = build_mesh(JSON.stringify(design), overridesJson);
@@ -1759,6 +2029,7 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gen_r_int: Number.parseFloat(inputGenRInt.value) || 0.8,
     gen_r_load: Number.parseFloat(inputGenRLoad.value) || 12.0,
     exp_data_log: inputExpData.value || "",
+    gearbox: readCurrentGearboxConfig(),
   };
 }
 
@@ -1801,11 +2072,24 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   globalLightVal.textContent = `${light.toFixed(2)}×`;
   setGlobalIlluminationScale(light);
 
-  viewMode = wb.view_mode === "single" ? "single" : "rotor";
+  viewMode =
+    wb.view_mode === "single"
+      ? "single"
+      : wb.view_mode === "gearbox"
+        ? "gearbox"
+        : "rotor";
   btnViewSingle.classList.toggle("active", viewMode === "single");
   btnViewSingle.setAttribute("aria-pressed", String(viewMode === "single"));
   btnViewRotor.classList.toggle("active", viewMode === "rotor");
   btnViewRotor.setAttribute("aria-pressed", String(viewMode === "rotor"));
+  btnViewGearbox?.classList.toggle("active", viewMode === "gearbox");
+  btnViewGearbox?.setAttribute("aria-pressed", String(viewMode === "gearbox"));
+
+  if (wb.gearbox) {
+    applyGearboxConfigToDom(wb.gearbox);
+  } else {
+    applyGearboxConfigToDom(defaultGearboxConfig());
+  }
 
   wireframeMode = Boolean(wb.wireframe_mode);
   btnViewWireframe.classList.toggle("active", wireframeMode);
@@ -1915,27 +2199,143 @@ function commitDesign(next: Design) {
 }
 
 // ---- 3D Viewport Mode & Camera Listeners ----
-btnViewSingle.addEventListener("click", () => {
-  viewMode = "single";
-  btnViewSingle.classList.add("active");
-  btnViewSingle.setAttribute("aria-pressed", "true");
-  btnViewRotor.classList.remove("active");
-  btnViewRotor.setAttribute("aria-pressed", "false");
-  controls.target.set(30, 0, workingDesign.rotor.radius_mm * 0.55);
+function setViewportMode(nextMode: "single" | "rotor" | "gearbox") {
+  viewMode = nextMode;
+  btnViewSingle.classList.toggle("active", viewMode === "single");
+  btnViewSingle.setAttribute("aria-pressed", String(viewMode === "single"));
+  btnViewRotor.classList.toggle("active", viewMode === "rotor");
+  btnViewRotor.setAttribute("aria-pressed", String(viewMode === "rotor"));
+  btnViewGearbox?.classList.toggle("active", viewMode === "gearbox");
+  btnViewGearbox?.setAttribute("aria-pressed", String(viewMode === "gearbox"));
+
+  if (viewMode === "single") {
+    const r = workingDesign.rotor.radius_mm;
+    camera.position.set(r * 0.7, r * 0.55, r * 1.35);
+    controls.target.set(30, 0, r * 0.55);
+  } else if (viewMode === "rotor") {
+    const r = workingDesign.rotor.radius_mm;
+    camera.position.set(r * 0.7, r * 0.55, r * 1.35);
+    controls.target.set(0, 0, 0);
+  } else {
+    const gm = computeGearboxMetrics(readCurrentGearboxConfig());
+    const span = Math.max(120, gm.total_span_width_mm);
+    camera.position.set(0, span * 0.85, span * 1.15);
+    controls.target.set(0, 8, 0);
+  }
+  controls.update();
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+}
+
+btnViewSingle.addEventListener("click", () => setViewportMode("single"));
+btnViewRotor.addEventListener("click", () => setViewportMode("rotor"));
+btnViewGearbox?.addEventListener("click", () => setViewportMode("gearbox"));
+btnGearbox3dView?.addEventListener("click", () => {
+  setViewportMode(viewMode === "gearbox" ? "rotor" : "gearbox");
+});
+
+btnGearLayoutSide?.addEventListener("click", () => {
+  activeGearLayoutMode = "side_by_side";
+  btnGearLayoutSide.classList.add("active");
+  btnGearLayoutMesh?.classList.remove("active");
+  if (viewMode !== "gearbox") {
+    setViewportMode("gearbox");
+  } else {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  }
+});
+
+btnGearLayoutMesh?.addEventListener("click", () => {
+  activeGearLayoutMode = "meshed";
+  btnGearLayoutMesh.classList.add("active");
+  btnGearLayoutSide?.classList.remove("active");
+  if (viewMode !== "gearbox") {
+    setViewportMode("gearbox");
+  } else {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  }
+});
+
+[
+  selectGearStageMode,
+  inputGearModule,
+  inputGearHelix,
+  inputGearPressure,
+  inputGearBacklash,
+  inputG1Teeth,
+  inputG1Face,
+  selectG1Spokes,
+  inputG1Bore,
+  inputG1DFlat,
+  inputG1HubDia,
+  inputG1HubH,
+  inputG2WheelTeeth,
+  inputG2WheelFace,
+  inputG2PinionTeeth,
+  inputG2PinionFace,
+  inputG2Bore,
+  inputG2DFlat,
+  inputG3Teeth,
+  inputG3Face,
+  inputG3Bore,
+  inputG3DFlat,
+  inputG3BossH,
+].forEach((el) => {
+  el?.addEventListener("change", () => {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+});
+
+btnGearSolveRatio?.addEventListener("click", () => {
+  const targetG =
+    latestMaxOutReport?.opt_gear_ratio ||
+    Number.parseFloat(inputGenGearRatio?.value || "3.0") ||
+    3.0;
+  const solved = solveGearTeethForTargetRatio(readCurrentGearboxConfig(), targetG);
+  applyGearboxConfigToDom(solved);
+  const m = computeGearboxMetrics(solved);
+  if (inputGenGearRatio) {
+    inputGenGearRatio.value = String(m.total_ratio);
+    syncGearQuickButtons(m.total_ratio);
+  }
   rebuild3D(workingDesign);
   scheduleAutoSave();
 });
 
-btnViewRotor.addEventListener("click", () => {
-  viewMode = "rotor";
-  btnViewRotor.classList.add("active");
-  btnViewRotor.setAttribute("aria-pressed", "true");
-  btnViewSingle.classList.remove("active");
-  btnViewSingle.setAttribute("aria-pressed", "false");
-  controls.target.set(0, 0, 0);
-  rebuild3D(workingDesign);
+btnGearSyncAero?.addEventListener("click", () => {
+  const m = computeGearboxMetrics(readCurrentGearboxConfig());
+  if (inputGenGearRatio) {
+    inputGenGearRatio.value = String(m.total_ratio);
+    syncGearQuickButtons(m.total_ratio);
+  }
+  updateAeroPanel(workingDesign);
   scheduleAutoSave();
 });
+
+function exportGearboxTargetStl(target: GearExportTarget) {
+  const cfg = readCurrentGearboxConfig();
+  const m = computeGearboxMetrics(cfg);
+  const bytes = exportGearStlBytes(cfg, target);
+  const suffix =
+    target === "all"
+      ? `all-3gears-G${m.total_ratio.toFixed(2)}-m${cfg.module_mm}`
+      : target === "gear1"
+        ? `gear1-rotor-${cfg.g1_teeth}T-m${cfg.module_mm}`
+        : target === "gear2"
+          ? `gear2-compound-${cfg.g2_wheel_teeth}T-${cfg.g2_pinion_teeth}T-m${cfg.module_mm}`
+          : `gear3-pinion-${cfg.g3_teeth}T-m${cfg.module_mm}`;
+  const filename = `bladelab-${suffix}.stl`;
+  triggerBlobDownload(bytes, filename, "model/stl");
+  exportStatus.textContent = `Saved ${filename} (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+}
+
+btnExportGearsAll?.addEventListener("click", () => exportGearboxTargetStl("all"));
+btnExportGear1?.addEventListener("click", () => exportGearboxTargetStl("gear1"));
+btnExportGear2?.addEventListener("click", () => exportGearboxTargetStl("gear2"));
+btnExportGear3?.addEventListener("click", () => exportGearboxTargetStl("gear3"));
 
 btnViewWireframe.addEventListener("click", () => {
   wireframeMode = !wireframeMode;
@@ -1990,6 +2390,14 @@ btnAutoFitPrinter.addEventListener("click", () => {
 });
 
 btnCamIso.addEventListener("click", () => {
+  if (viewMode === "gearbox") {
+    const gm = computeGearboxMetrics(readCurrentGearboxConfig());
+    const span = Math.max(120, gm.total_span_width_mm);
+    camera.position.set(0, span * 0.85, span * 1.15);
+    controls.target.set(0, 8, 0);
+    controls.update();
+    return;
+  }
   const r = workingDesign.rotor.radius_mm;
   camera.position.set(r * 0.85, r * 0.65, r * 1.35);
   controls.target.set(0, 0, viewMode === "rotor" ? 0 : r * 0.5);
@@ -1997,6 +2405,14 @@ btnCamIso.addEventListener("click", () => {
 });
 
 btnCamTop.addEventListener("click", () => {
+  if (viewMode === "gearbox") {
+    const gm = computeGearboxMetrics(readCurrentGearboxConfig());
+    const span = Math.max(120, gm.total_span_width_mm);
+    camera.position.set(0, span * 1.5, 0.01);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    return;
+  }
   const r = workingDesign.rotor.radius_mm;
   camera.position.set(0, r * 1.9, 0.01);
   controls.target.set(0, 0, viewMode === "rotor" ? 0 : r * 0.5);
@@ -2004,6 +2420,14 @@ btnCamTop.addEventListener("click", () => {
 });
 
 btnCamTip.addEventListener("click", () => {
+  if (viewMode === "gearbox") {
+    const gm = computeGearboxMetrics(readCurrentGearboxConfig());
+    const span = Math.max(120, gm.total_span_width_mm);
+    camera.position.set(0, 12, span * 1.3);
+    controls.target.set(0, 10, 0);
+    controls.update();
+    return;
+  }
   const r = workingDesign.rotor.radius_mm;
   camera.position.set(0, 60, r * 1.75);
   controls.target.set(0, 0, viewMode === "rotor" ? 0 : r * 0.5);
@@ -3321,6 +3745,7 @@ bindDockSectionNav("#panel-section-nav", panelScrollContainer, [
   "layer2-planform",
   "layer2-sections",
   "layer-fabrication",
+  "layer-gearbox",
   "layer3-stations",
 ]);
 
@@ -3394,7 +3819,18 @@ renderer.setAnimationLoop((now) => {
     const rpm = latestBundleB?.design_point.rpm ?? 300;
     // Visually scaled angular rate so high-RPM rotors remain smooth to inspect
     const visualRadPerSec = Math.min(8.0, (rpm * 2 * Math.PI) / 60 / 12);
-    rotorGroup.rotation.y += visualRadPerSec * dt;
+    if (rotorGroup.userData.isGearboxGroup) {
+      gearSpinAngleRad += visualRadPerSec * 0.65 * dt;
+      rotorGroup.children.forEach((child) => {
+        if (child.userData.isGearPivot) {
+          const ratio = Number(child.userData.spinRatio ?? 1);
+          const phase = Number(child.userData.meshPhaseRad ?? 0);
+          child.rotation.y = gearSpinAngleRad * ratio + phase;
+        }
+      });
+    } else {
+      rotorGroup.rotation.y += visualRadPerSec * dt;
+    }
   }
 
   controls.update();

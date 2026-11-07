@@ -55,6 +55,11 @@ import {
   BLADE_WIND_PRESETS,
   GENERATOR_PRESETS,
   optimizeGeneratorAndGearbox,
+  defaultGearboxConfig,
+  computeGearboxMetrics,
+  solveGearTeethForTargetRatio,
+  buildGearboxMeshes,
+  exportGearStlBytes,
 } from "../src/state.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -827,6 +832,48 @@ test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimiz
   );
   assert.equal(maxOut.how_to_max_out_steps.length, 3);
 });
+
+test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL export (T-105)", () => {
+  const cfg = defaultGearboxConfig();
+  assert.equal(cfg.g1_teeth, 60);
+  assert.equal(cfg.g1_spokes, 4);
+  assert.equal(cfg.g2_wheel_teeth, 56);
+  assert.equal(cfg.g2_pinion_teeth, 15);
+  assert.equal(cfg.g3_teeth, 20);
+
+  const metrics = computeGearboxMetrics(cfg);
+  assert.equal(metrics.total_ratio, 3.0); // 60 / 20 = 3.0:1 in idler_reference mode
+  assert.equal(metrics.g1_pitch_dia_mm, 75.0);
+  assert.equal(metrics.g2_wheel_pitch_dia_mm, 70.0);
+  assert.equal(metrics.g3_pitch_dia_mm, 25.0);
+  assert.equal(metrics.center_distance_12_mm, 72.5);
+  assert.equal(metrics.center_distance_23_mm, 47.5);
+
+  // Build 3D submeshes (Gear 1 spoked rim + orange stepped hub, Gear 2 purple wheel + green pinion + collar, Gear 3 grey pinion + boss)
+  const bundle = buildGearboxMeshes(cfg);
+  assert.equal(bundle.submeshes.length, 7);
+  assert.ok(bundle.total_triangles > 3000, `expected > 3000 triangles, got ${bundle.total_triangles}`);
+
+  // Verify tooth solver for compound_2stage mode targeting 4.5:1
+  const compoundSolved = solveGearTeethForTargetRatio(
+    { ...cfg, stage_mode: "compound_2stage" },
+    4.5,
+  );
+  const compMetrics = computeGearboxMetrics(compoundSolved);
+  assert.ok(
+    Math.abs(compMetrics.total_ratio - 4.5) < 0.25,
+    `compound solved ratio ${compMetrics.total_ratio} should be close to 4.5`,
+  );
+
+  // Verify binary STL export for all 3 gears and individual gears
+  for (const target of ["all", "gear1", "gear2", "gear3"]) {
+    const stl = exportGearStlBytes(cfg, target);
+    const triCount = new DataView(stl.buffer, stl.byteOffset, stl.byteLength).getUint32(80, true);
+    assert.ok(triCount > 400, `STL target ${target} must have > 400 triangles`);
+    assert.equal(stl.byteLength, 84 + triCount * 50, `STL byte length must match 84 + 50 * triCount`);
+  }
+});
+
 
 
 
