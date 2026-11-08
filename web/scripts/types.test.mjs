@@ -847,17 +847,24 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
   assert.equal(cfg.rim_wall_mm, 3.5);
   assert.equal(cfg.hub_ring_mm, 2.5);
 
+  assert.equal(cfg.stage_mode, "compound_2stage");
   const metrics = computeGearboxMetrics(cfg);
-  assert.equal(metrics.total_ratio, 3.0); // 60 / 20 = 3.0:1 in idler_reference mode
+  assert.equal(metrics.stage1_ratio, 4.0); // 60 / 15 = 4.0:1 (Gear 1 rotates on Gear 2 Pinion)
+  assert.equal(metrics.stage2_ratio, 2.8); // 56 / 20 = 2.8:1 (Gear 2 Wheel drives Gear 3)
+  assert.equal(metrics.total_ratio, 11.2); // 4.0 * 2.8 = 11.2:1 true 2-stage step-up
   assert.equal(metrics.g1_pitch_dia_mm, 75.0);
+  assert.equal(metrics.g2_pinion_pitch_dia_mm, 18.75);
   assert.equal(metrics.g2_wheel_pitch_dia_mm, 70.0);
   assert.equal(metrics.g3_pitch_dia_mm, 25.0);
-  assert.equal(metrics.center_distance_12_mm, 72.5);
+  assert.equal(metrics.center_distance_12_mm, 46.88); // 0.5 * (75 + 18.75) = 46.875 -> 46.88 mm
   assert.equal(metrics.center_distance_23_mm, 47.5);
 
-  // Build 3D submeshes (Gear 1 spoked rim + orange stepped hub, Gear 2 spoked purple wheel + green pinion + collar, Gear 3 grey pinion + boss)
+  // Build 3D submeshes (Gear 1 elevated to mesh with Gear 2 Pinion, Gear 2 Compound, Gear 3 Pinion)
   const bundle = buildGearboxMeshes(cfg);
   assert.equal(bundle.submeshes.length, 7);
+  assert.equal(bundle.submeshes.find((s) => s.id === "gear1-rim").base_z_mm, cfg.g2_wheel_face_mm);
+  assert.equal(bundle.submeshes.find((s) => s.id === "gear2-wheel").spin_ratio, -4.0);
+  assert.equal(bundle.submeshes.find((s) => s.id === "gear3-pinion").spin_ratio, 11.2);
   assert.ok(bundle.total_triangles > 3000, `expected > 3000 triangles, got ${bundle.total_triangles}`);
 
   // Verify Gear 3 helical angle flip produces different vertex geometry

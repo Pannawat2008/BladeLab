@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 87**
-> **LAST_UPDATED: 2026-11-08 12:25 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 88**
+> **LAST_UPDATED: 2026-11-08 12:35 (UTC+7) by geom-1**
 
 ---
 
@@ -504,6 +504,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Flipped Gear 3 (Generator Motor Pinion) helical angle direction and added an interactive Helical Hand selector: (1) updated `GearboxConfig` with `g3_helix_hand: 1 | -1` (defaulting to `1` Right Hand RH, flipped from legacy `-1` Left Hand LH) so in the default `idler_reference` and `compound_2stage` modes at $z = 0$, Gear 3's teeth slope in the proper mating hand (+1 RH) against Gear 2 Wheel (-1 LH) rather than colliding with identical hand angles; (2) added `#g3-helix-hand` dropdown selector in the Gear 3 Inspector card in `web/index.html` allowing instant 1-click toggling between Right Hand (RH +β) and Left Hand (LH -β); (3) wired `g3_helix_hand` into DOM read/apply and change listeners in `web/src/main.ts`, automatically triggering live Three.js 3D re-render and workbench auto-save; and (4) verified by 16/16 Node tests (verifying vertex positions change between RH and LH), `tsc --noEmit`, and `vite build`.
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-056
 
+- **F-geom1-058** | 2026-11-08 12:35 | geom-1 | T-105
+  Configured Gear 1 (Mint Bull Gear) to mesh and rotate on Gear 2 Pinion (Lime-Green Coaxial Pinion): (1) set `stage_mode: "compound_2stage"` and `layout_mode: "meshed"` as defaults in `defaultGearboxConfig()` and `web/index.html` so Gear 1 sits elevated at $z = \text{g2\_wheel\_face\_mm}$ directly aligned with Gear 2 Pinion; (2) updated center distance $a_{12} = 0.5 \cdot (d_1 + d_{2p}) = 46.88\text{ mm}$ (down from 72.5 mm when wrongly paired to the wheel) and $a_{23} = 47.5\text{ mm}$ where Gear 2 Wheel drives Gear 3 Pinion at $z = 0$; (3) aligned Gear 2 Pinion mesh phase $\text{phase} = \pi / Z_{2p}$ and flipped its helical hand to $-1$ (LH) so it mates with Gear 1 ($+1$ RH); (4) verified true 2-stage compound step-up kinematics ($\text{Stage 1} = 60/15 = 4.0$, $\text{Stage 2} = 56/20 = 2.8$, $\text{Total} = 11.2:1$, with Gear 2 spinning at $-4.0\times$ and Gear 3 at $+11.2\times$ rotor speed); and (5) verified by 16/16 Node tests, `tsc --noEmit`, and `vite build`.
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-057
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -918,3 +922,6 @@ note="lead requested via /grill-me: move Gear section to a dedicated 'Gearbox' s
 [ACK] 2026-11-08T12:20:00+07:00 agent=geom-1 mem=v86 last_entry=F-geom1-056 task=T-105
 note="lead requested: flip the gear 3 helical angle; flipping Gear 3 helixHand in buildGearboxSubMeshes from -1 to 1 (Right Hand RH) so teeth properly mate with Gear 2 Wheel (-1 LH) in 3D and export, and adding an interactive Helical Hand selector (Right Hand RH vs Left Hand LH) in Gear 3 inspector card"
 [END] 2026-11-08T12:25:30+07:00 agent=geom-1 mem=v87 note="Flipped Gear 3 helical angle (Right Hand RH +beta) and added Helical Hand selector in Gear 3 inspector card; 16/16 Node tests + tsc + vite build clean; F-geom1-057 recorded"
+[ACK] 2026-11-08T12:32:00+07:00 agent=geom-1 mem=v87 last_entry=F-geom1-057 task=T-105
+note="lead requested: gear 1 should be rotate on pinon gear on gear 2; setting default stage_mode to compound_2stage so Gear 1 is elevated to z = g2_wheel_face_mm and meshes directly with Gear 2 Pinion at center distance a12 = 0.5*(d1+d2p), with matching mesh phase, opposing helical hand (-1 on pinion), and true 2-stage compound step-up rotation"
+[END] 2026-11-08T12:35:30+07:00 agent=geom-1 mem=v88 note="Configured Gear 1 to mesh and rotate on Gear 2 Pinion (a12 = 46.88 mm, compound 11.2:1 step-up); 16/16 Node tests + tsc + vite build clean; F-geom1-058 recorded"

@@ -3657,8 +3657,8 @@ export interface GearboxMeshBundle {
  */
 export function defaultGearboxConfig(): GearboxConfig {
   return {
-    stage_mode: "idler_reference",
-    layout_mode: "side_by_side",
+    stage_mode: "compound_2stage",
+    layout_mode: "meshed",
     module_mm: 1.25,
     pressure_angle_deg: 20.0,
     helix_angle_deg: 15.0,
@@ -4283,10 +4283,10 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     x1 = -(r1 + r2w + gap);
     x2 = 0;
     x3 = r2w + r3 + gap;
-    // Match Image 3 Z-elevation alignment
+    // Match Image 3 Z-elevation alignment: Gear 1 level with Gear 2 Pinion, Gear 3 level with Gear 2 Wheel
     z1Base = cfg.g2_wheel_face_mm;
     z2Base = 0;
-    z3Base = cfg.g2_wheel_face_mm;
+    z3Base = 0;
   } else {
     // True meshed center-to-center assembly
     if (cfg.stage_mode === "direct_1stage") {
@@ -4381,7 +4381,8 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
   // ---- Gear 2: Purple Wheel + Lime-Green Coaxial Helical Pinion ----
   if (cfg.stage_mode !== "direct_1stage") {
     const g2SpinRatio = -metrics.stage1_ratio;
-    const g2Phase = Math.PI / Math.max(8, cfg.g2_wheel_teeth);
+    // Align tooth spaces with Gear 1's teeth at the mesh point with Gear 2 Pinion
+    const g2Phase = Math.PI / Math.max(8, cfg.g2_pinion_teeth);
     // Keep a solid purple hub collar outside the Lime-Green coaxial pinion's outer diameter
     const g2HubOuterR = Math.max(
       cfg.g2_bore_mm * 0.75,
@@ -4425,7 +4426,7 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       moduleMm: cfg.module_mm,
       pressureAngleDeg: cfg.pressure_angle_deg,
       helixAngleDeg: cfg.helix_angle_deg,
-      helixHand: 1,
+      helixHand: -1, // Flipped to -1 (LH) so it mates with Gear 1 (RH +1)
       backlashMm: cfg.backlash_mm,
       faceWidthMm: cfg.g2_pinion_face_mm,
       boreDiaMm: cfg.g2_bore_mm,
