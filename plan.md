@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 86**
-> **LAST_UPDATED: 2026-11-08 11:38 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 87**
+> **LAST_UPDATED: 2026-11-08 12:25 (UTC+7) by geom-1**
 
 ---
 
@@ -500,6 +500,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Separated the Gearbox Prototype into a dedicated **Gearbox Studio** workspace tab and added an **Interactive 3D Gear Settings Inspector Drawer**: (1) added top-dock Studio Mode switcher (`#tab-studio-blade` vs `#tab-studio-gearbox`), where selecting Gearbox Studio activates `body.studio-gearbox-mode`, hiding `#panel` (CAD dock), `#aero-dock` (Telemetry dock), and blade export/view tools (`display: none !important`) so all blade settings are completely hidden and the 3D viewport takes full stage; (2) adapted viewport toolbar in Gearbox Studio with layout mode buttons (`Side-by-Side` vs `Meshed`), tooth mesh rotation animation (`▶ Spin`), 3-gear binary STL export, and `⚙ Gear Settings` drawer toggle; (3) removed `<section id="layer-gearbox">` and the 'Gears' quick-nav button from `#panel` so the CAD dock remains strictly focused on rotor blade geometry; (4) created `#gearbox-inspector` docked on the left beside the 3D viewport with quick-jump gear pills (`Train`, `G1 Bull`, `G2 Idler`, `G3 Pinion`) and collapsible cards for Train Architecture, Web Cutouts, Gear 1, Gear 2, Gear 3, and STL export; and (5) implemented Three.js raycasting on the 3D canvas so hovering turns the cursor to `pointer` with technical HUD feedback, and clicking any gear in 3D highlights it with cyan emissive glow, slides open the inspector, and focuses that gear's settings card (`.card-selected`).
   refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs | supersedes: F-geom1-055
 
+- **F-geom1-057** | 2026-11-08 12:25 | geom-1 | T-105
+  Flipped Gear 3 (Generator Motor Pinion) helical angle direction and added an interactive Helical Hand selector: (1) updated `GearboxConfig` with `g3_helix_hand: 1 | -1` (defaulting to `1` Right Hand RH, flipped from legacy `-1` Left Hand LH) so in the default `idler_reference` and `compound_2stage` modes at $z = 0$, Gear 3's teeth slope in the proper mating hand (+1 RH) against Gear 2 Wheel (-1 LH) rather than colliding with identical hand angles; (2) added `#g3-helix-hand` dropdown selector in the Gear 3 Inspector card in `web/index.html` allowing instant 1-click toggling between Right Hand (RH +β) and Left Hand (LH -β); (3) wired `g3_helix_hand` into DOM read/apply and change listeners in `web/src/main.ts`, automatically triggering live Three.js 3D re-render and workbench auto-save; and (4) verified by 16/16 Node tests (verifying vertex positions change between RH and LH), `tsc --noEmit`, and `vite build`.
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-056
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -911,3 +915,6 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [ACK] 2026-11-08T11:21:00+07:00 agent=geom-1 mem=v85 last_entry=F-geom1-055 task=T-105
 note="lead requested via /grill-me: move Gear section to a dedicated 'Gearbox' studio workspace tab hiding all blade panels (left CAD & right Aero docks), interactive 3D gear raycasting/click to open a left-side Gear Settings inspector panel beside the viewport focusing the clicked gear's parameters, with viewport toolbar adapting to gearbox mode"
 [END] 2026-11-08T11:38:30+07:00 agent=geom-1 mem=v86 note="Moved Gear section to dedicated Gearbox Studio tab with complete blade settings hidden, added left-side Gear Settings Inspector drawer, and implemented interactive 3D gear click raycaster and selection; 16/16 Node tests + tsc + vite build + cargo test clean; F-geom1-056 recorded"
+[ACK] 2026-11-08T12:20:00+07:00 agent=geom-1 mem=v86 last_entry=F-geom1-056 task=T-105
+note="lead requested: flip the gear 3 helical angle; flipping Gear 3 helixHand in buildGearboxSubMeshes from -1 to 1 (Right Hand RH) so teeth properly mate with Gear 2 Wheel (-1 LH) in 3D and export, and adding an interactive Helical Hand selector (Right Hand RH vs Left Hand LH) in Gear 3 inspector card"
+[END] 2026-11-08T12:25:30+07:00 agent=geom-1 mem=v87 note="Flipped Gear 3 helical angle (Right Hand RH +beta) and added Helical Hand selector in Gear 3 inspector card; 16/16 Node tests + tsc + vite build clean; F-geom1-057 recorded"

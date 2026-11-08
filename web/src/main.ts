@@ -479,6 +479,7 @@ const inputG3Face = document.getElementById("g3-face") as HTMLInputElement | nul
 const inputG3Bore = document.getElementById("g3-bore") as HTMLInputElement | null;
 const inputG3DFlat = document.getElementById("g3-dflat") as HTMLInputElement | null;
 const inputG3BossH = document.getElementById("g3-boss-h") as HTMLInputElement | null;
+const selectG3HelixHand = document.getElementById("g3-helix-hand") as HTMLSelectElement | null;
 
 const gearboxMetricsReadout = document.getElementById("gearbox-metrics-readout");
 const btnExportGearsAll = document.getElementById("btn-export-gears-all") as HTMLButtonElement | null;
@@ -917,6 +918,7 @@ function readCurrentGearboxConfig(): GearboxConfig {
     g3_bore_mm: Math.max(1.2, Number.parseFloat(inputG3Bore?.value || "") || def.g3_bore_mm),
     g3_d_flat_mm: Math.max(0, Number.parseFloat(inputG3DFlat?.value || "0") || 0),
     g3_boss_height_mm: Math.max(0, Number.parseFloat(inputG3BossH?.value || "0") || 0),
+    g3_helix_hand: (selectG3HelixHand?.value === "-1" ? -1 : 1),
   };
 }
 
@@ -954,6 +956,7 @@ function applyGearboxConfigToDom(cfg: GearboxConfig) {
   if (inputG3Bore) inputG3Bore.value = String(cfg.g3_bore_mm);
   if (inputG3DFlat) inputG3DFlat.value = String(cfg.g3_d_flat_mm);
   if (inputG3BossH) inputG3BossH.value = String(cfg.g3_boss_height_mm);
+  if (selectG3HelixHand) selectG3HelixHand.value = String(cfg.g3_helix_hand ?? 1);
 }
 
 function updateGearboxPanelUi(): GearboxConfig {
@@ -2526,6 +2529,7 @@ btnGearLayoutMesh?.addEventListener("click", () => {
   inputG3Bore,
   inputG3DFlat,
   inputG3BossH,
+  selectG3HelixHand,
 ].forEach((el) => {
   el?.addEventListener("change", () => {
     rebuild3D(workingDesign);

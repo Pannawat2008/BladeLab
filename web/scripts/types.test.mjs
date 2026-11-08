@@ -842,6 +842,7 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
   assert.equal(cfg.g2_spokes, 4);
   assert.equal(cfg.g2_pinion_teeth, 15);
   assert.equal(cfg.g3_teeth, 20);
+  assert.equal(cfg.g3_helix_hand, 1);
   assert.equal(cfg.spoke_width_pct, 26.0);
   assert.equal(cfg.rim_wall_mm, 3.5);
   assert.equal(cfg.hub_ring_mm, 2.5);
@@ -858,6 +859,13 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
   const bundle = buildGearboxMeshes(cfg);
   assert.equal(bundle.submeshes.length, 7);
   assert.ok(bundle.total_triangles > 3000, `expected > 3000 triangles, got ${bundle.total_triangles}`);
+
+  // Verify Gear 3 helical angle flip produces different vertex geometry
+  const g3PinionMesh = bundle.submeshes.find((s) => s.id === "gear3-pinion");
+  assert.ok(g3PinionMesh, "Gear 3 pinion submesh must exist");
+  const invertedG3Bundle = buildGearboxMeshes({ ...cfg, g3_helix_hand: -1 });
+  const invertedG3Mesh = invertedG3Bundle.submeshes.find((s) => s.id === "gear3-pinion");
+  assert.notDeepEqual(g3PinionMesh.positions, invertedG3Mesh.positions);
 
   // Verify Gear 2 solid vs spoked (0, 3, 4, 5, 6, 8 spokes) and custom Web Cutout geometry settings
   const g2SolidBundle = buildGearboxMeshes({ ...cfg, g2_spokes: 0 });
@@ -924,6 +932,7 @@ test("Gearbox Studio workspace tab and interactive 3D gear settings inspector (T
   assert.ok(html.includes('id="gear1-card"'), "gearbox inspector must have gear1-card");
   assert.ok(html.includes('id="gear2-card"'), "gearbox inspector must have gear2-card");
   assert.ok(html.includes('id="gear3-card"'), "gearbox inspector must have gear3-card");
+  assert.ok(html.includes('id="g3-helix-hand"'), "Gear 3 card must have g3-helix-hand selector");
 
   // Verify CAD dock #panel does not contain layer-gearbox
   const panelStart = html.indexOf('<aside id="panel"');

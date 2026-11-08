@@ -3604,6 +3604,7 @@ export interface GearboxConfig {
   g3_bore_mm: number;
   g3_d_flat_mm: number;
   g3_boss_height_mm: number;
+  g3_helix_hand?: 1 | -1; // 1 = Right Hand (RH +β), -1 = Left Hand (LH -β). Flipped to 1 so Gear 3 meshes properly
 }
 
 export interface GearboxMetrics {
@@ -3688,6 +3689,7 @@ export function defaultGearboxConfig(): GearboxConfig {
     g3_bore_mm: 3.0,
     g3_d_flat_mm: 0.4,
     g3_boss_height_mm: 4.5,
+    g3_helix_hand: 1, // Flipped from legacy -1 to 1 (Right Hand RH) so Gear 3 meshes properly
   };
 }
 
@@ -4478,12 +4480,13 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     cfg.stage_mode === "direct_1stage" ? -metrics.total_ratio : +metrics.total_ratio;
   const g3Phase = Math.PI / Math.max(8, cfg.g3_teeth);
 
+  const g3HelixHand: 1 | -1 = cfg.g3_helix_hand === -1 ? -1 : 1;
   const g3PinionBuilder = buildToothedWheelMesh({
     teeth: cfg.g3_teeth,
     moduleMm: cfg.module_mm,
     pressureAngleDeg: cfg.pressure_angle_deg,
     helixAngleDeg: cfg.helix_angle_deg,
-    helixHand: -1,
+    helixHand: g3HelixHand,
     backlashMm: cfg.backlash_mm,
     faceWidthMm: cfg.g3_face_width_mm,
     boreDiaMm: cfg.g3_bore_mm,
