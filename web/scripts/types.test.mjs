@@ -964,16 +964,15 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
   const meshData = build_mesh(JSON.stringify(initialDesign), "{}");
   const vCount = Math.floor(meshData.positions.length / 3);
 
-  // Synthesize normals: even pointing to top face (+Y), odd pointing to bottom face (-Y)
+  // Synthesize normals: even pointing to lower windward face (-Y), odd pointing to upper suction face (+Y)
   const syntheticNormals = new Float32Array(vCount * 3);
   for (let i = 0; i < vCount; i++) {
     syntheticNormals[i * 3] = 0;
-    syntheticNormals[i * 3 + 1] = i % 2 === 0 ? 1 : -1;
+    syntheticNormals[i * 3 + 1] = i % 2 === 0 ? -1 : 1;
     syntheticNormals[i * 3 + 2] = 0;
   }
 
-  // Test default "top" impact side
-  const hmImpactTop = computeVertexHeatmapColors(
+  const hmImpact = computeVertexHeatmapColors(
     meshData.positions,
     initialDesign,
     bundle,
@@ -981,49 +980,33 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
     "wind_impact",
     syntheticNormals,
     0.0,
-    "top",
   );
 
-  assert.equal(hmImpactTop.mode, "wind_impact");
-  assert.equal(hmImpactTop.title, "Windward Impact & Surface Pressure (Pa)");
-  assert.ok(hmImpactTop.minLabel.includes("Suction Lift"));
-  assert.ok(hmImpactTop.maxLabel.includes("Stagnation Impact"));
-  assert.ok(hmImpactTop.gradientCss.includes("#1e3a8a"));
-  assert.ok(hmImpactTop.gradientCss.includes("#ef4444"));
-  assert.equal(hmImpactTop.colors.length, meshData.positions.length);
+  assert.equal(hmImpact.mode, "wind_impact");
+  assert.equal(hmImpact.title, "Windward Impact & Surface Pressure (Pa)");
+  assert.ok(hmImpact.minLabel.includes("Suction Lift"));
+  assert.ok(hmImpact.maxLabel.includes("Stagnation Impact"));
+  assert.ok(hmImpact.gradientCss.includes("#1e3a8a"));
+  assert.ok(hmImpact.gradientCss.includes("#ef4444"));
+  assert.equal(hmImpact.colors.length, meshData.positions.length);
 
-  // Check RGB ranges and contrast with impact on Top:
-  // Even vertex has ny = +1 (top face) -> warm stagnation impact (R >= B)
-  // Odd vertex has ny = -1 (bottom face) -> cool suction lift (B >= R)
+  // Check RGB ranges and contrast:
+  // Even vertex has ny = -1 (lower face facing incoming flow) -> warm stagnation impact (R >= B)
+  // Odd vertex has ny = +1 (upper suction side) -> cool suction lift (B >= R)
   for (let i = 0; i < vCount; i++) {
-    const r = hmImpactTop.colors[i * 3];
-    const g = hmImpactTop.colors[i * 3 + 1];
-    const b = hmImpactTop.colors[i * 3 + 2];
+    const r = hmImpact.colors[i * 3];
+    const g = hmImpact.colors[i * 3 + 1];
+    const b = hmImpact.colors[i * 3 + 2];
     assert.ok(r >= 0 && r <= 1, `red out of bounds at ${i}`);
     assert.ok(g >= 0 && g <= 1, `green out of bounds at ${i}`);
     assert.ok(b >= 0 && b <= 1, `blue out of bounds at ${i}`);
 
     if (i % 2 === 0) {
-      assert.ok(r >= b, `top windward vertex ${i} should have warm color (r >= b): r=${r}, b=${b}`);
+      assert.ok(r >= b, `windward vertex ${i} should have warm color (r >= b): r=${r}, b=${b}`);
     } else {
-      assert.ok(b >= r, `bottom suction vertex ${i} should have cool color (b >= r): b=${b}, r=${r}`);
+      assert.ok(b >= r, `leeward suction vertex ${i} should have cool color (b >= r): b=${b}, r=${r}`);
     }
   }
-
-  // Test flipped "bottom" impact side
-  const hmImpactBottom = computeVertexHeatmapColors(
-    meshData.positions,
-    initialDesign,
-    bundle,
-    null,
-    "wind_impact",
-    syntheticNormals,
-    0.0,
-    "bottom",
-  );
-  // With impact on Bottom, odd vertex (ny = -1) has R >= B, and even vertex (ny = +1) has B >= R
-  assert.ok(hmImpactBottom.colors[1 * 3] >= hmImpactBottom.colors[1 * 3 + 2]);
-  assert.ok(hmImpactBottom.colors[0 * 3 + 2] >= hmImpactBottom.colors[0 * 3]);
 
   // 2. Parametric Winglet / Up-Turned Blade Tip
   const rTip = initialDesign.rotor.radius_mm; // 600 mm
@@ -1096,13 +1079,14 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
   assert.equal(defWb.collective_pitch_deg, 0.0);
   assert.equal(defWb.winglet.enabled, false);
   assert.equal(defWb.winglet.cant_angle_deg, 50.0);
-  assert.equal(defWb.impact_side, "top");
+  assert.equal(defWb.flip_blade, true);
 
   const customSnap = createWorkbenchSnapshot(
     initialDesign,
     {},
     {
       collective_pitch_deg: 4.0,
+      flip_blade: true,
       winglet: {
         enabled: true,
         cant_angle_deg: 65,
@@ -1110,22 +1094,22 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
         sweep_angle_deg: 18,
         blend_radius_mm: 20,
       },
-      impact_side: "bottom",
     },
   );
   assert.equal(customSnap.workbench.collective_pitch_deg, 4.0);
+  assert.equal(customSnap.workbench.flip_blade, true);
   assert.equal(customSnap.workbench.winglet?.enabled, true);
   assert.equal(customSnap.workbench.winglet?.cant_angle_deg, 65);
   assert.equal(customSnap.workbench.winglet?.height_mm, 35);
-  assert.equal(customSnap.workbench.impact_side, "bottom");
 
   // 5. HTML Elements Verification
   const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
   assert.ok(html.includes('value="wind_impact"'), "Heatmap dropdown must contain wind_impact option");
-  assert.ok(html.includes('id="btn-flip-impact-side"'), "Toolbar must contain btn-flip-impact-side button");
   assert.ok(html.includes('id="collective-pitch-toolbar-group"'), "Toolbar must contain collective-pitch-toolbar-group");
   assert.ok(html.includes('id="tb-collective-pitch"'), "Toolbar must contain tb-collective-pitch slider");
   assert.ok(html.includes('id="btn-pitch-feather"'), "Toolbar must contain btn-pitch-feather button");
+  assert.ok(html.includes('id="btn-flip-blade"'), "Toolbar must contain btn-flip-blade button");
+  assert.ok(html.includes('id="btn-flip-blade-panel"'), "Rotor panel must contain btn-flip-blade-panel button");
   assert.ok(html.includes('id="rotor-collective-pitch"'), "Rotor panel must contain rotor-collective-pitch slider");
   assert.ok(html.includes('id="btn-pitch-run"'), "Rotor panel must contain btn-pitch-run button");
   assert.ok(html.includes('id="btn-pitch-start"'), "Rotor panel must contain btn-pitch-start button");

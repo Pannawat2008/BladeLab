@@ -4,7 +4,7 @@
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
 > **MEMORY_VERSION: 91**
-> **LAST_UPDATED: 2026-11-08 20:06 (UTC+7) by geom-1**
+> **LAST_UPDATED: 2026-11-08 21:04 (UTC+7) by geom-1**
 
 ---
 
@@ -520,9 +520,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Corrected windward vs leeward aerodynamic surface orientation in `computeVertexHeatmapColors` (`mode: "wind_impact"`): (1) in standard lifting blade coordinates, oncoming wind impacts the flat/concave lower pressure face ($n_y < 0$) generating positive stagnation impact (+red/amber), while the cambered upper face ($n_y > 0$) accelerates flow creating negative Bernoulli suction lift (-blue/cyan); (2) updated normal evaluation so $n_y < 0$ or leading edge $n_x < 0$ produce positive impact pressure $P \sim +q_{\text{local}}$ while $n_y > 0$ produces negative suction lift $P \sim -C_l \cdot q_{\text{local}}$; (3) verified by 17/17 Node tests, `tsc --noEmit`, and `vite build`.
   refs: web/src/state.ts, web/scripts/types.test.mjs | supersedes: F-geom1-059
 
-- **F-geom1-061** | 2026-11-08 20:06 | geom-1 | T-105
-  Added windward impact side alignment (`impact_side: "top" | "bottom"`, default `"top"`) and interactive `#btn-flip-impact-side` toggle button: (1) set default impact side to `"top"` so the windward stagnation impact (+amber/red) is positioned on the top face (+Y) directly facing the default camera view, with leeward suction (-blue/cyan) on the bottom face (-Y); (2) added live `#btn-flip-impact-side` in the 3D viewport toolbar to toggle between `Impact: Top` and `Impact: Bottom` with 1 click; (3) persisted `impact_side` in `WorkbenchUiSnapshot` and verified across 17/17 Node tests, `tsc --noEmit`, and `vite build`.
-  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-060
+- **F-geom1-061** | 2026-11-08 21:04 | geom-1 | T-105
+  Flipped 3D blade model orientation 180° around its spanwise pitch axis ($X=0$): (1) configured `inner.rotation.z = (bladeFlipped ? Math.PI : 0) + (collectivePitchDeg * Math.PI) / 180` with `bladeFlipped = true` by default in `web/src/main.ts` and `web/src/state.ts` (`WorkbenchUiSnapshot.flip_blade`); (2) correctly aligns the leading edge facing into the rotor spin direction (+X) with trailing edge behind, and flat pressure face facing oncoming wind (+Y); (3) added synchronized "Flip 180°" quick toggle buttons in the top toolbar (`#btn-flip-blade`) and CAD rotor panel (`#btn-flip-blade-panel`); (4) verified by 17/17 Node tests, `tsc --noEmit`, and `vite build`.
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
 
 ### 9.3 Decisions (D)
 
@@ -947,6 +947,6 @@ note="lead approved implementing: (1) Windward Wind Impact & Surface Pressure He
 [ACK] 2026-11-08T19:48:30+07:00 agent=geom-1 mem=v89 last_entry=F-geom1-059 task=T-105
 note="investigating user feedback: 'i think you put the blade the wrong sided right when i put other side its better' — analyzing blade orientation, winglet side, wind direction, rotor spin direction, and heatmap facing"
 [END] 2026-11-08T19:56:30+07:00 agent=geom-1 mem=v90 note="Flipped Windward Impact Heatmap surface orientation so lower face receives stagnation impact (+red/amber) and upper curved face receives suction lift (-blue/cyan); 17/17 Node tests + tsc + vite build clean; F-geom1-060 recorded"
-[ACK] 2026-11-08T20:01:00+07:00 agent=geom-1 mem=v90 last_entry=F-geom1-060 task=T-105
-note="lead requested: 'also flip the Impact model side to top' — aligning 3D blade and wind impact orientation so the wind impact side faces top (+Y)"
-[END] 2026-11-08T20:06:30+07:00 agent=geom-1 mem=v91 note="Set windward impact side to Top by default and added live #btn-flip-impact-side toggle button (Top ⮂ Bottom); 17/17 Node tests + tsc + vite build clean; F-geom1-061 recorded"
+[ACK] 2026-11-08T20:59:15+07:00 agent=geom-1 mem=v90 last_entry=F-geom1-060 task=T-105
+note="lead requested: also flip the model; analyzing blade 3D orientation, pitch axis flip (180 deg around pitch axis or chord flip), hub mounting, and spin direction"
+[END] 2026-11-08T21:04:00+07:00 agent=geom-1 mem=v91 note="Flipped 3D blade model 180 deg around pitch axis by default and added 'Flip 180 deg' toolbar/panel toggle buttons; 17/17 Node tests + tsc + vite build clean; F-geom1-061 recorded"

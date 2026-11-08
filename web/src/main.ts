@@ -102,7 +102,6 @@ import {
   upsertSavedSlot,
   type WindPowerAepReport,
   type WingletConfig,
-  type ImpactSide,
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
   type WorkbenchSnapshot,
@@ -240,7 +239,10 @@ const collectivePitchBadge = document.getElementById("collective-pitch-badge");
 const btnPitchRun = document.getElementById("btn-pitch-run") as HTMLButtonElement | null;
 const btnPitchStart = document.getElementById("btn-pitch-start") as HTMLButtonElement | null;
 const btnPitchFeatherPanel = document.getElementById("btn-pitch-feather-panel") as HTMLButtonElement | null;
+const btnFlipBlade = document.getElementById("btn-flip-blade") as HTMLButtonElement | null;
+const btnFlipBladePanel = document.getElementById("btn-flip-blade-panel") as HTMLButtonElement | null;
 let collectivePitchDeg = 0.0;
+let bladeFlipped = true;
 
 // ---- Parametric Winglet / Up-Turned Tip Controls ----
 const inputWingletEnabled = document.getElementById("winglet-enabled") as HTMLInputElement | null;
@@ -249,20 +251,6 @@ const inputWingletCant = document.getElementById("winglet-cant") as HTMLInputEle
 const inputWingletHeight = document.getElementById("winglet-height") as HTMLInputElement | null;
 const inputWingletSweep = document.getElementById("winglet-sweep") as HTMLInputElement | null;
 const inputWingletRadius = document.getElementById("winglet-radius") as HTMLInputElement | null;
-
-// ---- Windward Impact Side Toggle (Top vs Bottom) ----
-const btnFlipImpactSide = document.getElementById("btn-flip-impact-side") as HTMLButtonElement | null;
-let currentImpactSide: ImpactSide = "top";
-
-function syncImpactSideButton() {
-  if (btnFlipImpactSide) {
-    btnFlipImpactSide.textContent = currentImpactSide === "top" ? "Impact: Top" : "Impact: Bottom";
-    btnFlipImpactSide.title = `Current windward impact side: ${currentImpactSide.toUpperCase()} (click to flip to ${
-      currentImpactSide === "top" ? "Bottom" : "Top"
-    })`;
-    btnFlipImpactSide.classList.toggle("active", currentImpactSide === "top");
-  }
-}
 
 const btnChordMinus = document.getElementById("btn-chord-minus") as HTMLButtonElement;
 const btnChordPlus = document.getElementById("btn-chord-plus") as HTMLButtonElement;
@@ -598,6 +586,22 @@ function setCollectivePitch(deg: number, triggerRebuild = true) {
   if (btnPitchFeather)
     btnPitchFeather.classList.toggle("active", Math.abs(collectivePitchDeg - 30) < 0.2);
 
+  if (triggerRebuild) {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  }
+}
+
+function setBladeFlipped(flipped: boolean, triggerRebuild = true) {
+  bladeFlipped = flipped;
+  if (btnFlipBlade) {
+    btnFlipBlade.classList.toggle("active", bladeFlipped);
+    btnFlipBlade.setAttribute("aria-pressed", String(bladeFlipped));
+  }
+  if (btnFlipBladePanel) {
+    btnFlipBladePanel.classList.toggle("active", bladeFlipped);
+    btnFlipBladePanel.setAttribute("aria-pressed", String(bladeFlipped));
+  }
   if (triggerRebuild) {
     rebuild3D(workingDesign);
     scheduleAutoSave();
@@ -1328,7 +1332,6 @@ function rebuild3D(design: Design) {
         hmMode,
         normAttr ? normAttr.array : undefined,
         collectivePitchDeg,
-        currentImpactSide,
       );
       bladeGeo.setAttribute("color", new THREE.BufferAttribute(hm.colors, 3));
       viewportHeatmapLegend.classList.add("visible");
@@ -1383,7 +1386,8 @@ function rebuild3D(design: Design) {
       const branch = new THREE.Group();
       branch.userData.isBladeBranch = true;
       const inner = new THREE.Group();
-      inner.rotation.z = (collectivePitchDeg * Math.PI) / 180;
+      const baseAngle = bladeFlipped ? Math.PI : 0;
+      inner.rotation.z = baseAngle + (collectivePitchDeg * Math.PI) / 180;
 
       const bladeMesh = new THREE.Mesh(bladeGeo, bladeMaterial);
       bladeMesh.position.x = pivotShift;
@@ -2294,7 +2298,7 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gearbox_inspector_open: gearboxInspector?.classList.contains("open") ?? true,
     collective_pitch_deg: collectivePitchDeg,
     winglet: readCurrentWingletConfig(),
-    impact_side: currentImpactSide,
+    flip_blade: bladeFlipped,
   };
 }
 
@@ -2389,8 +2393,7 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   inputExpData.value = wb.exp_data_log ?? "";
   setCollectivePitch(wb.collective_pitch_deg ?? 0.0, false);
   applyWingletConfigToDom(wb.winglet);
-  currentImpactSide = wb.impact_side || "top";
-  syncImpactSideButton();
+  setBladeFlipped(wb.flip_blade ?? true, false);
 }
 
 function buildCurrentWorkbenchSnapshot(name?: string): WorkbenchSnapshot {
@@ -2722,13 +2725,6 @@ btnViewSpin.addEventListener("click", () => {
 });
 
 selectHeatmapMode.addEventListener("change", () => {
-  rebuild3D(workingDesign);
-  scheduleAutoSave();
-});
-
-btnFlipImpactSide?.addEventListener("click", () => {
-  currentImpactSide = currentImpactSide === "top" ? "bottom" : "top";
-  syncImpactSideButton();
   rebuild3D(workingDesign);
   scheduleAutoSave();
 });
@@ -3314,6 +3310,8 @@ btnPitchRun?.addEventListener("click", () => setCollectivePitch(0.0));
 btnPitchStart?.addEventListener("click", () => setCollectivePitch(4.0));
 btnPitchFeatherPanel?.addEventListener("click", () => setCollectivePitch(30.0));
 btnPitchFeather?.addEventListener("click", () => setCollectivePitch(30.0));
+btnFlipBlade?.addEventListener("click", () => setBladeFlipped(!bladeFlipped));
+btnFlipBladePanel?.addEventListener("click", () => setBladeFlipped(!bladeFlipped));
 
 // Winglet Listeners
 inputWingletEnabled?.addEventListener("change", () => {

@@ -1735,13 +1735,13 @@
             <option value="torque">Heatmap: Torque dQ/dr</option>
             <option value="wall_stress">Heatmap: Bending Stress</option>
           </select>
-          <button id="btn-flip-impact-side" class="btn-mini active" type="button" title="Flip blade windward impact side (Top vs Bottom)">Impact: Top</button>
           <span class="toolbar-divider"></span>
           <div class="toolbar" id="collective-pitch-toolbar-group" title="Collective Blade Pitch Angle (degrees) — rotate blade in 3D &amp; simulate feathering">
             <span class="toolbar-label">Pitch</span>
             <input id="tb-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" style="width: 68px; accent-color: var(--accent);" />
             <span id="tb-pitch-val" class="section-meta" style="min-width: 28px">0.0°</span>
             <button id="btn-pitch-feather" class="btn-mini" type="button" title="Quick Feather / Aerodynamic Brake (+30°)">Feather</button>
+            <button id="btn-flip-blade" class="btn-mini active" type="button" aria-pressed="true" title="Flip blade orientation 180° around pitch axis">Flip 180°</button>
           </div>
           <span class="toolbar-divider"></span>
         </div>
@@ -1932,6 +1932,7 @@
             <button id="btn-pitch-run" class="btn-mini active" type="button" title="0° Nominal Run — Peak aerodynamic efficiency">0° Run</button>
             <button id="btn-pitch-start" class="btn-mini" type="button" title="+4° Quick-Start — High starting torque in light breeze">+4° Start</button>
             <button id="btn-pitch-feather-panel" class="btn-mini" type="button" title="+30° Feather / Aerodynamic Brake — Shed storm gust loads">+30° Feather</button>
+            <button id="btn-flip-blade-panel" class="btn-mini active" type="button" aria-pressed="true" title="Flip blade orientation 180° around pitch axis">Flip 180°</button>
           </div>
 
           <!-- Parametric Winglet / Up-Turned Tip Device -->
