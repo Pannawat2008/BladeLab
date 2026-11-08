@@ -26,6 +26,7 @@ import {
   createWorkbenchSnapshot,
   defaultChordBezierPoints,
   defaultFabricationSnapshot,
+  defaultWorkbenchUiSnapshot,
   defaultTwistBezierPoints,
   DesignHistory,
   evaluateExperimentalFit,
@@ -894,6 +895,42 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
     assert.ok(triCount > 400, `STL target ${target} must have > 400 triangles`);
     assert.equal(stl.byteLength, 84 + triCount * 50, `STL byte length must match 84 + 50 * triCount`);
   }
+});
+
+test("Gearbox Studio workspace tab and interactive 3D gear settings inspector (T-105)", () => {
+  // 1. Verify Workbench UI snapshot defaults and round-trip
+  const defWb = defaultWorkbenchUiSnapshot();
+  assert.equal(defWb.studio_mode, "blade");
+  assert.equal(defWb.gearbox_selected_gear, null);
+  assert.equal(defWb.gearbox_inspector_open, true);
+
+  const snap = createWorkbenchSnapshot(
+    initialDesign,
+    {},
+    { studio_mode: "gearbox", gearbox_selected_gear: 2, gearbox_inspector_open: true },
+  );
+  assert.equal(snap.workbench.studio_mode, "gearbox");
+  assert.equal(snap.workbench.gearbox_selected_gear, 2);
+  assert.equal(snap.workbench.gearbox_inspector_open, true);
+
+  // 2. Verify HTML template layout separation
+  const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  assert.ok(html.includes('id="tab-studio-blade"'), "top dock must have Blade Studio tab");
+  assert.ok(html.includes('id="tab-studio-gearbox"'), "top dock must have Gearbox Studio tab");
+  assert.ok(html.includes('id="gearbox-toolbar-controls"'), "top dock must have Gearbox toolbar controls");
+  assert.ok(html.includes('id="btn-toggle-gearbox-inspector"'), "must have toggle gearbox inspector button");
+  assert.ok(html.includes('id="gearbox-inspector"'), "must have dedicated gearbox-inspector aside");
+  assert.ok(html.includes('id="gearbox-quick-nav"'), "gearbox inspector must have quick gear navigation");
+  assert.ok(html.includes('id="gear1-card"'), "gearbox inspector must have gear1-card");
+  assert.ok(html.includes('id="gear2-card"'), "gearbox inspector must have gear2-card");
+  assert.ok(html.includes('id="gear3-card"'), "gearbox inspector must have gear3-card");
+
+  // Verify CAD dock #panel does not contain layer-gearbox
+  const panelStart = html.indexOf('<aside id="panel"');
+  const panelEnd = html.indexOf('</aside>', panelStart);
+  const panelHtml = html.slice(panelStart, panelEnd);
+  assert.ok(!panelHtml.includes('id="layer-gearbox"'), "CAD panel must not contain layer-gearbox");
+  assert.ok(!panelHtml.includes('data-scroll-target="layer-gearbox"'), "CAD section nav must not contain Gears button");
 });
 
 

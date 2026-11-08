@@ -203,6 +203,110 @@
         pointer-events: none;
       }
 
+      /* Studio Workspace Switcher Tabs */
+      .studio-tabs {
+        display: inline-flex;
+        align-items: center;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-sm);
+        padding: 2px;
+        gap: 2px;
+      }
+      .studio-tabs button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 10px;
+        font-size: 11.5px;
+        font-weight: 500;
+        border-radius: calc(var(--radius-sm) - 2px);
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.15s var(--ease);
+      }
+      .studio-tabs button:hover {
+        color: var(--text-primary);
+        background: var(--bg-hover);
+      }
+      .studio-tabs button.active {
+        color: #fff;
+        background: var(--bg-panel);
+        border-color: var(--border-hairline);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      }
+      .studio-tabs button#tab-studio-gearbox.active {
+        color: #38bdf8;
+        border-color: rgba(56, 189, 248, 0.4);
+      }
+
+      /* Gearbox Toolbar Controls */
+      #gearbox-toolbar-controls {
+        display: none;
+        align-items: center;
+        gap: 6px;
+      }
+
+      /* Gearbox Studio Mode Active State (Hides all Blade settings) */
+      body.studio-gearbox-mode #panel,
+      body.studio-gearbox-mode #aero-dock,
+      body.studio-gearbox-mode #dock-toggles-desktop,
+      body.studio-gearbox-mode #blade-view-controls,
+      body.studio-gearbox-mode #export-bar {
+        display: none !important;
+      }
+      body.studio-gearbox-mode #top-dock {
+        left: var(--dock-gap) !important;
+      }
+      body.studio-gearbox-mode #gearbox-toolbar-controls {
+        display: inline-flex !important;
+      }
+
+      /* Gearbox Inspector Drawer (Beside Viewport) */
+      #gearbox-inspector {
+        position: fixed;
+        top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
+        left: var(--dock-gap);
+        bottom: var(--dock-gap);
+        width: 420px;
+        max-width: calc(100vw - 24px);
+        display: none;
+        flex-direction: column;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-panel);
+        overflow: hidden;
+        z-index: 25;
+        box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55);
+        transform: translateX(calc(-100% - 24px));
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          transform 0.28s var(--ease),
+          opacity 0.18s var(--ease);
+      }
+      body.studio-gearbox-mode #gearbox-inspector {
+        display: flex;
+      }
+      body.studio-gearbox-mode #gearbox-inspector.open {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      /* Selected gear card highlight */
+      .gear-card {
+        transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s var(--ease);
+      }
+      .gear-card.card-selected {
+        border-left-width: 4px !important;
+        background: rgba(56, 189, 248, 0.08) !important;
+        box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+      }
+
       /* Panel Header (48px height, 12px/16px padding on 4px grid) */
       .panel-header {
         display: flex;
@@ -1584,6 +1688,21 @@
     <!-- Top-Right 3D Viewport Mode & CAD Export Bar -->
     <header id="top-dock" role="banner" aria-label="Viewport and CAD Export Toolbar">
       <div class="toolbar">
+        <!-- Studio Workspace Switcher: Blade vs Gearbox -->
+        <div class="studio-tabs" role="tablist" aria-label="Studio Mode">
+          <button id="tab-studio-blade" class="active" type="button" role="tab" aria-selected="true" title="Blade CAD &amp; Aerodynamics Studio">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5L13.5 2.5M13.5 2.5C11 3.5 6 7 4 10c-1.5 2.2-1.5 3.5-1.5 3.5s1.3 0 3.5-1.5c3-2 6.5-7 7.5-9.5z"/></svg>
+            <span>Blade Studio</span>
+          </button>
+          <button id="tab-studio-gearbox" type="button" role="tab" aria-selected="false" title="Involute Helical/Spur Gearbox Prototype Studio">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
+            <span>Gearbox Studio</span>
+          </button>
+        </div>
+
+        <span class="toolbar-divider"></span>
+
+        <!-- Desktop Dock Toggles (visible in Blade mode) -->
         <div class="toolbar" id="dock-toggles-desktop">
           <button id="btn-toggle-left" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Left CAD &amp; Geometry Dock">
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
@@ -1602,19 +1721,42 @@
           <span class="toolbar-divider"></span>
         </div>
 
-        <span class="toolbar-label">View</span>
-        <button id="btn-view-single" class="btn-mini" type="button" aria-pressed="false" title="Single Blade 3D view">Single</button>
-        <button id="btn-view-rotor" class="btn-mini active" type="button" aria-pressed="true" title="Full Rotor B-blade + Hub assembly preview">Rotor (B×)</button>
-        <button id="btn-view-gearbox" class="btn-mini" type="button" aria-pressed="false" title="3D Involute Spur/Helical Gearbox Prototype view">Gearbox</button>
+        <!-- Blade View Controls (visible in Blade mode) -->
+        <div class="toolbar" id="blade-view-controls">
+          <span class="toolbar-label">View</span>
+          <button id="btn-view-single" class="btn-mini" type="button" aria-pressed="false" title="Single Blade 3D view">Single</button>
+          <button id="btn-view-rotor" class="btn-mini active" type="button" aria-pressed="true" title="Full Rotor B-blade + Hub assembly preview">Rotor (B×)</button>
+          <button id="btn-view-gearbox" class="btn-mini" type="button" aria-pressed="false" title="3D Involute Spur/Helical Gearbox Prototype view">Gearbox</button>
+          <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
+            <option value="segment">Color: CAD Segments</option>
+            <option value="alpha">Heatmap: Angle of Attack α</option>
+            <option value="cl_cd">Heatmap: Glide Ratio Cl/Cd</option>
+            <option value="torque">Heatmap: Torque dQ/dr</option>
+            <option value="wall_stress">Heatmap: Bending Stress</option>
+          </select>
+          <span class="toolbar-divider"></span>
+        </div>
+
+        <!-- Gearbox Toolbar Controls (visible only in Gearbox Studio) -->
+        <div class="toolbar" id="gearbox-toolbar-controls">
+          <button id="btn-toggle-gearbox-inspector" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Gear Settings Inspector">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>
+            <span>⚙ Gear Settings</span>
+          </button>
+          <span class="toolbar-divider"></span>
+          <span class="toolbar-label">Layout</span>
+          <button id="btn-tb-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference Layout">Side-by-Side</button>
+          <button id="btn-tb-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout">Meshed</button>
+          <span class="toolbar-divider"></span>
+          <button id="btn-tb-gear-spin" class="btn-mini" type="button" title="Animate teeth mesh rotation">▶ Spin</button>
+          <span class="toolbar-divider"></span>
+          <button id="btn-tb-gear-export-all" class="btn-primary btn-mini" type="button" title="Download all 3 gears arranged flat on build plate as STL">Export 3 Gears (STL)</button>
+          <span class="toolbar-divider"></span>
+        </div>
+
+        <!-- Shared 3D Viewport Controls -->
         <button id="btn-view-wireframe" class="btn-mini" type="button" aria-pressed="false" title="Toggle triangle wireframe mesh">Wireframe</button>
         <button id="btn-view-spin" class="btn-mini" type="button" aria-pressed="false" title="Animate rotor rotation at design RPM">Spin</button>
-        <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
-          <option value="segment">Color: CAD Segments</option>
-          <option value="alpha">Heatmap: Angle of Attack α</option>
-          <option value="cl_cd">Heatmap: Glide Ratio Cl/Cd</option>
-          <option value="torque">Heatmap: Torque dQ/dr</option>
-          <option value="wall_stress">Heatmap: Bending Stress</option>
-        </select>
         <span class="toolbar-divider"></span>
         <button id="btn-cam-iso" class="btn-mini" type="button" title="Isometric camera view">Iso</button>
         <button id="btn-cam-top" class="btn-mini" type="button" title="Planform top view">Plan</button>
@@ -1688,7 +1830,6 @@
         <button type="button" data-scroll-target="layer2-planform">Planform</button>
         <button type="button" data-scroll-target="layer2-sections">Sections</button>
         <button type="button" data-scroll-target="layer-fabrication">Fab</button>
-        <button type="button" data-scroll-target="layer-gearbox">Gears</button>
         <button type="button" data-scroll-target="layer3-stations">Stations</button>
       </nav>
 
@@ -2186,233 +2327,6 @@
           </div>
         </section>
 
-        <!-- Gearbox Prototype (Spur / Helical 3-Gear Train CAD & STL Export) -->
-        <section id="layer-gearbox">
-          <div class="section-title">
-            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
-              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
-              <span class="layer-tag">GEAR</span>
-              <span>Gearbox Prototype (Spur &amp; Helical)</span>
-            </button>
-            <span id="gearbox-summary" class="section-meta">3.00:1 · m 1.25</span>
-          </div>
-
-          <div class="toolbar" style="margin-bottom: 8px; flex-wrap: wrap">
-            <button id="btn-gearbox-3d-view" class="btn-primary btn-mini" type="button" style="flex: 1.3" title="Switch main 3D viewport to inspect &amp; animate the 3D Gearbox Prototype">
-              Show Gearbox in 3D Viewport
-            </button>
-            <button id="btn-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference CAD Layout (all 3 gears separated cleanly)">
-              Side-by-Side
-            </button>
-            <button id="btn-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout (exact center-to-center shaft distances)">
-              Meshed
-            </button>
-          </div>
-
-          <div class="aero-subbox">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Train Architecture &amp; Tooth Profile</span>
-              <span id="gear-tooth-badge" class="section-meta">Helical 15°</span>
-            </div>
-            <div class="field" style="margin-top: 6px; margin-bottom: 6px">
-              <label for="gear-stage-mode">Gear Train Architecture</label>
-              <select id="gear-stage-mode">
-                <option value="idler_reference" selected>Ref 3-Gear Train (G1 Spoked → G2 Compound → G3 Pinion)</option>
-                <option value="compound_2stage">2-Stage Compound Step-Up ((Z1/Z2p) × (Z2w/Z3))</option>
-                <option value="direct_1stage">1-Stage 2-Gear Direct (G1 Spoked → G3 Pinion)</option>
-              </select>
-            </div>
-            <div class="grid-2">
-              <div class="field">
-                <label for="gear-module" class="scrub-label" data-scrub-for="gear-module" title="Metric gear tooth size Module m (mm) — Pitch Ø = m × Z">Module m (mm)</label>
-                <input id="gear-module" type="number" min="0.5" max="4.0" step="0.05" value="1.25" />
-              </div>
-              <div class="field">
-                <label for="gear-helix" class="scrub-label" data-scrub-for="gear-helix" title="Helix angle β (0° = straight Spur teeth, 15° = smooth Helical teeth with auto L/R hand)">Helix Angle β (°)</label>
-                <input id="gear-helix" type="number" min="0" max="35" step="1" value="15" />
-              </div>
-              <div class="field">
-                <label for="gear-pressure" class="scrub-label" data-scrub-for="gear-pressure">Pressure Angle α (°)</label>
-                <input id="gear-pressure" type="number" min="14.5" max="25" step="0.5" value="20" />
-              </div>
-              <div class="field">
-                <label for="gear-backlash" class="scrub-label" data-scrub-for="gear-backlash" title="3D printer tooth clearance so printed teeth mesh without binding">FDM Backlash (mm)</label>
-                <input id="gear-backlash" type="number" min="0" max="0.6" step="0.02" value="0.15" />
-              </div>
-            </div>
-
-            <div class="toolbar" style="margin-top: 6px">
-              <button id="btn-gear-solve-ratio" class="btn-mini" type="button" style="flex: 1" title="Automatically solve integer tooth counts (Z1, Z2, Z3) to match the BEM Aero Gear Ratio">
-                Solve Teeth for Aero G:1
-              </button>
-              <button id="btn-gear-sync-aero" class="btn-mini" type="button" style="flex: 1" title="Send this gearbox's exact tooth ratio into the BEM Generator &amp; AEP solver">
-                Sync Ratio → Aero Solver
-              </button>
-            </div>
-          </div>
-
-          <!-- Web Cutout Geometry Settings (Shared across Spoked Gears 1 & 2) -->
-          <div class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #38bdf8">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Web Cutout Settings (Gear 1 &amp; Gear 2)</span>
-              <span id="gear-cutout-badge" class="section-meta">26% Spoke · 74% Window</span>
-            </div>
-            <div class="grid-3" style="margin-top: 6px">
-              <div class="field">
-                <label for="gear-spoke-width" class="scrub-label" data-scrub-for="gear-spoke-width" title="Percentage of each angular sector occupied by the solid spoke arm (lower = wider window cutouts)">Spoke Width (%)</label>
-                <input id="gear-spoke-width" type="number" min="10" max="65" step="1" value="26" />
-              </div>
-              <div class="field">
-                <label for="gear-rim-wall" class="scrub-label" data-scrub-for="gear-rim-wall" title="Solid radial wall thickness inside the tooth root circle before window cutouts begin">Outer Rim (mm)</label>
-                <input id="gear-rim-wall" type="number" min="1.5" max="12" step="0.25" value="3.5" />
-              </div>
-              <div class="field">
-                <label for="gear-hub-ring" class="scrub-label" data-scrub-for="gear-hub-ring" title="Solid radial collar margin outside the hub boss (Gear 1) or coaxial pinion (Gear 2)">Hub Margin (mm)</label>
-                <input id="gear-hub-ring" type="number" min="1.0" max="12" step="0.25" value="2.5" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Gear 1: Mint-Green 4-Spoked Bull Gear + Orange Stepped Hub Boss -->
-          <div class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #8fd9b6">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Gear 1 · Rotor Spoked Gear + Hub Boss</span>
-              <span id="g1-dia-badge" class="section-meta">Øp 75.0 mm</span>
-            </div>
-            <div class="grid-2" style="margin-top: 6px">
-              <div class="field">
-                <label for="g1-teeth" class="scrub-label" data-scrub-for="g1-teeth">Teeth Z1</label>
-                <input id="g1-teeth" type="number" min="12" max="120" step="1" value="60" />
-              </div>
-              <div class="field">
-                <label for="g1-face" class="scrub-label" data-scrub-for="g1-face">Rim Face (mm)</label>
-                <input id="g1-face" type="number" min="2" max="30" step="0.5" value="5.0" />
-              </div>
-              <div class="field">
-                <label for="g1-spokes">Web Cutouts</label>
-                <select id="g1-spokes">
-                  <option value="3">3 Spokes</option>
-                  <option value="4" selected>4 Spokes (Ref CAD)</option>
-                  <option value="5">5 Spokes</option>
-                  <option value="6">6 Spokes</option>
-                  <option value="8">8 Spokes</option>
-                  <option value="0">Solid Disk (0)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="g1-bore" class="scrub-label" data-scrub-for="g1-bore">Shaft Bore Ø (mm)</label>
-                <input id="g1-bore" type="number" min="2" max="20" step="0.2" value="6.0" />
-              </div>
-              <div class="field">
-                <label for="g1-dflat" class="scrub-label" data-scrub-for="g1-dflat" title="D-shaft flat depth (0 = round bore)">D-Flat Depth (mm)</label>
-                <input id="g1-dflat" type="number" min="0" max="3" step="0.1" value="0.5" />
-              </div>
-              <div class="field">
-                <label for="g1-hub-dia" class="scrub-label" data-scrub-for="g1-hub-dia">Orange Hub Ø (mm)</label>
-                <input id="g1-hub-dia" type="number" min="8" max="50" step="1" value="24.0" />
-              </div>
-              <div class="field">
-                <label for="g1-hub-h" class="scrub-label" data-scrub-for="g1-hub-h">Orange Hub H (mm)</label>
-                <input id="g1-hub-h" type="number" min="0" max="40" step="1" value="18.0" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Gear 2: Compound Idler (Purple Wheel + Lime Coaxial Pinion) -->
-          <div id="gear2-card" class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #b84ba1">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Gear 2 · Compound Wheel + Coaxial Pinion</span>
-              <span id="g2-dia-badge" class="section-meta">Øp 70.0 / 18.8 mm</span>
-            </div>
-            <div class="grid-2" style="margin-top: 6px">
-              <div class="field">
-                <label for="g2-wheel-teeth" class="scrub-label" data-scrub-for="g2-wheel-teeth">Purple Wheel Z2w</label>
-                <input id="g2-wheel-teeth" type="number" min="12" max="120" step="1" value="56" />
-              </div>
-              <div class="field">
-                <label for="g2-wheel-face" class="scrub-label" data-scrub-for="g2-wheel-face">Wheel Face (mm)</label>
-                <input id="g2-wheel-face" type="number" min="2" max="25" step="0.5" value="5.0" />
-              </div>
-              <div class="field">
-                <label for="g2-spokes">Web Cutouts (Purple)</label>
-                <select id="g2-spokes">
-                  <option value="3">3 Spokes</option>
-                  <option value="4" selected>4 Spokes (Cutouts)</option>
-                  <option value="5">5 Spokes</option>
-                  <option value="6">6 Spokes</option>
-                  <option value="8">8 Spokes</option>
-                  <option value="0">Solid Disk (Ref CAD)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="g2-pinion-teeth" class="scrub-label" data-scrub-for="g2-pinion-teeth">Lime Pinion Z2p</label>
-                <input id="g2-pinion-teeth" type="number" min="8" max="60" step="1" value="15" />
-              </div>
-              <div class="field">
-                <label for="g2-pinion-face" class="scrub-label" data-scrub-for="g2-pinion-face">Pinion Face (mm)</label>
-                <input id="g2-pinion-face" type="number" min="3" max="30" step="0.5" value="14.0" />
-              </div>
-              <div class="field">
-                <label for="g2-bore" class="scrub-label" data-scrub-for="g2-bore">Idler Bore Ø (mm)</label>
-                <input id="g2-bore" type="number" min="1.5" max="16" step="0.2" value="5.0" />
-              </div>
-              <div class="field">
-                <label for="g2-dflat" class="scrub-label" data-scrub-for="g2-dflat">D-Flat Depth (mm)</label>
-                <input id="g2-dflat" type="number" min="0" max="2.5" step="0.1" value="0.0" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Gear 3: Generator Output Pinion (Slate-Grey) -->
-          <div class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #6d8388">
-            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
-              <span style="font-weight: 500; color: var(--text-primary)">Gear 3 · Generator Motor Pinion</span>
-              <span id="g3-dia-badge" class="section-meta">Øp 25.0 mm</span>
-            </div>
-            <div class="grid-2" style="margin-top: 6px">
-              <div class="field">
-                <label for="g3-teeth" class="scrub-label" data-scrub-for="g3-teeth">Pinion Teeth Z3</label>
-                <input id="g3-teeth" type="number" min="8" max="60" step="1" value="20" />
-              </div>
-              <div class="field">
-                <label for="g3-face" class="scrub-label" data-scrub-for="g3-face">Pinion Face (mm)</label>
-                <input id="g3-face" type="number" min="3" max="30" step="0.5" value="14.0" />
-              </div>
-              <div class="field">
-                <label for="g3-bore" class="scrub-label" data-scrub-for="g3-bore" title="Generator motor shaft diameter (e.g. 2.0 mm KidWind DC, 3.0/3.17 mm BLDC)">Motor Bore Ø (mm)</label>
-                <input id="g3-bore" type="number" min="1.5" max="12" step="0.1" value="3.0" />
-              </div>
-              <div class="field">
-                <label for="g3-dflat" class="scrub-label" data-scrub-for="g3-dflat">D-Flat Depth (mm)</label>
-                <input id="g3-dflat" type="number" min="0" max="2.0" step="0.1" value="0.4" />
-              </div>
-              <div class="field">
-                <label for="g3-boss-h" class="scrub-label" data-scrub-for="g3-boss-h">Top Collar H (mm)</label>
-                <input id="g3-boss-h" type="number" min="0" max="15" step="0.5" value="4.5" />
-              </div>
-            </div>
-          </div>
-
-          <div id="gearbox-metrics-readout" class="fit-badge ok" style="margin-top: 8px; line-height: 1.45">
-            Total Ratio G = 3.00:1 · Shaft Center Distances: a₁₂ = 72.50 mm · a₂₃ = 47.50 mm
-          </div>
-
-          <div class="toolbar" style="margin-top: 8px; flex-wrap: wrap">
-            <button id="btn-export-gears-all" class="btn-primary btn-mini" type="button" style="flex: 1.5" title="Download all 3 gears arranged flat on the build plate as a binary STL">
-              Export All 3 Gears (.STL)
-            </button>
-            <button id="btn-export-gear1" class="btn-mini" type="button" title="Export Gear 1 (Rotor Spoked Gear + Stepped Hub Boss) binary STL">
-              G1 STL
-            </button>
-            <button id="btn-export-gear2" class="btn-mini" type="button" title="Export Gear 2 (Compound Wheel + Coaxial Pinion) binary STL">
-              G2 STL
-            </button>
-            <button id="btn-export-gear3" class="btn-mini" type="button" title="Export Gear 3 (Generator Pinion) binary STL">
-              G3 STL
-            </button>
-          </div>
-        </section>
-
         <!-- Per-Station Override Table -->
         <section id="layer3-stations">
           <div class="section-title">
@@ -2741,7 +2655,247 @@
       </div>
     </aside>
 
-    <!-- Responsive Bottom Workspace Switcher (Tablet & Mobile <= 1180px) -->
+    <!-- Floating Gearbox Prototype Settings Inspector Dock (Active in Gearbox Studio) -->
+    <aside id="gearbox-inspector" aria-label="Gearbox Settings Inspector" class="open">
+      <div class="panel-header">
+        <div class="brand-title">
+          <span class="brand-dot" style="background: #38bdf8" aria-hidden="true"></span>
+          <h2>Gearbox Inspector</h2>
+          <span id="gearbox-summary" class="section-meta">3.00:1 · m 1.25</span>
+        </div>
+        <div class="toolbar">
+          <span id="gear-inspector-active-badge" class="section-meta" style="color: #38bdf8; font-weight: 500">All Gears</span>
+          <button id="btn-close-gearbox-inspector" class="btn-mini" type="button" title="Close Settings Inspector (Esc)" aria-label="Close Settings Inspector">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Gear Jump Pills inside Inspector -->
+      <nav class="section-nav" id="gearbox-quick-nav" aria-label="Gear Selection Navigation" style="padding: 6px 12px; border-bottom: 1px solid var(--border-hairline)">
+        <button id="btn-select-gear-train" type="button" class="active" title="Train-Wide Ratio &amp; Tooth Profile">Train</button>
+        <button id="btn-select-gear-g1" type="button" title="Gear 1: Rotor Spoked Bull Gear">G1 Bull</button>
+        <button id="btn-select-gear-g2" type="button" title="Gear 2: Compound Wheel &amp; Pinion">G2 Idler</button>
+        <button id="btn-select-gear-g3" type="button" title="Gear 3: Generator Motor Pinion">G3 Pinion</button>
+      </nav>
+
+      <div class="panel-scroll" id="gearbox-scroll-container">
+        <div class="toolbar" style="margin-bottom: 8px; flex-wrap: wrap">
+          <button id="btn-gearbox-3d-view" class="btn-primary btn-mini" type="button" style="flex: 1.3" title="Switch main 3D viewport to inspect &amp; animate the 3D Gearbox Prototype">
+            Show Gearbox in 3D Viewport
+          </button>
+          <button id="btn-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference CAD Layout (all 3 gears separated cleanly)">
+            Side-by-Side
+          </button>
+          <button id="btn-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout (exact center-to-center shaft distances)">
+            Meshed
+          </button>
+        </div>
+
+        <div id="gear-train-card" class="aero-subbox">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Train Architecture &amp; Tooth Profile</span>
+            <span id="gear-tooth-badge" class="section-meta">Helical 15°</span>
+          </div>
+          <div class="field" style="margin-top: 6px; margin-bottom: 6px">
+            <label for="gear-stage-mode">Gear Train Architecture</label>
+            <select id="gear-stage-mode">
+              <option value="idler_reference" selected>Ref 3-Gear Train (G1 Spoked → G2 Compound → G3 Pinion)</option>
+              <option value="compound_2stage">2-Stage Compound Step-Up ((Z1/Z2p) × (Z2w/Z3))</option>
+              <option value="direct_1stage">1-Stage 2-Gear Direct (G1 Spoked → G3 Pinion)</option>
+            </select>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="gear-module" class="scrub-label" data-scrub-for="gear-module" title="Metric gear tooth size Module m (mm) — Pitch Ø = m × Z">Module m (mm)</label>
+              <input id="gear-module" type="number" min="0.5" max="4.0" step="0.05" value="1.25" />
+            </div>
+            <div class="field">
+              <label for="gear-helix" class="scrub-label" data-scrub-for="gear-helix" title="Helix angle β (0° = straight Spur teeth, 15° = smooth Helical teeth with auto L/R hand)">Helix Angle β (°)</label>
+              <input id="gear-helix" type="number" min="0" max="35" step="1" value="15" />
+            </div>
+            <div class="field">
+              <label for="gear-pressure" class="scrub-label" data-scrub-for="gear-pressure">Pressure Angle α (°)</label>
+              <input id="gear-pressure" type="number" min="14.5" max="25" step="0.5" value="20" />
+            </div>
+            <div class="field">
+              <label for="gear-backlash" class="scrub-label" data-scrub-for="gear-backlash" title="3D printer tooth clearance so printed teeth mesh without binding">FDM Backlash (mm)</label>
+              <input id="gear-backlash" type="number" min="0" max="0.6" step="0.02" value="0.15" />
+            </div>
+          </div>
+
+          <div class="toolbar" style="margin-top: 6px">
+            <button id="btn-gear-solve-ratio" class="btn-mini" type="button" style="flex: 1" title="Automatically solve integer tooth counts (Z1, Z2, Z3) to match the BEM Aero Gear Ratio">
+              Solve Teeth for Aero G:1
+            </button>
+            <button id="btn-gear-sync-aero" class="btn-mini" type="button" style="flex: 1" title="Send this gearbox's exact tooth ratio into the BEM Generator &amp; AEP solver">
+              Sync Ratio → Aero Solver
+            </button>
+          </div>
+        </div>
+
+        <!-- Web Cutout Geometry Settings (Shared across Spoked Gears 1 & 2) -->
+        <div id="gear-cutouts-card" class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #38bdf8">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Web Cutout Settings (Gear 1 &amp; Gear 2)</span>
+            <span id="gear-cutout-badge" class="section-meta">26% Spoke · 74% Window</span>
+          </div>
+          <div class="grid-3" style="margin-top: 6px">
+            <div class="field">
+              <label for="gear-spoke-width" class="scrub-label" data-scrub-for="gear-spoke-width" title="Percentage of each angular sector occupied by the solid spoke arm (lower = wider window cutouts)">Spoke Width (%)</label>
+              <input id="gear-spoke-width" type="number" min="10" max="65" step="1" value="26" />
+            </div>
+            <div class="field">
+              <label for="gear-rim-wall" class="scrub-label" data-scrub-for="gear-rim-wall" title="Solid radial wall thickness inside the tooth root circle before window cutouts begin">Outer Rim (mm)</label>
+              <input id="gear-rim-wall" type="number" min="1.5" max="12" step="0.25" value="3.5" />
+            </div>
+            <div class="field">
+              <label for="gear-hub-ring" class="scrub-label" data-scrub-for="gear-hub-ring" title="Solid radial collar margin outside the hub boss (Gear 1) or coaxial pinion (Gear 2)">Hub Margin (mm)</label>
+              <input id="gear-hub-ring" type="number" min="1.0" max="12" step="0.25" value="2.5" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Gear 1: Mint-Green 4-Spoked Bull Gear + Orange Stepped Hub Boss -->
+        <div id="gear1-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #8fd9b6">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Gear 1 · Rotor Spoked Gear + Hub Boss</span>
+            <span id="g1-dia-badge" class="section-meta">Øp 75.0 mm</span>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="g1-teeth" class="scrub-label" data-scrub-for="g1-teeth">Teeth Z1</label>
+              <input id="g1-teeth" type="number" min="12" max="120" step="1" value="60" />
+            </div>
+            <div class="field">
+              <label for="g1-face" class="scrub-label" data-scrub-for="g1-face">Rim Face (mm)</label>
+              <input id="g1-face" type="number" min="2" max="30" step="0.5" value="5.0" />
+            </div>
+            <div class="field">
+              <label for="g1-spokes">Web Cutouts</label>
+              <select id="g1-spokes">
+                <option value="3">3 Spokes</option>
+                <option value="4" selected>4 Spokes (Ref CAD)</option>
+                <option value="5">5 Spokes</option>
+                <option value="6">6 Spokes</option>
+                <option value="8">8 Spokes</option>
+                <option value="0">Solid Disk (0)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="g1-bore" class="scrub-label" data-scrub-for="g1-bore">Shaft Bore Ø (mm)</label>
+              <input id="g1-bore" type="number" min="2" max="20" step="0.2" value="6.0" />
+            </div>
+            <div class="field">
+              <label for="g1-dflat" class="scrub-label" data-scrub-for="g1-dflat" title="D-shaft flat depth (0 = round bore)">D-Flat Depth (mm)</label>
+              <input id="g1-dflat" type="number" min="0" max="3" step="0.1" value="0.5" />
+            </div>
+            <div class="field">
+              <label for="g1-hub-dia" class="scrub-label" data-scrub-for="g1-hub-dia">Orange Hub Ø (mm)</label>
+              <input id="g1-hub-dia" type="number" min="8" max="50" step="1" value="24.0" />
+            </div>
+            <div class="field">
+              <label for="g1-hub-h" class="scrub-label" data-scrub-for="g1-hub-h">Orange Hub H (mm)</label>
+              <input id="g1-hub-h" type="number" min="0" max="40" step="1" value="18.0" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Gear 2: Compound Idler (Purple Wheel + Lime Coaxial Pinion) -->
+        <div id="gear2-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #b84ba1">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Gear 2 · Compound Wheel + Coaxial Pinion</span>
+            <span id="g2-dia-badge" class="section-meta">Øp 70.0 / 18.8 mm</span>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="g2-wheel-teeth" class="scrub-label" data-scrub-for="g2-wheel-teeth">Purple Wheel Z2w</label>
+              <input id="g2-wheel-teeth" type="number" min="12" max="120" step="1" value="56" />
+            </div>
+            <div class="field">
+              <label for="g2-wheel-face" class="scrub-label" data-scrub-for="g2-wheel-face">Wheel Face (mm)</label>
+              <input id="g2-wheel-face" type="number" min="2" max="25" step="0.5" value="5.0" />
+            </div>
+            <div class="field">
+              <label for="g2-spokes">Web Cutouts (Purple)</label>
+              <select id="g2-spokes">
+                <option value="3">3 Spokes</option>
+                <option value="4" selected>4 Spokes (Cutouts)</option>
+                <option value="5">5 Spokes</option>
+                <option value="6">6 Spokes</option>
+                <option value="8">8 Spokes</option>
+                <option value="0">Solid Disk (Ref CAD)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="g2-pinion-teeth" class="scrub-label" data-scrub-for="g2-pinion-teeth">Lime Pinion Z2p</label>
+              <input id="g2-pinion-teeth" type="number" min="8" max="60" step="1" value="15" />
+            </div>
+            <div class="field">
+              <label for="g2-pinion-face" class="scrub-label" data-scrub-for="g2-pinion-face">Pinion Face (mm)</label>
+              <input id="g2-pinion-face" type="number" min="3" max="30" step="0.5" value="14.0" />
+            </div>
+            <div class="field">
+              <label for="g2-bore" class="scrub-label" data-scrub-for="g2-bore">Idler Bore Ø (mm)</label>
+              <input id="g2-bore" type="number" min="1.5" max="16" step="0.2" value="5.0" />
+            </div>
+            <div class="field">
+              <label for="g2-dflat" class="scrub-label" data-scrub-for="g2-dflat">D-Flat Depth (mm)</label>
+              <input id="g2-dflat" type="number" min="0" max="2.5" step="0.1" value="0.0" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Gear 3: Generator Output Pinion (Slate-Grey) -->
+        <div id="gear3-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #6d8388">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Gear 3 · Generator Motor Pinion</span>
+            <span id="g3-dia-badge" class="section-meta">Øp 25.0 mm</span>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="g3-teeth" class="scrub-label" data-scrub-for="g3-teeth">Pinion Teeth Z3</label>
+              <input id="g3-teeth" type="number" min="8" max="60" step="1" value="20" />
+            </div>
+            <div class="field">
+              <label for="g3-face" class="scrub-label" data-scrub-for="g3-face">Pinion Face (mm)</label>
+              <input id="g3-face" type="number" min="3" max="30" step="0.5" value="14.0" />
+            </div>
+            <div class="field">
+              <label for="g3-bore" class="scrub-label" data-scrub-for="g3-bore" title="Generator motor shaft diameter (e.g. 2.0 mm KidWind DC, 3.0/3.17 mm BLDC)">Motor Bore Ø (mm)</label>
+              <input id="g3-bore" type="number" min="1.5" max="12" step="0.1" value="3.0" />
+            </div>
+            <div class="field">
+              <label for="g3-dflat" class="scrub-label" data-scrub-for="g3-dflat">D-Flat Depth (mm)</label>
+              <input id="g3-dflat" type="number" min="0" max="2.0" step="0.1" value="0.4" />
+            </div>
+            <div class="field">
+              <label for="g3-boss-h" class="scrub-label" data-scrub-for="g3-boss-h">Top Collar H (mm)</label>
+              <input id="g3-boss-h" type="number" min="0" max="15" step="0.5" value="4.5" />
+            </div>
+          </div>
+        </div>
+
+        <div id="gearbox-metrics-readout" class="fit-badge ok" style="margin-top: 8px; line-height: 1.45">
+          Total Ratio G = 3.00:1 · Shaft Center Distances: a₁₂ = 72.50 mm · a₂₃ = 47.50 mm
+        </div>
+
+        <div class="toolbar" style="margin-top: 8px; flex-wrap: wrap">
+          <button id="btn-export-gears-all" class="btn-primary btn-mini" type="button" style="flex: 1.5" title="Download all 3 gears arranged flat on the build plate as a binary STL">
+            Export All 3 Gears (.STL)
+          </button>
+          <button id="btn-export-gear1" class="btn-mini" type="button" title="Export Gear 1 (Rotor Spoked Gear + Stepped Hub Boss) binary STL">
+            G1 STL
+          </button>
+          <button id="btn-export-gear2" class="btn-mini" type="button" title="Export Gear 2 (Compound Wheel + Coaxial Pinion) binary STL">
+            G2 STL
+          </button>
+          <button id="btn-export-gear3" class="btn-mini" type="button" title="Export Gear 3 (Generator Pinion) binary STL">
+            G3 STL
+          </button>
+        </div>
+      </div>
+    </aside>
     <nav id="mobile-workspace-nav" aria-label="Workspace Switcher">
       <button id="btn-mob-cad" type="button" class="active" aria-pressed="true" data-mobile-target="cad">
         <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>

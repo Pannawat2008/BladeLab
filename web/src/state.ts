@@ -1617,6 +1617,9 @@ export interface WorkbenchUiSnapshot {
   gen_r_load: number;
   exp_data_log: string;
   gearbox?: GearboxConfig;
+  studio_mode?: "blade" | "gearbox";
+  gearbox_selected_gear?: 1 | 2 | 3 | null;
+  gearbox_inspector_open?: boolean;
 }
 
 export interface WorkbenchSnapshot {
@@ -1692,6 +1695,9 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gen_r_load: 12.0,
     exp_data_log: "",
     gearbox: defaultGearboxConfig(),
+    studio_mode: "blade",
+    gearbox_selected_gear: null,
+    gearbox_inspector_open: true,
   };
 }
 

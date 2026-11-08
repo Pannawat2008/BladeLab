@@ -411,9 +411,30 @@ let latestAepReport: WindPowerAepReport | null = null;
 let latestMaxOutReport: DrivetrainMaxOutReport | null = null;
 
 let viewMode: "single" | "rotor" | "gearbox" = "rotor";
+let studioMode: "blade" | "gearbox" = "blade";
+let selectedGearIndex: 1 | 2 | 3 | null = null;
+let hoveredGearIndex: number | null = null;
 let wireframeMode = false;
 let spinRotorMode = false;
 let gearSpinAngleRad = 0;
+
+// ---- Studio Tabs & Gearbox Inspector DOM Elements ----
+const tabStudioBlade = document.getElementById("tab-studio-blade") as HTMLButtonElement | null;
+const tabStudioGearbox = document.getElementById("tab-studio-gearbox") as HTMLButtonElement | null;
+const gearboxInspector = document.getElementById("gearbox-inspector");
+const btnCloseGearboxInspector = document.getElementById("btn-close-gearbox-inspector") as HTMLButtonElement | null;
+const btnToggleGearboxInspector = document.getElementById("btn-toggle-gearbox-inspector") as HTMLButtonElement | null;
+const gearInspectorActiveBadge = document.getElementById("gear-inspector-active-badge");
+
+const btnSelectGearTrain = document.getElementById("btn-select-gear-train") as HTMLButtonElement | null;
+const btnSelectGearG1 = document.getElementById("btn-select-gear-g1") as HTMLButtonElement | null;
+const btnSelectGearG2 = document.getElementById("btn-select-gear-g2") as HTMLButtonElement | null;
+const btnSelectGearG3 = document.getElementById("btn-select-gear-g3") as HTMLButtonElement | null;
+
+const btnTbGearLayoutSide = document.getElementById("btn-tb-gear-layout-side") as HTMLButtonElement | null;
+const btnTbGearLayoutMesh = document.getElementById("btn-tb-gear-layout-mesh") as HTMLButtonElement | null;
+const btnTbGearSpin = document.getElementById("btn-tb-gear-spin") as HTMLButtonElement | null;
+const btnTbGearExportAll = document.getElementById("btn-tb-gear-export-all") as HTMLButtonElement | null;
 
 // ---- Gearbox Prototype DOM Elements ----
 const gearboxSummary = document.getElementById("gearbox-summary");
@@ -981,6 +1002,95 @@ function updateGearboxPanelUi(): GearboxConfig {
   return cfg;
 }
 
+function highlightSelectedGearIn3D(gearIdx: number | null) {
+  if (!rotorGroup || !rotorGroup.userData.isGearboxGroup) return;
+  rotorGroup.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.userData.gearIndex) {
+      const mat = obj.material as THREE.MeshStandardMaterial;
+      if (gearIdx !== null && obj.userData.gearIndex === gearIdx) {
+        mat.emissive.setHex(0x38bdf8);
+        mat.emissiveIntensity = 0.45;
+      } else {
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+    }
+  });
+}
+
+function updateGearboxHud(gearIdx: number | null) {
+  if (viewMode !== "gearbox") return;
+  const cfg = readCurrentGearboxConfig();
+  const m = computeGearboxMetrics(cfg);
+
+  let datumText = "";
+  if (gearIdx === 1) {
+    datumText = `GEAR 1 · ROTOR BULL GEAR (Z1 = ${cfg.g1_teeth}, Øp ${m.g1_pitch_dia_mm.toFixed(1)} mm, Face ${cfg.g1_face_width_mm} mm)`;
+  } else if (gearIdx === 2) {
+    datumText = `GEAR 2 · COMPOUND IDLER (Z2w = ${cfg.g2_wheel_teeth}, Z2p = ${cfg.g2_pinion_teeth}, Øp ${m.g2_wheel_pitch_dia_mm.toFixed(1)} / ${m.g2_pinion_pitch_dia_mm.toFixed(1)} mm)`;
+  } else if (gearIdx === 3) {
+    datumText = `GEAR 3 · GENERATOR PINION (Z3 = ${cfg.g3_teeth}, Øp ${m.g3_pitch_dia_mm.toFixed(1)} mm, Face ${cfg.g3_face_width_mm} mm)`;
+  } else {
+    datumText = `GEAR TRAIN G = ${m.total_ratio.toFixed(2)}:1 · m ${cfg.module_mm} · CLICK ANY GEAR IN 3D TO EDIT SETTINGS`;
+  }
+
+  if (hudRotorSpec) {
+    hudRotorSpec.textContent = datumText;
+  }
+}
+
+function selectGear(gearIdx: 1 | 2 | 3 | null, openInspector: boolean = true) {
+  selectedGearIndex = gearIdx;
+  highlightSelectedGearIn3D(gearIdx);
+
+  if (openInspector && gearboxInspector) {
+    gearboxInspector.classList.add("open");
+    btnToggleGearboxInspector?.classList.add("active");
+    btnToggleGearboxInspector?.setAttribute("aria-pressed", "true");
+  }
+
+  // Update badge in inspector header
+  if (gearInspectorActiveBadge) {
+    if (gearIdx === 1) {
+      gearInspectorActiveBadge.textContent = "Gear 1: Bull Gear (Z1)";
+      gearInspectorActiveBadge.style.color = "#8fd9b6";
+    } else if (gearIdx === 2) {
+      gearInspectorActiveBadge.textContent = "Gear 2: Compound (Z2)";
+      gearInspectorActiveBadge.style.color = "#b84ba1";
+    } else if (gearIdx === 3) {
+      gearInspectorActiveBadge.textContent = "Gear 3: Pinion (Z3)";
+      gearInspectorActiveBadge.style.color = "#38bdf8";
+    } else {
+      gearInspectorActiveBadge.textContent = "All Gears";
+      gearInspectorActiveBadge.style.color = "var(--text-secondary)";
+    }
+  }
+
+  // Update quick-nav buttons
+  btnSelectGearTrain?.classList.toggle("active", gearIdx === null);
+  btnSelectGearG1?.classList.toggle("active", gearIdx === 1);
+  btnSelectGearG2?.classList.toggle("active", gearIdx === 2);
+  btnSelectGearG3?.classList.toggle("active", gearIdx === 3);
+
+  // Update card highlights
+  const g1Card = document.getElementById("gear1-card");
+  const g2Card = document.getElementById("gear2-card");
+  const g3Card = document.getElementById("gear3-card");
+  const trainCard = document.getElementById("gear-train-card");
+  g1Card?.classList.toggle("card-selected", gearIdx === 1);
+  g2Card?.classList.toggle("card-selected", gearIdx === 2);
+  g3Card?.classList.toggle("card-selected", gearIdx === 3);
+
+  if (gearIdx !== null) {
+    const targetCard = document.getElementById(`gear${gearIdx}-card`);
+    targetCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } else {
+    trainCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  updateGearboxHud(gearIdx);
+}
+
 function rebuild3D(design: Design) {
   try {
     updateFabricationStatus(design);
@@ -1043,6 +1153,10 @@ function rebuild3D(design: Design) {
           polygonOffsetUnits: 1,
         });
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData.gearIndex = sub.gear_index;
+        mesh.userData.submeshId = sub.id;
+        mesh.userData.submeshName = sub.label;
+        mesh.userData.baseColor = sub.color_hex;
         pivot.add(mesh);
 
         if (!wireframeMode) {
@@ -1052,6 +1166,7 @@ function rebuild3D(design: Design) {
       }
 
       scene.add(rotorGroup);
+      highlightSelectedGearIn3D(selectedGearIndex);
       updateStats(elapsed, {
         triangle_count: gearBundle.total_triangles,
         volume_mm3: 0,
@@ -2056,6 +2171,9 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gen_r_load: Number.parseFloat(inputGenRLoad.value) || 12.0,
     exp_data_log: inputExpData.value || "",
     gearbox: readCurrentGearboxConfig(),
+    studio_mode: studioMode,
+    gearbox_selected_gear: selectedGearIndex,
+    gearbox_inspector_open: gearboxInspector?.classList.contains("open") ?? true,
   };
 }
 
@@ -2115,6 +2233,15 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
     applyGearboxConfigToDom(wb.gearbox);
   } else {
     applyGearboxConfigToDom(defaultGearboxConfig());
+  }
+
+  if (wb.studio_mode === "gearbox" || wb.view_mode === "gearbox") {
+    setStudioMode("gearbox");
+    if (wb.gearbox_selected_gear !== undefined) {
+      selectGear(wb.gearbox_selected_gear, Boolean(wb.gearbox_inspector_open ?? true));
+    }
+  } else {
+    setStudioMode("blade");
   }
 
   wireframeMode = Boolean(wb.wireframe_mode);
@@ -2253,19 +2380,104 @@ function setViewportMode(nextMode: "single" | "rotor" | "gearbox") {
   scheduleAutoSave();
 }
 
+function setStudioMode(mode: "blade" | "gearbox") {
+  studioMode = mode;
+  tabStudioBlade?.classList.toggle("active", mode === "blade");
+  tabStudioBlade?.setAttribute("aria-selected", String(mode === "blade"));
+  tabStudioGearbox?.classList.toggle("active", mode === "gearbox");
+  tabStudioGearbox?.setAttribute("aria-selected", String(mode === "gearbox"));
+
+  if (mode === "gearbox") {
+    document.body.classList.add("studio-gearbox-mode");
+    setViewportMode("gearbox");
+    gearboxInspector?.classList.add("open");
+    btnToggleGearboxInspector?.classList.add("active");
+    btnToggleGearboxInspector?.setAttribute("aria-pressed", "true");
+    selectGear(1, true);
+  } else {
+    document.body.classList.remove("studio-gearbox-mode");
+    gearboxInspector?.classList.remove("open");
+    btnToggleGearboxInspector?.classList.remove("active");
+    btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+    selectGear(null, false);
+    setViewportMode("rotor");
+    const r = workingDesign.rotor.radius_mm;
+    const l = Math.max(0, r - workingDesign.rotor.hub_radius_mm);
+    if (hudRotorSpec) {
+      hudRotorSpec.textContent = `R ${r} mm  L ${l.toFixed(0)} mm  B ${workingDesign.rotor.blade_count}`;
+    }
+  }
+  syncDockAccessibilityState();
+  syncTopDockOffset();
+  scheduleAutoSave();
+}
+
+tabStudioBlade?.addEventListener("click", () => setStudioMode("blade"));
+tabStudioGearbox?.addEventListener("click", () => setStudioMode("gearbox"));
+
+btnCloseGearboxInspector?.addEventListener("click", () => {
+  gearboxInspector?.classList.remove("open");
+  btnToggleGearboxInspector?.classList.remove("active");
+  btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+  syncDockAccessibilityState();
+});
+
+btnToggleGearboxInspector?.addEventListener("click", () => {
+  const isOpen = gearboxInspector?.classList.toggle("open");
+  btnToggleGearboxInspector.classList.toggle("active", Boolean(isOpen));
+  btnToggleGearboxInspector.setAttribute("aria-pressed", String(Boolean(isOpen)));
+  syncDockAccessibilityState();
+});
+
+btnSelectGearTrain?.addEventListener("click", () => selectGear(null, true));
+btnSelectGearG1?.addEventListener("click", () => selectGear(1, true));
+btnSelectGearG2?.addEventListener("click", () => selectGear(2, true));
+btnSelectGearG3?.addEventListener("click", () => selectGear(3, true));
+
 btnViewSingle.addEventListener("click", () => setViewportMode("single"));
 btnViewRotor.addEventListener("click", () => setViewportMode("rotor"));
-btnViewGearbox?.addEventListener("click", () => setViewportMode("gearbox"));
+btnViewGearbox?.addEventListener("click", () => setStudioMode("gearbox"));
 btnGearbox3dView?.addEventListener("click", () => {
-  setViewportMode(viewMode === "gearbox" ? "rotor" : "gearbox");
+  setStudioMode(studioMode === "gearbox" ? "blade" : "gearbox");
+});
+
+btnTbGearLayoutSide?.addEventListener("click", () => {
+  activeGearLayoutMode = "side_by_side";
+  btnTbGearLayoutSide.classList.add("active");
+  btnTbGearLayoutMesh?.classList.remove("active");
+  btnGearLayoutSide?.classList.add("active");
+  btnGearLayoutMesh?.classList.remove("active");
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+});
+
+btnTbGearLayoutMesh?.addEventListener("click", () => {
+  activeGearLayoutMode = "meshed";
+  btnTbGearLayoutMesh.classList.add("active");
+  btnTbGearLayoutSide?.classList.remove("active");
+  btnGearLayoutMesh?.classList.add("active");
+  btnGearLayoutSide?.classList.remove("active");
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+});
+
+btnTbGearSpin?.addEventListener("click", () => {
+  btnViewSpin.click();
+  btnTbGearSpin.classList.toggle("active", spinRotorMode);
+});
+
+btnTbGearExportAll?.addEventListener("click", () => {
+  btnExportGearsAll?.click();
 });
 
 btnGearLayoutSide?.addEventListener("click", () => {
   activeGearLayoutMode = "side_by_side";
   btnGearLayoutSide.classList.add("active");
   btnGearLayoutMesh?.classList.remove("active");
+  btnTbGearLayoutSide?.classList.add("active");
+  btnTbGearLayoutMesh?.classList.remove("active");
   if (viewMode !== "gearbox") {
-    setViewportMode("gearbox");
+    setStudioMode("gearbox");
   } else {
     rebuild3D(workingDesign);
     scheduleAutoSave();
@@ -2276,8 +2488,10 @@ btnGearLayoutMesh?.addEventListener("click", () => {
   activeGearLayoutMode = "meshed";
   btnGearLayoutMesh.classList.add("active");
   btnGearLayoutSide?.classList.remove("active");
+  btnTbGearLayoutMesh?.classList.add("active");
+  btnTbGearLayoutSide?.classList.remove("active");
   if (viewMode !== "gearbox") {
-    setViewportMode("gearbox");
+    setStudioMode("gearbox");
   } else {
     rebuild3D(workingDesign);
     scheduleAutoSave();
@@ -3671,6 +3885,23 @@ function syncDockAccessibilityState() {
     ? mobilePane !== "aero"
     : document.body.classList.contains("hide-right-dock");
 
+  if (studioMode === "gearbox") {
+    if (panelEl) {
+      panelEl.inert = true;
+      panelEl.setAttribute("aria-hidden", "true");
+    }
+    if (aeroDockEl) {
+      aeroDockEl.inert = true;
+      aeroDockEl.setAttribute("aria-hidden", "true");
+    }
+    if (gearboxInspector) {
+      const open = gearboxInspector.classList.contains("open");
+      (gearboxInspector as any).inert = !open;
+      gearboxInspector.setAttribute("aria-hidden", String(!open));
+    }
+    return;
+  }
+
   if (panelEl) {
     panelEl.inert = leftHidden;
     panelEl.setAttribute("aria-hidden", String(leftHidden));
@@ -3678,6 +3909,10 @@ function syncDockAccessibilityState() {
   if (aeroDockEl) {
     aeroDockEl.inert = rightHidden;
     aeroDockEl.setAttribute("aria-hidden", String(rightHidden));
+  }
+  if (gearboxInspector) {
+    (gearboxInspector as any).inert = true;
+    gearboxInspector.setAttribute("aria-hidden", "true");
   }
 
   btnToggleLeft?.classList.toggle("active", !leftHidden);
@@ -3775,7 +4010,6 @@ bindDockSectionNav("#panel-section-nav", panelScrollContainer, [
   "layer2-planform",
   "layer2-sections",
   "layer-fabrication",
-  "layer-gearbox",
   "layer3-stations",
 ]);
 
@@ -3865,6 +4099,87 @@ renderer.setAnimationLoop((now) => {
 
   controls.update();
   renderer.render(scene, camera);
+});
+
+// ---- 3D Gear Raycaster & Interactive Click/Hover Selection ----
+const gearRaycaster = new THREE.Raycaster();
+const gearMouse = new THREE.Vector2();
+let gearPointerDownPos = { x: 0, y: 0 };
+
+renderer.domElement.addEventListener("pointerdown", (ev) => {
+  gearPointerDownPos = { x: ev.clientX, y: ev.clientY };
+});
+
+renderer.domElement.addEventListener("pointermove", (ev) => {
+  if (viewMode !== "gearbox" || !rotorGroup || !rotorGroup.userData.isGearboxGroup) {
+    renderer.domElement.style.cursor = "default";
+    return;
+  }
+  const rect = renderer.domElement.getBoundingClientRect();
+  gearMouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  gearMouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  gearRaycaster.setFromCamera(gearMouse, camera);
+
+  const intersects = gearRaycaster.intersectObjects(rotorGroup.children, true);
+  let foundGearIndex: (1 | 2 | 3) | null = null;
+  for (const hit of intersects) {
+    if (hit.object instanceof THREE.Mesh && hit.object.userData.gearIndex) {
+      foundGearIndex = hit.object.userData.gearIndex as (1 | 2 | 3);
+      break;
+    }
+  }
+
+  if (foundGearIndex !== null) {
+    renderer.domElement.style.cursor = "pointer";
+    if (hoveredGearIndex !== foundGearIndex) {
+      hoveredGearIndex = foundGearIndex;
+      updateGearboxHud(foundGearIndex);
+    }
+  } else {
+    renderer.domElement.style.cursor = "default";
+    if (hoveredGearIndex !== null) {
+      hoveredGearIndex = null;
+      updateGearboxHud(selectedGearIndex);
+    }
+  }
+});
+
+renderer.domElement.addEventListener("pointerup", (ev) => {
+  if (Math.hypot(ev.clientX - gearPointerDownPos.x, gearPointerDownPos.y - ev.clientY) > 6) {
+    return; // Orbit drag
+  }
+  if (viewMode !== "gearbox" || !rotorGroup || !rotorGroup.userData.isGearboxGroup) {
+    return;
+  }
+  const rect = renderer.domElement.getBoundingClientRect();
+  gearMouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  gearMouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  gearRaycaster.setFromCamera(gearMouse, camera);
+
+  const intersects = gearRaycaster.intersectObjects(rotorGroup.children, true);
+  let foundGearIndex: (1 | 2 | 3) | null = null;
+  for (const hit of intersects) {
+    if (hit.object instanceof THREE.Mesh && hit.object.userData.gearIndex) {
+      foundGearIndex = hit.object.userData.gearIndex as (1 | 2 | 3);
+      break;
+    }
+  }
+
+  if (foundGearIndex !== null) {
+    selectGear(foundGearIndex, true);
+  } else {
+    // Clicked empty background
+    selectGear(null, false);
+  }
+});
+
+addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && studioMode === "gearbox" && gearboxInspector?.classList.contains("open")) {
+    gearboxInspector.classList.remove("open");
+    btnToggleGearboxInspector?.classList.remove("active");
+    btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+    syncDockAccessibilityState();
+  }
 });
 
 addEventListener("resize", () => {

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 85**
-> **LAST_UPDATED: 2026-11-07 21:49 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 86**
+> **LAST_UPDATED: 2026-11-08 11:38 (UTC+7) by geom-1**
 
 ---
 
@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-08 11:21 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-08 11:38 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -495,6 +495,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-055** | 2026-11-07 21:49 | geom-1 | T-105
   Extended the Gearbox Prototype (`#layer-gearbox`, `GearboxConfig`, `buildToothedWheelMesh`, `buildGearboxMeshes`) with **Web Cutouts on Gear 2 (Purple Compound Wheel)** and **Customizable Web Cutout Geometry Settings** across Gear 1 & Gear 2: (1) added `g2_spokes` (`#g2-spokes`: `0 = Solid Disk`, `3`, `4`, `5`, `6`, `8` spokes; default `4`) on Gear 2's Purple Compound Wheel while automatically sizing its inner solid hub collar to `0.5 * g2_pinion_outer_dia_mm + hub_ring_mm` so the coaxial Lime-Green Pinion's teeth sit on a solid purple ring and never overhang the cutout windows; (2) expanded `#g1-spokes` options to `0, 3, 4, 5, 6, 8` spokes; and (3) added `spoke_width_pct` (`#gear-spoke-width`, `10%–65%` of each sector, default `26%`), `rim_wall_mm` (`#gear-rim-wall`, `1.5–12.0 mm` solid radial wall inside the tooth root circle $r_f$, default `3.5 mm`), and `hub_ring_mm` (`#gear-hub-ring`, `1.0–12.0 mm` solid radial collar margin outside the hub boss / coaxial pinion, default `2.5 mm`).
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-054
+
+- **F-geom1-056** | 2026-11-08 11:38 | geom-1 | T-105
+  Separated the Gearbox Prototype into a dedicated **Gearbox Studio** workspace tab and added an **Interactive 3D Gear Settings Inspector Drawer**: (1) added top-dock Studio Mode switcher (`#tab-studio-blade` vs `#tab-studio-gearbox`), where selecting Gearbox Studio activates `body.studio-gearbox-mode`, hiding `#panel` (CAD dock), `#aero-dock` (Telemetry dock), and blade export/view tools (`display: none !important`) so all blade settings are completely hidden and the 3D viewport takes full stage; (2) adapted viewport toolbar in Gearbox Studio with layout mode buttons (`Side-by-Side` vs `Meshed`), tooth mesh rotation animation (`▶ Spin`), 3-gear binary STL export, and `⚙ Gear Settings` drawer toggle; (3) removed `<section id="layer-gearbox">` and the 'Gears' quick-nav button from `#panel` so the CAD dock remains strictly focused on rotor blade geometry; (4) created `#gearbox-inspector` docked on the left beside the 3D viewport with quick-jump gear pills (`Train`, `G1 Bull`, `G2 Idler`, `G3 Pinion`) and collapsible cards for Train Architecture, Web Cutouts, Gear 1, Gear 2, Gear 3, and STL export; and (5) implemented Three.js raycasting on the 3D canvas so hovering turns the cursor to `pointer` with technical HUD feedback, and clicking any gear in 3D highlights it with cyan emissive glow, slides open the inspector, and focuses that gear's settings card (`.card-selected`).
+  refs: web/index.html, web/src/main.ts, web/src/state.ts, web/scripts/types.test.mjs | supersedes: F-geom1-055
 
 ### 9.3 Decisions (D)
 
@@ -906,3 +910,4 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-07T21:48:30+07:00 agent=geom-1 mem=v85 last_entry=F-geom1-055 task=T-105 note="Added Web Cutouts to Gear 2 (g2_spokes 0..8 with automatic coaxial pinion collar clearance) and Web Cutout Settings (spoke_width_pct, rim_wall_mm, hub_ring_mm) across Gear 1 & Gear 2; 15/15 Node tests + tsc + vite build pass"
 [ACK] 2026-11-08T11:21:00+07:00 agent=geom-1 mem=v85 last_entry=F-geom1-055 task=T-105
 note="lead requested via /grill-me: move Gear section to a dedicated 'Gearbox' studio workspace tab hiding all blade panels (left CAD & right Aero docks), interactive 3D gear raycasting/click to open a left-side Gear Settings inspector panel beside the viewport focusing the clicked gear's parameters, with viewport toolbar adapting to gearbox mode"
+[END] 2026-11-08T11:38:30+07:00 agent=geom-1 mem=v86 note="Moved Gear section to dedicated Gearbox Studio tab with complete blade settings hidden, added left-side Gear Settings Inspector drawer, and implemented interactive 3D gear click raycaster and selection; 16/16 Node tests + tsc + vite build + cargo test clean; F-geom1-056 recorded"
