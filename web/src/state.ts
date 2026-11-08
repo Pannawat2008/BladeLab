@@ -1578,6 +1578,7 @@ export interface FabricationSnapshot {
 
 export type StructuralMaterialKey = "pla" | "petg" | "asa" | "pacf";
 export type HeatmapMode = "segment" | "alpha" | "cl_cd" | "torque" | "wall_stress" | "wind_impact";
+export type ImpactSide = "top" | "bottom";
 
 export interface WingletConfig {
   enabled: boolean;
@@ -1630,6 +1631,7 @@ export interface WorkbenchUiSnapshot {
   gearbox_inspector_open?: boolean;
   collective_pitch_deg?: number;
   winglet?: WingletConfig;
+  impact_side?: ImpactSide;
 }
 
 export interface WorkbenchSnapshot {
@@ -1716,6 +1718,7 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
       sweep_angle_deg: 10.0,
       blend_radius_mm: 15.0,
     },
+    impact_side: "top",
   };
 }
 
@@ -2353,6 +2356,7 @@ export function computeVertexHeatmapColors(
   mode: HeatmapMode,
   normals?: ArrayLike<number>,
   collectivePitchDeg: number = 0,
+  impactSide: ImpactSide = "top",
 ): HeatmapResult {
   const vCount = Math.floor(positions.length / 3);
   const colors = new Float32Array(vCount * 3);
@@ -2483,28 +2487,33 @@ export function computeVertexHeatmapColors(
       const alpha = phi - effTheta;
 
       let nx = 0;
-      let ny = -1;
+      let ny = impactSide === "top" ? 1 : -1;
       if (hasNormals && normals) {
         nx = Number(normals[i * 3]) || 0;
         ny = Number(normals[i * 3 + 1]) || 0;
       } else {
-        ny = Number(positions[i * 3 + 1]) <= 0 ? -1 : 1;
+        const yVal = Number(positions[i * 3 + 1]) || 0;
+        ny = yVal >= 0 ? 1 : -1;
       }
+
+      // If impactSide is "top": surface facing +Y is windward (amber/red impact)
+      // If impactSide is "bottom": surface facing -Y is windward (amber/red impact)
+      const signedNy = impactSide === "top" ? ny : -ny;
 
       // Relative flow aerodynamic exposure:
       // -nx * cos(alpha) > 0: Leading edge facing oncoming chordwise flow (crimson stagnation line)
-      // ny < 0: Windward pressure side (lower face) facing oncoming axial wind flow (warm amber/red)
-      // ny > 0: Leeward suction side (upper curved face) generating aerodynamic lift depression (cool cyan/blue)
+      // signedNy > 0: Windward pressure side facing oncoming axial wind flow (warm amber/red)
+      // signedNy < 0: Leeward suction side generating aerodynamic lift depression (cool cyan/blue)
       const leImpact = Math.max(0, -nx * Math.cos(alpha));
-      const windwardLift = ny < 0 ? (-ny) * (0.35 + 0.65 * Math.sin(Math.max(0.04, alpha))) : 0;
+      const windwardLift = signedNy > 0 ? signedNy * (0.35 + 0.65 * Math.sin(Math.max(0.04, alpha))) : 0;
       const posExposure = Math.min(1.0, leImpact + windwardLift);
 
       let pNorm = 0;
-      if (ny <= 0 || leImpact > 0.25) {
+      if (signedNy >= 0 || leImpact > 0.25) {
         pNorm = posExposure;
       } else {
         const cl = stations.length > 0 ? Math.max(0.25, interpolateStationField(stations, s, "cl")) : 0.85;
-        const suctionIntensity = Math.min(1.0, ny * (cl / 1.35));
+        const suctionIntensity = Math.min(1.0, Math.abs(signedNy) * (cl / 1.35));
         pNorm = -suctionIntensity;
       }
 
