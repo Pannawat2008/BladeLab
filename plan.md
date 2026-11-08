@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-06 00:56 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-08 11:21 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -904,3 +904,5 @@ Statuses: `Proposed` | `Accepted` | `Superseded`
 [END] 2026-11-07T21:34:30+07:00 agent=geom-1 mem=v84 last_entry=F-geom1-054 task=T-105 note="Implemented Gearbox Prototype tab (#layer-gearbox), 3D Viewport Gearbox mode (#btn-view-gearbox), true involute spur/helical 3-gear mesh builder (4-spoked Mint+Orange G1, Purple+Lime compound G2, Slate pinion G3), 2-way Aero G:1 sync, and per-gear + full-plate binary STL export; 15/15 Node tests + tsc + vite build pass"
 [RE-ACK] 2026-11-07T21:40:30+07:00 agent=geom-1 mem=v84 last_entry=F-geom1-054 task=T-105 note="lead requested adding Web Cutouts to Gear 2 (Purple Compound Wheel) and adding more customization settings for Web Cutouts (spoke count 0..8, spoke width %, outer rim wall mm, inner hub ring margin mm)"
 [END] 2026-11-07T21:48:30+07:00 agent=geom-1 mem=v85 last_entry=F-geom1-055 task=T-105 note="Added Web Cutouts to Gear 2 (g2_spokes 0..8 with automatic coaxial pinion collar clearance) and Web Cutout Settings (spoke_width_pct, rim_wall_mm, hub_ring_mm) across Gear 1 & Gear 2; 15/15 Node tests + tsc + vite build pass"
+[ACK] 2026-11-08T11:21:00+07:00 agent=geom-1 mem=v85 last_entry=F-geom1-055 task=T-105
+note="lead requested via /grill-me: move Gear section to a dedicated 'Gearbox' studio workspace tab hiding all blade panels (left CAD & right Aero docks), interactive 3D gear raycasting/click to open a left-side Gear Settings inspector panel beside the viewport focusing the clicked gear's parameters, with viewport toolbar adapting to gearbox mode"
