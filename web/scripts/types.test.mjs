@@ -964,11 +964,11 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
   const meshData = build_mesh(JSON.stringify(initialDesign), "{}");
   const vCount = Math.floor(meshData.positions.length / 3);
 
-  // Synthesize normals: half pointing windward (+Y), half leeward (-Y)
+  // Synthesize normals: even pointing to lower windward face (-Y), odd pointing to upper suction face (+Y)
   const syntheticNormals = new Float32Array(vCount * 3);
   for (let i = 0; i < vCount; i++) {
     syntheticNormals[i * 3] = 0;
-    syntheticNormals[i * 3 + 1] = i % 2 === 0 ? 1 : -1;
+    syntheticNormals[i * 3 + 1] = i % 2 === 0 ? -1 : 1;
     syntheticNormals[i * 3 + 2] = 0;
   }
 
@@ -991,8 +991,8 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
   assert.equal(hmImpact.colors.length, meshData.positions.length);
 
   // Check RGB ranges and contrast:
-  // Even vertex has ny = +1 (faces flow) -> warm stagnation impact (R > B)
-  // Odd vertex has ny = -1 (suction side) -> cool suction lift (B > R)
+  // Even vertex has ny = -1 (lower face facing incoming flow) -> warm stagnation impact (R >= B)
+  // Odd vertex has ny = +1 (upper suction side) -> cool suction lift (B >= R)
   for (let i = 0; i < vCount; i++) {
     const r = hmImpact.colors[i * 3];
     const g = hmImpact.colors[i * 3 + 1];

@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 89**
-> **LAST_UPDATED: 2026-11-08 19:35 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 90**
+> **LAST_UPDATED: 2026-11-08 19:56 (UTC+7) by geom-1**
 
 ---
 
@@ -516,6 +516,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Verified by 17 Node tests (`node --test scripts/types.test.mjs`), `tsc --noEmit`, `vite build`, and full workspace `cargo test` (153 unit/integration tests + 11 doc-tests).
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-060** | 2026-11-08 19:56 | geom-1 | T-105
+  Corrected windward vs leeward aerodynamic surface orientation in `computeVertexHeatmapColors` (`mode: "wind_impact"`): (1) in standard lifting blade coordinates, oncoming wind impacts the flat/concave lower pressure face ($n_y < 0$) generating positive stagnation impact (+red/amber), while the cambered upper face ($n_y > 0$) accelerates flow creating negative Bernoulli suction lift (-blue/cyan); (2) updated normal evaluation so $n_y < 0$ or leading edge $n_x < 0$ produce positive impact pressure $P \sim +q_{\text{local}}$ while $n_y > 0$ produces negative suction lift $P \sim -C_l \cdot q_{\text{local}}$; (3) verified by 17/17 Node tests, `tsc --noEmit`, and `vite build`.
+  refs: web/src/state.ts, web/scripts/types.test.mjs | supersedes: F-geom1-059
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -936,3 +940,6 @@ note="lead requested: gear 1 should be rotate on pinon gear on gear 2; setting d
 [ACK] 2026-11-08T19:18:00+07:00 agent=geom-1 mem=v88 last_entry=F-geom1-058 task=T-105
 note="lead approved implementing: (1) Windward Wind Impact & Surface Pressure Heatmap (with stagnation line, windward impact vs leeward suction), (2) Interactive Collective Pitch Angle Slider & Feathering Simulator with live 3D blade rotation & BEM solver coupling, and (3) Parametric Winglets / Up-Turned Blade Tips"
 [END] 2026-11-08T19:35:00+07:00 agent=geom-1 mem=v89 note="Added Windward Impact & Stagnation Surface Pressure Heatmap, Collective Pitch & Feathering Simulator with live 3D blade rotation & Ning BEM coupling, and Parametric Winglets / Up-Turned Blade Tips; 17/17 Node tests + tsc + vite build + 164 cargo tests clean; F-geom1-059 recorded"
+[ACK] 2026-11-08T19:48:30+07:00 agent=geom-1 mem=v89 last_entry=F-geom1-059 task=T-105
+note="investigating user feedback: 'i think you put the blade the wrong sided right when i put other side its better' — analyzing blade orientation, winglet side, wind direction, rotor spin direction, and heatmap facing"
+[END] 2026-11-08T19:56:30+07:00 agent=geom-1 mem=v90 note="Flipped Windward Impact Heatmap surface orientation so lower face receives stagnation impact (+red/amber) and upper curved face receives suction lift (-blue/cyan); 17/17 Node tests + tsc + vite build clean; F-geom1-060 recorded"

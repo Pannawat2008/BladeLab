@@ -2483,28 +2483,28 @@ export function computeVertexHeatmapColors(
       const alpha = phi - effTheta;
 
       let nx = 0;
-      let ny = 1;
+      let ny = -1;
       if (hasNormals && normals) {
         nx = Number(normals[i * 3]) || 0;
         ny = Number(normals[i * 3 + 1]) || 0;
       } else {
-        ny = Number(positions[i * 3 + 1]) >= 0 ? 1 : -1;
+        ny = Number(positions[i * 3 + 1]) <= 0 ? -1 : 1;
       }
 
       // Relative flow aerodynamic exposure:
-      // -nx * cos(alpha) > 0: Leading edge facing oncoming chordwise flow (stagnation line)
-      // ny > 0: Windward pressure side facing oncoming axial wind flow (warm amber/red)
-      // ny < 0: Leeward suction side generating aerodynamic lift depression (cool cyan/blue)
+      // -nx * cos(alpha) > 0: Leading edge facing oncoming chordwise flow (crimson stagnation line)
+      // ny < 0: Windward pressure side (lower face) facing oncoming axial wind flow (warm amber/red)
+      // ny > 0: Leeward suction side (upper curved face) generating aerodynamic lift depression (cool cyan/blue)
       const leImpact = Math.max(0, -nx * Math.cos(alpha));
-      const windwardLift = ny > 0 ? ny * (0.35 + 0.65 * Math.sin(Math.max(0.04, alpha))) : 0;
+      const windwardLift = ny < 0 ? (-ny) * (0.35 + 0.65 * Math.sin(Math.max(0.04, alpha))) : 0;
       const posExposure = Math.min(1.0, leImpact + windwardLift);
 
       let pNorm = 0;
-      if (ny >= 0 || leImpact > 0.25) {
+      if (ny <= 0 || leImpact > 0.25) {
         pNorm = posExposure;
       } else {
         const cl = stations.length > 0 ? Math.max(0.25, interpolateStationField(stations, s, "cl")) : 0.85;
-        const suctionIntensity = Math.min(1.0, Math.abs(ny) * (cl / 1.35));
+        const suctionIntensity = Math.min(1.0, ny * (cl / 1.35));
         pNorm = -suctionIntensity;
       }
 
