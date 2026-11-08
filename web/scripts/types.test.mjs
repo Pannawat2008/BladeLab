@@ -61,6 +61,8 @@ import {
   solveGearTeethForTargetRatio,
   buildGearboxMeshes,
   exportGearStlBytes,
+  applyWingletToBladeGeometry,
+  exportBufferGeometryStlBytes,
 } from "../src/state.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -948,6 +950,173 @@ test("Gearbox Studio workspace tab and interactive 3D gear settings inspector (T
   assert.ok(!panelHtml.includes('id="layer-gearbox"'), "CAD panel must not contain layer-gearbox");
   assert.ok(!panelHtml.includes('data-scroll-target="layer-gearbox"'), "CAD section nav must not contain Gears button");
 });
+
+test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact Heatmap (T-105)", () => {
+  const require = createRequire(import.meta.url);
+  const { build_mesh, simulate_aero } = require("../../target/glue-node/blade_wasm.js");
+
+  // 1. Windward Wind Impact & Stagnation Surface Pressure Heatmap
+  const aeroJson = simulate_aero(
+    JSON.stringify(initialDesign),
+    JSON.stringify({ tsr_min: 1.5, tsr_max: 9.0, tsr_steps: 12 }),
+  );
+  const bundle = JSON.parse(aeroJson);
+  const meshData = build_mesh(JSON.stringify(initialDesign), "{}");
+  const vCount = Math.floor(meshData.positions.length / 3);
+
+  // Synthesize normals: half pointing windward (+Y), half leeward (-Y)
+  const syntheticNormals = new Float32Array(vCount * 3);
+  for (let i = 0; i < vCount; i++) {
+    syntheticNormals[i * 3] = 0;
+    syntheticNormals[i * 3 + 1] = i % 2 === 0 ? 1 : -1;
+    syntheticNormals[i * 3 + 2] = 0;
+  }
+
+  const hmImpact = computeVertexHeatmapColors(
+    meshData.positions,
+    initialDesign,
+    bundle,
+    null,
+    "wind_impact",
+    syntheticNormals,
+    0.0,
+  );
+
+  assert.equal(hmImpact.mode, "wind_impact");
+  assert.equal(hmImpact.title, "Windward Impact & Surface Pressure (Pa)");
+  assert.ok(hmImpact.minLabel.includes("Suction Lift"));
+  assert.ok(hmImpact.maxLabel.includes("Stagnation Impact"));
+  assert.ok(hmImpact.gradientCss.includes("#1e3a8a"));
+  assert.ok(hmImpact.gradientCss.includes("#ef4444"));
+  assert.equal(hmImpact.colors.length, meshData.positions.length);
+
+  // Check RGB ranges and contrast:
+  // Even vertex has ny = +1 (faces flow) -> warm stagnation impact (R > B)
+  // Odd vertex has ny = -1 (suction side) -> cool suction lift (B > R)
+  for (let i = 0; i < vCount; i++) {
+    const r = hmImpact.colors[i * 3];
+    const g = hmImpact.colors[i * 3 + 1];
+    const b = hmImpact.colors[i * 3 + 2];
+    assert.ok(r >= 0 && r <= 1, `red out of bounds at ${i}`);
+    assert.ok(g >= 0 && g <= 1, `green out of bounds at ${i}`);
+    assert.ok(b >= 0 && b <= 1, `blue out of bounds at ${i}`);
+
+    if (i % 2 === 0) {
+      assert.ok(r >= b, `windward vertex ${i} should have warm color (r >= b): r=${r}, b=${b}`);
+    } else {
+      assert.ok(b >= r, `leeward suction vertex ${i} should have cool color (b >= r): b=${b}, r=${r}`);
+    }
+  }
+
+  // 2. Parametric Winglet / Up-Turned Blade Tip
+  const rTip = initialDesign.rotor.radius_mm; // 600 mm
+  const blendR = 25;
+  const zStart = rTip - blendR; // 575 mm
+
+  // Position buffer with root, mid, blend-start, and tip points
+  const testPositions = new Float32Array([
+    0, 0, 60,       // root
+    10, 0, 300,     // mid
+    5, 0, zStart,   // exact blend transition start
+    0, 0, rTip,     // tip
+  ]);
+  const originalCopy = new Float32Array(testPositions);
+
+  // When disabled: no changes
+  applyWingletToBladeGeometry(testPositions, initialDesign, {
+    enabled: false,
+    cant_angle_deg: 50,
+    height_mm: 30,
+    sweep_angle_deg: 15,
+    blend_radius_mm: blendR,
+  });
+  for (let i = 0; i < testPositions.length; i++) {
+    assert.equal(testPositions[i], originalCopy[i], "disabled winglet must not modify coordinates");
+  }
+
+  // When enabled: root and mid are strictly untouched; tip is deflected
+  applyWingletToBladeGeometry(testPositions, initialDesign, {
+    enabled: true,
+    cant_angle_deg: 50,
+    height_mm: 30,
+    sweep_angle_deg: 15,
+    blend_radius_mm: blendR,
+  });
+
+  // Root (i=0) and Mid (i=1) and transition point (i=2) must be unchanged
+  assert.equal(testPositions[0], originalCopy[0]);
+  assert.equal(testPositions[1], originalCopy[1]);
+  assert.equal(testPositions[2], originalCopy[2]);
+  assert.equal(testPositions[3], originalCopy[3]);
+  assert.equal(testPositions[4], originalCopy[4]);
+  assert.equal(testPositions[5], originalCopy[5]);
+  assert.equal(testPositions[6], originalCopy[6]);
+  assert.equal(testPositions[7], originalCopy[7]);
+  assert.equal(testPositions[8], originalCopy[8]);
+
+  // Tip (i=3) must have positive out-of-plane dihedral bend (+Y) and backward sweep (+X)
+  const tipX = testPositions[9];
+  const tipY = testPositions[10];
+  const tipZ = testPositions[11];
+  assert.ok(tipY > 15, `expected tip upward dihedral deflection > 15 mm, got ${tipY}`);
+  assert.ok(tipX > 5, `expected tip backward sweep deflection > 5 mm, got ${tipX}`);
+  assert.ok(tipZ <= rTip + 0.001, `tip span should curve smoothly within radius: ${tipZ}`);
+
+  // 3. Binary STL Export of BufferGeometry
+  const flatPositions = new Float32Array([
+    0, 0, 0,  10, 0, 0,  0, 10, 0, // Triangle 1
+    10, 0, 0, 10, 10, 0, 0, 10, 0, // Triangle 2
+  ]);
+  const stlBytes = exportBufferGeometryStlBytes(flatPositions, "BladeLab Winglet Test STL");
+  assert.equal(stlBytes.byteLength, 84 + 2 * 50);
+  const stlView = new DataView(stlBytes.buffer, stlBytes.byteOffset, stlBytes.byteLength);
+  assert.equal(stlView.getUint32(80, true), 2, "triangle count in header must be 2");
+  // Triangle 1 normal should point along +Z (0, 0, 1)
+  assert.ok(Math.abs(stlView.getFloat32(84 + 8, true) - 1.0) < 1e-4);
+
+  // 4. Workbench Snapshot round-trip for Collective Pitch & Winglets
+  const defWb = defaultWorkbenchUiSnapshot();
+  assert.equal(defWb.collective_pitch_deg, 0.0);
+  assert.equal(defWb.winglet.enabled, false);
+  assert.equal(defWb.winglet.cant_angle_deg, 50.0);
+
+  const customSnap = createWorkbenchSnapshot(
+    initialDesign,
+    {},
+    {
+      collective_pitch_deg: 4.0,
+      winglet: {
+        enabled: true,
+        cant_angle_deg: 65,
+        height_mm: 35,
+        sweep_angle_deg: 18,
+        blend_radius_mm: 20,
+      },
+    },
+  );
+  assert.equal(customSnap.workbench.collective_pitch_deg, 4.0);
+  assert.equal(customSnap.workbench.winglet?.enabled, true);
+  assert.equal(customSnap.workbench.winglet?.cant_angle_deg, 65);
+  assert.equal(customSnap.workbench.winglet?.height_mm, 35);
+
+  // 5. HTML Elements Verification
+  const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  assert.ok(html.includes('value="wind_impact"'), "Heatmap dropdown must contain wind_impact option");
+  assert.ok(html.includes('id="collective-pitch-toolbar-group"'), "Toolbar must contain collective-pitch-toolbar-group");
+  assert.ok(html.includes('id="tb-collective-pitch"'), "Toolbar must contain tb-collective-pitch slider");
+  assert.ok(html.includes('id="btn-pitch-feather"'), "Toolbar must contain btn-pitch-feather button");
+  assert.ok(html.includes('id="rotor-collective-pitch"'), "Rotor panel must contain rotor-collective-pitch slider");
+  assert.ok(html.includes('id="btn-pitch-run"'), "Rotor panel must contain btn-pitch-run button");
+  assert.ok(html.includes('id="btn-pitch-start"'), "Rotor panel must contain btn-pitch-start button");
+  assert.ok(html.includes('id="btn-pitch-feather-panel"'), "Rotor panel must contain btn-pitch-feather-panel button");
+  assert.ok(html.includes('id="winglet-enabled"'), "Rotor panel must contain winglet-enabled checkbox");
+  assert.ok(html.includes('id="winglet-controls-subbox"'), "Rotor panel must contain winglet-controls-subbox container");
+  assert.ok(html.includes('id="winglet-cant"'), "Rotor panel must contain winglet-cant input");
+  assert.ok(html.includes('id="winglet-height"'), "Rotor panel must contain winglet-height input");
+  assert.ok(html.includes('id="winglet-sweep"'), "Rotor panel must contain winglet-sweep input");
+  assert.ok(html.includes('id="winglet-radius"'), "Rotor panel must contain winglet-radius input");
+});
+
 
 
 

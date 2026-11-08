@@ -1729,11 +1729,19 @@
           <button id="btn-view-gearbox" class="btn-mini" type="button" aria-pressed="false" title="3D Involute Spur/Helical Gearbox Prototype view">Gearbox</button>
           <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
             <option value="segment">Color: CAD Segments</option>
+            <option value="wind_impact">Heatmap: Wind Impact &amp; Stagnation</option>
             <option value="alpha">Heatmap: Angle of Attack α</option>
             <option value="cl_cd">Heatmap: Glide Ratio Cl/Cd</option>
             <option value="torque">Heatmap: Torque dQ/dr</option>
             <option value="wall_stress">Heatmap: Bending Stress</option>
           </select>
+          <span class="toolbar-divider"></span>
+          <div class="toolbar" id="collective-pitch-toolbar-group" title="Collective Blade Pitch Angle (degrees) — rotate blade in 3D &amp; simulate feathering">
+            <span class="toolbar-label">Pitch</span>
+            <input id="tb-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" style="width: 68px; accent-color: var(--accent);" />
+            <span id="tb-pitch-val" class="section-meta" style="min-width: 28px">0.0°</span>
+            <button id="btn-pitch-feather" class="btn-mini" type="button" title="Quick Feather / Aerodynamic Brake (+30°)">Feather</button>
+          </div>
           <span class="toolbar-divider"></span>
         </div>
 
@@ -1908,6 +1916,50 @@
           <div class="row">
             <label for="global-light-intensity">Global Light Illumination <span id="global-light-val">1.35×</span></label>
             <input id="global-light-intensity" type="range" min="0.3" max="3.0" step="0.05" value="1.35" />
+          </div>
+
+          <!-- Collective Blade Pitch & Feathering Simulator -->
+          <div class="bind-row" style="margin-top: 12px; padding-top: 8px">
+            <span style="font-weight: 500; color: var(--text-primary)">Collective Pitch &amp; Feathering</span>
+            <span id="rotor-collective-pitch-val" class="section-meta">0.0°</span>
+          </div>
+          <div class="row" style="margin-top: 6px">
+            <label for="rotor-collective-pitch">Pitch Angle θp <span id="collective-pitch-badge">0.0°</span></label>
+            <input id="rotor-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" />
+          </div>
+          <div class="toolbar" style="margin-top: 4px; margin-bottom: 8px">
+            <button id="btn-pitch-run" class="btn-mini active" type="button" title="0° Nominal Run — Peak aerodynamic efficiency">0° Run</button>
+            <button id="btn-pitch-start" class="btn-mini" type="button" title="+4° Quick-Start — High starting torque in light breeze">+4° Start</button>
+            <button id="btn-pitch-feather-panel" class="btn-mini" type="button" title="+30° Feather / Aerodynamic Brake — Shed storm gust loads">+30° Feather</button>
+          </div>
+
+          <!-- Parametric Winglet / Up-Turned Tip Device -->
+          <div class="bind-row" style="margin-top: 10px; padding-top: 8px">
+            <span style="font-weight: 500; color: var(--text-primary)">Winglet &amp; Up-Turned Tip</span>
+            <label class="toggle-label" style="margin: 0; font-size: 12px; cursor: pointer">
+              <input id="winglet-enabled" type="checkbox" style="margin-right: 4px" />
+              <span>Enable Winglet</span>
+            </label>
+          </div>
+          <div id="winglet-controls-subbox" style="margin-top: 6px; display: none">
+            <div class="grid-2">
+              <div class="field">
+                <label for="winglet-cant" class="scrub-label" data-scrub-for="winglet-cant" title="Out-of-plane dihedral bend angle (15° flat .. 75° upright)">Cant Angle (°)</label>
+                <input id="winglet-cant" type="number" min="15" max="75" step="1" value="50" />
+              </div>
+              <div class="field">
+                <label for="winglet-height" class="scrub-label" data-scrub-for="winglet-height" title="Upward tip extension height (mm)">Height (mm)</label>
+                <input id="winglet-height" type="number" min="5" max="50" step="1" value="22" />
+              </div>
+              <div class="field">
+                <label for="winglet-sweep" class="scrub-label" data-scrub-for="winglet-sweep" title="Backward aerodynamic tip sweep angle (°)">Sweep Angle (°)</label>
+                <input id="winglet-sweep" type="number" min="0" max="25" step="1" value="10" />
+              </div>
+              <div class="field">
+                <label for="winglet-radius" class="scrub-label" data-scrub-for="winglet-radius" title="Smooth transition bend radius from span (mm)">Blend Radius (mm)</label>
+                <input id="winglet-radius" type="number" min="5" max="40" step="1" value="15" />
+              </div>
+            </div>
           </div>
         </section>
 

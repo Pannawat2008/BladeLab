@@ -101,6 +101,9 @@ import {
   updateRotorField,
   upsertSavedSlot,
   type WindPowerAepReport,
+  type WingletConfig,
+  applyWingletToBladeGeometry,
+  exportBufferGeometryStlBytes,
   type WorkbenchSnapshot,
   type WorkbenchUiSnapshot,
 } from "./state";
@@ -225,6 +228,26 @@ const sliderChordOffsetY = document.getElementById("chord-offset-y") as HTMLInpu
 const chordOffsetYVal = document.getElementById("chord-offset-y-val")!;
 const sliderGlobalLight = document.getElementById("global-light-intensity") as HTMLInputElement;
 const globalLightVal = document.getElementById("global-light-val")!;
+
+// ---- Collective Pitch & Feathering Controls ----
+const inputTbCollectivePitch = document.getElementById("tb-collective-pitch") as HTMLInputElement | null;
+const tbPitchVal = document.getElementById("tb-pitch-val");
+const btnPitchFeather = document.getElementById("btn-pitch-feather") as HTMLButtonElement | null;
+const inputRotorCollectivePitch = document.getElementById("rotor-collective-pitch") as HTMLInputElement | null;
+const rotorCollectivePitchVal = document.getElementById("rotor-collective-pitch-val");
+const collectivePitchBadge = document.getElementById("collective-pitch-badge");
+const btnPitchRun = document.getElementById("btn-pitch-run") as HTMLButtonElement | null;
+const btnPitchStart = document.getElementById("btn-pitch-start") as HTMLButtonElement | null;
+const btnPitchFeatherPanel = document.getElementById("btn-pitch-feather-panel") as HTMLButtonElement | null;
+let collectivePitchDeg = 0.0;
+
+// ---- Parametric Winglet / Up-Turned Tip Controls ----
+const inputWingletEnabled = document.getElementById("winglet-enabled") as HTMLInputElement | null;
+const wingletControlsSubbox = document.getElementById("winglet-controls-subbox");
+const inputWingletCant = document.getElementById("winglet-cant") as HTMLInputElement | null;
+const inputWingletHeight = document.getElementById("winglet-height") as HTMLInputElement | null;
+const inputWingletSweep = document.getElementById("winglet-sweep") as HTMLInputElement | null;
+const inputWingletRadius = document.getElementById("winglet-radius") as HTMLInputElement | null;
 
 const btnChordMinus = document.getElementById("btn-chord-minus") as HTMLButtonElement;
 const btnChordPlus = document.getElementById("btn-chord-plus") as HTMLButtonElement;
@@ -498,6 +521,71 @@ function toggleStationLock(spanRatio: number): void {
     lockedSpanRatios.splice(idx, 1);
   } else {
     lockedSpanRatios.push(spanRatio);
+  }
+}
+
+// ---- Collective Pitch & Winglet Helpers ----
+let latestCleanBladePositions: Float32Array | null = null;
+
+function readCurrentWingletConfig(): WingletConfig {
+  return {
+    enabled: Boolean(inputWingletEnabled?.checked),
+    cant_angle_deg: Math.max(
+      15,
+      Math.min(75, Number.parseFloat(inputWingletCant?.value || "50") || 50),
+    ),
+    height_mm: Math.max(
+      5,
+      Math.min(50, Number.parseFloat(inputWingletHeight?.value || "22") || 22),
+    ),
+    sweep_angle_deg: Math.max(
+      0,
+      Math.min(25, Number.parseFloat(inputWingletSweep?.value || "10") || 10),
+    ),
+    blend_radius_mm: Math.max(
+      5,
+      Math.min(40, Number.parseFloat(inputWingletRadius?.value || "15") || 15),
+    ),
+  };
+}
+
+function applyWingletConfigToDom(cfg?: WingletConfig) {
+  const c = cfg || {
+    enabled: false,
+    cant_angle_deg: 50,
+    height_mm: 22,
+    sweep_angle_deg: 10,
+    blend_radius_mm: 15,
+  };
+  if (inputWingletEnabled) inputWingletEnabled.checked = c.enabled;
+  if (wingletControlsSubbox) {
+    wingletControlsSubbox.style.display = c.enabled ? "block" : "none";
+  }
+  if (inputWingletCant) inputWingletCant.value = String(c.cant_angle_deg);
+  if (inputWingletHeight) inputWingletHeight.value = String(c.height_mm);
+  if (inputWingletSweep) inputWingletSweep.value = String(c.sweep_angle_deg);
+  if (inputWingletRadius) inputWingletRadius.value = String(c.blend_radius_mm);
+}
+
+function setCollectivePitch(deg: number, triggerRebuild = true) {
+  collectivePitchDeg = Math.max(-10, Math.min(35, Math.round(deg * 2) / 2));
+  const valStr = `${collectivePitchDeg >= 0 ? "+" : ""}${collectivePitchDeg.toFixed(1)}°`;
+  if (inputRotorCollectivePitch) inputRotorCollectivePitch.value = String(collectivePitchDeg);
+  if (inputTbCollectivePitch) inputTbCollectivePitch.value = String(collectivePitchDeg);
+  if (rotorCollectivePitchVal) rotorCollectivePitchVal.textContent = valStr;
+  if (collectivePitchBadge) collectivePitchBadge.textContent = valStr;
+  if (tbPitchVal) tbPitchVal.textContent = valStr;
+
+  if (btnPitchRun) btnPitchRun.classList.toggle("active", Math.abs(collectivePitchDeg - 0) < 0.2);
+  if (btnPitchStart) btnPitchStart.classList.toggle("active", Math.abs(collectivePitchDeg - 4) < 0.2);
+  if (btnPitchFeatherPanel)
+    btnPitchFeatherPanel.classList.toggle("active", Math.abs(collectivePitchDeg - 30) < 0.2);
+  if (btnPitchFeather)
+    btnPitchFeather.classList.toggle("active", Math.abs(collectivePitchDeg - 30) < 0.2);
+
+  if (triggerRebuild) {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
   }
 }
 
@@ -1195,7 +1283,14 @@ function rebuild3D(design: Design) {
     const rawPositions = data.positions as Float32Array;
     const rawIndices = data.indices as Uint32Array;
     const tubeAxis = data.tube_axis;
-    const bladeGeo = buildCleanBladeGeometry(rawPositions, rawIndices, 32);
+
+    const posCopy = new Float32Array(rawPositions);
+    const wingletCfg = readCurrentWingletConfig();
+    applyWingletToBladeGeometry(posCopy, design, wingletCfg);
+
+    const bladeGeo = buildCleanBladeGeometry(posCopy, rawIndices, 32);
+    const posAttr = bladeGeo.getAttribute("position") as THREE.BufferAttribute;
+    latestCleanBladePositions = posAttr.array as Float32Array;
     const edgeGeo = !wireframeMode ? new THREE.EdgesGeometry(bladeGeo, 32) : null;
     const edgeMat = new THREE.LineBasicMaterial({
       color: 0x0f172a,
@@ -1209,13 +1304,15 @@ function rebuild3D(design: Design) {
     const hmMode = (selectHeatmapMode.value || "segment") as HeatmapMode;
     const useHeatmap = hmMode !== "segment";
     if (useHeatmap) {
-      const posAttr = bladeGeo.getAttribute("position") as THREE.BufferAttribute;
+      const normAttr = bladeGeo.getAttribute("normal") as THREE.BufferAttribute | null;
       const hm = computeVertexHeatmapColors(
         posAttr.array as ArrayLike<number>,
         design,
         latestBundleB,
         latestStructuralReport,
         hmMode,
+        normAttr ? normAttr.array : undefined,
+        collectivePitchDeg,
       );
       bladeGeo.setAttribute("color", new THREE.BufferAttribute(hm.colors, 3));
       viewportHeatmapLegend.classList.add("visible");
@@ -1270,6 +1367,7 @@ function rebuild3D(design: Design) {
       const branch = new THREE.Group();
       branch.userData.isBladeBranch = true;
       const inner = new THREE.Group();
+      inner.rotation.z = (collectivePitchDeg * Math.PI) / 180;
 
       const bladeMesh = new THREE.Mesh(bladeGeo, bladeMaterial);
       bladeMesh.position.x = pivotShift;
@@ -1408,6 +1506,7 @@ function updateAeroPanel(design: Design) {
     const rawJson = simulate_aero(
       JSON.stringify(design),
       JSON.stringify({
+        pitch_deg: collectivePitchDeg,
         tsr_min: 1.5,
         tsr_max: 9.0,
         tsr_steps: 16,
@@ -2177,6 +2276,8 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     studio_mode: studioMode,
     gearbox_selected_gear: selectedGearIndex,
     gearbox_inspector_open: gearboxInspector?.classList.contains("open") ?? true,
+    collective_pitch_deg: collectivePitchDeg,
+    winglet: readCurrentWingletConfig(),
   };
 }
 
@@ -2269,6 +2370,8 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   inputGenRInt.value = String(wb.gen_r_int ?? 0.8);
   inputGenRLoad.value = String(wb.gen_r_load ?? 12.0);
   inputExpData.value = wb.exp_data_log ?? "";
+  setCollectivePitch(wb.collective_pitch_deg ?? 0.0, false);
+  applyWingletConfigToDom(wb.winglet);
 }
 
 function buildCurrentWorkbenchSnapshot(name?: string): WorkbenchSnapshot {
@@ -2713,10 +2816,19 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     const fabJson = buildFabricationOverridesJson();
     // Fast in-browser wasm export for blade STL and 3MF (including carbon tube hole & split parts)
     if (part === "blade" && format === "stl") {
-      const bytes =
-        fabJson === "{}"
-          ? export_stl_bytes(JSON.stringify(workingDesign))
-          : export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
+      const winglet = readCurrentWingletConfig();
+      let bytes: Uint8Array;
+      if (winglet.enabled && latestCleanBladePositions && latestCleanBladePositions.length > 0) {
+        bytes = exportBufferGeometryStlBytes(
+          latestCleanBladePositions,
+          `BladeLab R${workingDesign.rotor.radius_mm} Winglet Blade STL`,
+        );
+      } else {
+        bytes =
+          fabJson === "{}"
+            ? export_stl_bytes(JSON.stringify(workingDesign))
+            : export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
+      }
       triggerBlobDownload(bytes, `${baseName}.stl`, "model/stl");
       exportStatus.textContent = `Saved ${baseName}.stl (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
       return;
@@ -3164,6 +3276,37 @@ sliderGlobalLight.addEventListener("input", () => {
   setGlobalIlluminationScale(val);
   scheduleAutoSave();
 });
+
+// Collective Pitch Listeners
+inputRotorCollectivePitch?.addEventListener("input", () => {
+  setCollectivePitch(inputRotorCollectivePitch.valueAsNumber);
+});
+inputTbCollectivePitch?.addEventListener("input", () => {
+  setCollectivePitch(inputTbCollectivePitch.valueAsNumber);
+});
+btnPitchRun?.addEventListener("click", () => setCollectivePitch(0.0));
+btnPitchStart?.addEventListener("click", () => setCollectivePitch(4.0));
+btnPitchFeatherPanel?.addEventListener("click", () => setCollectivePitch(30.0));
+btnPitchFeather?.addEventListener("click", () => setCollectivePitch(30.0));
+
+// Winglet Listeners
+inputWingletEnabled?.addEventListener("change", () => {
+  if (wingletControlsSubbox) {
+    wingletControlsSubbox.style.display = inputWingletEnabled.checked ? "block" : "none";
+  }
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+});
+for (const input of [inputWingletCant, inputWingletHeight, inputWingletSweep, inputWingletRadius]) {
+  input?.addEventListener("input", () => {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+  input?.addEventListener("change", () => {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+}
 
 btnChordMinus.addEventListener("click", () => {
   commitDesign(shiftAllChordsMm(workingDesign, -5, lockedSpanRatios));

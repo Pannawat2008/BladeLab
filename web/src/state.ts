@@ -1577,7 +1577,15 @@ export interface FabricationSnapshot {
 }
 
 export type StructuralMaterialKey = "pla" | "petg" | "asa" | "pacf";
-export type HeatmapMode = "segment" | "alpha" | "cl_cd" | "torque" | "wall_stress";
+export type HeatmapMode = "segment" | "alpha" | "cl_cd" | "torque" | "wall_stress" | "wind_impact";
+
+export interface WingletConfig {
+  enabled: boolean;
+  cant_angle_deg: number;  // 15..75 deg out-of-plane dihedral bend
+  height_mm: number;       // 5..50 mm tip upward extension
+  sweep_angle_deg: number; // 0..25 deg backward aerodynamic sweep
+  blend_radius_mm: number; // 5..40 mm blend transition radius
+}
 export type PrinterPresetKey = "bambu_256" | "prusa_mk4" | "ender3" | "voron_350" | "custom";
 export type BladeWindPresetKey =
   | "low_wind"
@@ -1620,6 +1628,8 @@ export interface WorkbenchUiSnapshot {
   studio_mode?: "blade" | "gearbox";
   gearbox_selected_gear?: 1 | 2 | 3 | null;
   gearbox_inspector_open?: boolean;
+  collective_pitch_deg?: number;
+  winglet?: WingletConfig;
 }
 
 export interface WorkbenchSnapshot {
@@ -1698,6 +1708,14 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     studio_mode: "blade",
     gearbox_selected_gear: null,
     gearbox_inspector_open: true,
+    collective_pitch_deg: 0.0,
+    winglet: {
+      enabled: false,
+      cant_angle_deg: 50.0,
+      height_mm: 22.0,
+      sweep_angle_deg: 10.0,
+      blend_radius_mm: 15.0,
+    },
   };
 }
 
@@ -2286,6 +2304,43 @@ function sampleEfficiencyRamp(t01: number): [number, number, number] {
   ];
 }
 
+function sampleWindPressureRamp(pNorm: number): [number, number, number] {
+  // pNorm: -1 (Peak Suction Lift) .. 0 (Neutral Ambient) .. +1 (Peak Windward Stagnation)
+  const p = Math.max(-1, Math.min(1, pNorm));
+  if (p < 0) {
+    const u = -p;
+    if (u <= 0.45) {
+      const f = u / 0.45;
+      return [
+        0.06 + f * (0.02 - 0.06), // #10b981 (Teal/Green) -> #06b6d4 (Cyan)
+        0.72 + f * (0.71 - 0.72),
+        0.51 + f * (0.83 - 0.51),
+      ];
+    }
+    const f = (u - 0.45) / 0.55;
+    return [
+      0.02 + f * (0.12 - 0.02), // #06b6d4 -> #1e3a8a (Deep Cobalt Blue)
+      0.71 + f * (0.23 - 0.71),
+      0.83 + f * (0.54 - 0.83),
+    ];
+  } else {
+    if (p <= 0.45) {
+      const f = p / 0.45;
+      return [
+        0.06 + f * (0.96 - 0.06), // #10b981 -> #f59e0b (Warm Amber)
+        0.72 + f * (0.62 - 0.72),
+        0.51 + f * (0.04 - 0.51),
+      ];
+    }
+    const f = (p - 0.45) / 0.55;
+    return [
+      0.96 + f * (0.94 - 0.96), // #f59e0b -> #ef4444 (Crimson Stagnation)
+      0.62 + f * (0.27 - 0.62),
+      0.04 + f * (0.27 - 0.04),
+    ];
+  }
+}
+
 /**
  * Computes per-vertex RGB `Float32Array` colors (`3 * vertexCount` entries) for
  * 3D aerodynamic & structural heatmaps on the blade mesh.
@@ -2296,6 +2351,8 @@ export function computeVertexHeatmapColors(
   bundle: AeroSimulationBundle | null,
   structural: StructuralMechanicsReport | null,
   mode: HeatmapMode,
+  normals?: ArrayLike<number>,
+  collectivePitchDeg: number = 0,
 ): HeatmapResult {
   const vCount = Math.floor(positions.length / 3);
   const colors = new Float32Array(vCount * 3);
@@ -2393,6 +2450,72 @@ export function computeVertexHeatmapColors(
     return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
   }
 
+  if (mode === "wind_impact") {
+    const vWind = design.rotor.wind_speed_mps || 8.0;
+    const tsr = design.rotor.design_tsr || 4.5;
+    const rTipM = Math.max(0.1, design.rotor.radius_mm / 1000);
+    const omega = (tsr * vWind) / rTipM;
+    const rho = 1.225; // kg/m^3
+    const qMid = 0.5 * rho * (vWind * vWind + Math.pow(omega * rTipM * 0.7, 2));
+    const pMaxImpact = Math.max(20, qMid * 1.05);
+    const pMaxSuction = Math.max(25, qMid * 1.35);
+
+    title = "Windward Impact & Surface Pressure (Pa)";
+    minLabel = `-${pMaxSuction.toFixed(0)} Pa (Suction Lift)`;
+    midLabel = "0 Pa (Ambient)";
+    maxLabel = `+${pMaxImpact.toFixed(0)} Pa (Stagnation Impact)`;
+    gradientCss = "linear-gradient(90deg, #1e3a8a 0%, #06b6d4 30%, #10b981 50%, #f59e0b 75%, #ef4444 100%)";
+
+    const hasNormals = Boolean(normals && normals.length >= vCount * 3);
+    for (let i = 0; i < vCount; i++) {
+      const z = Number(positions[i * 3 + 2]) || r0;
+      const rM = Math.max(0.01, z / 1000);
+      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
+
+      const vAxial = vWind * 0.75;
+      const vTangential = omega * rM * 1.01;
+      const wSpeed = Math.hypot(vAxial, vTangential);
+      const qLocal = 0.5 * rho * wSpeed * wSpeed;
+      const phi = Math.atan2(vAxial, Math.max(0.1, vTangential));
+
+      const twistDeg = stations.length > 0 ? interpolateStationField(stations, s, "alpha_deg") : 6.0;
+      const effTheta = (twistDeg + collectivePitchDeg) * (Math.PI / 180);
+      const alpha = phi - effTheta;
+
+      let nx = 0;
+      let ny = 1;
+      if (hasNormals && normals) {
+        nx = Number(normals[i * 3]) || 0;
+        ny = Number(normals[i * 3 + 1]) || 0;
+      } else {
+        ny = Number(positions[i * 3 + 1]) >= 0 ? 1 : -1;
+      }
+
+      // Relative flow aerodynamic exposure:
+      // -nx * cos(alpha) > 0: Leading edge facing oncoming chordwise flow (stagnation line)
+      // ny > 0: Windward pressure side facing oncoming axial wind flow (warm amber/red)
+      // ny < 0: Leeward suction side generating aerodynamic lift depression (cool cyan/blue)
+      const leImpact = Math.max(0, -nx * Math.cos(alpha));
+      const windwardLift = ny > 0 ? ny * (0.35 + 0.65 * Math.sin(Math.max(0.04, alpha))) : 0;
+      const posExposure = Math.min(1.0, leImpact + windwardLift);
+
+      let pNorm = 0;
+      if (ny >= 0 || leImpact > 0.25) {
+        pNorm = posExposure;
+      } else {
+        const cl = stations.length > 0 ? Math.max(0.25, interpolateStationField(stations, s, "cl")) : 0.85;
+        const suctionIntensity = Math.min(1.0, Math.abs(ny) * (cl / 1.35));
+        pNorm = -suctionIntensity;
+      }
+
+      const [r, g, b] = sampleWindPressureRamp(pNorm);
+      colors[i * 3] = r;
+      colors[i * 3 + 1] = g;
+      colors[i * 3 + 2] = b;
+    }
+    return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
+  }
+
   // Default heatmap: "alpha" (Angle of Attack & Stall Margin)
   for (let i = 0; i < vCount; i++) {
     const z = Number(positions[i * 3 + 2]) || r0;
@@ -2407,6 +2530,50 @@ export function computeVertexHeatmapColors(
   }
 
   return { mode, colors, title, minLabel, midLabel, maxLabel, gradientCss };
+}
+
+/**
+ * Smoothly curves the tip section of the blade into an up-turned aerodynamic winglet
+ * with user-defined cant angle, height, sweep angle, and blend radius.
+ */
+export function applyWingletToBladeGeometry(
+  positions: Float32Array,
+  design: Design,
+  winglet: WingletConfig,
+): void {
+  if (!winglet.enabled) return;
+  const rTip = design.rotor.radius_mm;
+  const blendR = Math.max(5, Math.min(80, winglet.blend_radius_mm || 15));
+  const zStart = rTip - blendR;
+  const len = rTip - zStart;
+  if (len <= 0) return;
+
+  const cantRad = ((winglet.cant_angle_deg || 50) * Math.PI) / 180;
+  const sweepRad = ((winglet.sweep_angle_deg || 10) * Math.PI) / 180;
+  const height = Math.max(2, Math.min(100, winglet.height_mm || 20));
+
+  const vCount = Math.floor(positions.length / 3);
+  for (let i = 0; i < vCount; i++) {
+    const z = positions[i * 3 + 2]!;
+    if (z > zStart) {
+      const u = Math.min(1, Math.max(0, (z - zStart) / len));
+      const f = u * u * (3 - 2 * u); // smoothstep Hermite C1
+
+      const x = positions[i * 3]!;
+      const y = positions[i * 3 + 1]!;
+
+      // Out-of-plane dihedral bend (+Y upward)
+      const dy = f * height * Math.sin(cantRad);
+      // Backward chordwise sweep (+X)
+      const dx = f * height * Math.tan(sweepRad);
+      // Spanwise curve
+      const zNew = zStart + (z - zStart) * Math.cos(cantRad * f);
+
+      positions[i * 3] = x + dx;
+      positions[i * 3 + 1] = y + dy;
+      positions[i * 3 + 2] = zNew;
+    }
+  }
 }
 
 // ============================================================================
@@ -4631,3 +4798,70 @@ export function exportGearStlBytes(cfg: GearboxConfig, target: GearExportTarget)
 
   return new Uint8Array(buf);
 }
+
+/**
+ * Exports raw triangle positions (non-indexed or flattened) as a binary STL byte array.
+ * Each triangle consists of 9 consecutive numbers: [ax, ay, az, bx, by, bz, cx, cy, cz].
+ */
+export function exportBufferGeometryStlBytes(
+  positions: ArrayLike<number>,
+  headerText: string = "BladeLab STL Model",
+): Uint8Array {
+  const triCount = Math.floor(positions.length / 9);
+  const buf = new ArrayBuffer(84 + triCount * 50);
+  const view = new DataView(buf);
+
+  for (let i = 0; i < Math.min(79, headerText.length); i++) {
+    view.setUint8(i, headerText.charCodeAt(i));
+  }
+  view.setUint32(80, triCount, true);
+
+  let offset = 84;
+  for (let t = 0; t < triCount; t++) {
+    const ax = Number(positions[t * 9]) || 0;
+    const ay = Number(positions[t * 9 + 1]) || 0;
+    const az = Number(positions[t * 9 + 2]) || 0;
+    const bx = Number(positions[t * 9 + 3]) || 0;
+    const by = Number(positions[t * 9 + 4]) || 0;
+    const bz = Number(positions[t * 9 + 5]) || 0;
+    const cx = Number(positions[t * 9 + 6]) || 0;
+    const cy = Number(positions[t * 9 + 7]) || 0;
+    const cz = Number(positions[t * 9 + 8]) || 0;
+
+    const ux = bx - ax;
+    const uy = by - ay;
+    const uz = bz - az;
+    const vx = cx - ax;
+    const vy = cy - ay;
+    const vz = cz - az;
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-12) {
+      nx /= len;
+      ny /= len;
+      nz /= len;
+    } else {
+      nz = 1;
+    }
+
+    view.setFloat32(offset, nx, true);
+    view.setFloat32(offset + 4, ny, true);
+    view.setFloat32(offset + 8, nz, true);
+    view.setFloat32(offset + 12, ax, true);
+    view.setFloat32(offset + 16, ay, true);
+    view.setFloat32(offset + 20, az, true);
+    view.setFloat32(offset + 24, bx, true);
+    view.setFloat32(offset + 28, by, true);
+    view.setFloat32(offset + 32, bz, true);
+    view.setFloat32(offset + 36, cx, true);
+    view.setFloat32(offset + 40, cy, true);
+    view.setFloat32(offset + 44, cz, true);
+    view.setUint16(offset + 48, 0, true);
+    offset += 50;
+  }
+
+  return new Uint8Array(buf);
+}
+

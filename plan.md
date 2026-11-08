@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 88**
-> **LAST_UPDATED: 2026-11-08 12:35 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 89**
+> **LAST_UPDATED: 2026-11-08 19:35 (UTC+7) by geom-1**
 
 ---
 
@@ -508,6 +508,14 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Configured Gear 1 (Mint Bull Gear) to mesh and rotate on Gear 2 Pinion (Lime-Green Coaxial Pinion): (1) set `stage_mode: "compound_2stage"` and `layout_mode: "meshed"` as defaults in `defaultGearboxConfig()` and `web/index.html` so Gear 1 sits elevated at $z = \text{g2\_wheel\_face\_mm}$ directly aligned with Gear 2 Pinion; (2) updated center distance $a_{12} = 0.5 \cdot (d_1 + d_{2p}) = 46.88\text{ mm}$ (down from 72.5 mm when wrongly paired to the wheel) and $a_{23} = 47.5\text{ mm}$ where Gear 2 Wheel drives Gear 3 Pinion at $z = 0$; (3) aligned Gear 2 Pinion mesh phase $\text{phase} = \pi / Z_{2p}$ and flipped its helical hand to $-1$ (LH) so it mates with Gear 1 ($+1$ RH); (4) verified true 2-stage compound step-up kinematics ($\text{Stage 1} = 60/15 = 4.0$, $\text{Stage 2} = 56/20 = 2.8$, $\text{Total} = 11.2:1$, with Gear 2 spinning at $-4.0\times$ and Gear 3 at $+11.2\times$ rotor speed); and (5) verified by 16/16 Node tests, `tsc --noEmit`, and `vite build`.
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: F-geom1-057
 
+- **F-geom1-059** | 2026-11-08 19:35 | geom-1 | T-105
+  Implemented 3 aerodynamic blade design and visualization features across `web/src/state.ts`, `web/index.html`, `web/src/main.ts`, and `web/scripts/types.test.mjs`:
+  (1) **Parametric Winglets / Up-Turned Blade Tips** (`WingletConfig`: `cant_angle_deg` 15°–75°, `height_mm` 5–50 mm, `sweep_angle_deg` 0°–25°, `blend_radius_mm` 5–40 mm): `applyWingletToBladeGeometry` smoothly curves the tip with $C^1$ Hermite smoothstep blending out-of-plane dihedral bend (+Y), backward chordwise sweep (+X), and spanwise curve, leaving root and mid-span vertices below $z_{\text{start}} = R - r_{\text{blend}}$ strictly untouched; integrated custom binary STL exporter `exportBufferGeometryStlBytes` so 3D print exports preserve the winglet geometry.
+  (2) **Interactive Collective Pitch Angle Slider & Feathering Simulator** (range -10° to +35°, 0° Run / +4° Start / +30° Feather quick-presets): dual synchronized sliders in top toolbar and CAD rotor panel live-rotate the 3D blade around its spanwise pitch axis ($X = 0$) via `inner.rotation.z`, coupled with the Ning BEM solver in `blade-wasm` passing `pitch_deg` into `simulate_aero` for live aerodynamic re-simulation.
+  (3) **Windward Wind Impact & Surface Pressure Heatmap** (`mode: "wind_impact"`): computes vertex-level aerodynamic dynamic pressure and normal exposure to relative wind $\vec{W} = (V_{\text{tangential}}, V_{\text{axial}})$; leading-edge stagnation line glows intense crimson red ($C_p \approx +1.0$), windward lower face glows warm amber/orange ($C_p \approx +0.4..+0.7$), leeward upper suction face glows cool cyan/blue ($C_p \approx -0.6..-1.2$), and trailing-edge wake stays neutral ambient teal; dynamically shifts as collective pitch angle or wind speed changes.
+  Verified by 17 Node tests (`node --test scripts/types.test.mjs`), `tsc --noEmit`, `vite build`, and full workspace `cargo test` (153 unit/integration tests + 11 doc-tests).
+  refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -925,3 +933,6 @@ note="lead requested: flip the gear 3 helical angle; flipping Gear 3 helixHand i
 [ACK] 2026-11-08T12:32:00+07:00 agent=geom-1 mem=v87 last_entry=F-geom1-057 task=T-105
 note="lead requested: gear 1 should be rotate on pinon gear on gear 2; setting default stage_mode to compound_2stage so Gear 1 is elevated to z = g2_wheel_face_mm and meshes directly with Gear 2 Pinion at center distance a12 = 0.5*(d1+d2p), with matching mesh phase, opposing helical hand (-1 on pinion), and true 2-stage compound step-up rotation"
 [END] 2026-11-08T12:35:30+07:00 agent=geom-1 mem=v88 note="Configured Gear 1 to mesh and rotate on Gear 2 Pinion (a12 = 46.88 mm, compound 11.2:1 step-up); 16/16 Node tests + tsc + vite build clean; F-geom1-058 recorded"
+[ACK] 2026-11-08T19:18:00+07:00 agent=geom-1 mem=v88 last_entry=F-geom1-058 task=T-105
+note="lead approved implementing: (1) Windward Wind Impact & Surface Pressure Heatmap (with stagnation line, windward impact vs leeward suction), (2) Interactive Collective Pitch Angle Slider & Feathering Simulator with live 3D blade rotation & BEM solver coupling, and (3) Parametric Winglets / Up-Turned Blade Tips"
+[END] 2026-11-08T19:35:00+07:00 agent=geom-1 mem=v89 note="Added Windward Impact & Stagnation Surface Pressure Heatmap, Collective Pitch & Feathering Simulator with live 3D blade rotation & Ning BEM coupling, and Parametric Winglets / Up-Turned Blade Tips; 17/17 Node tests + tsc + vite build + 164 cargo tests clean; F-geom1-059 recorded"
