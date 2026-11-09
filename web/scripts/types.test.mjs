@@ -569,6 +569,19 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   assert.ok(stepPart0.includes("MANIFOLD_SOLID_BREP"), "split part 0 STEP has solid B-rep");
   assert.equal((stepPart0.match(/MANIFOLD_SOLID_BREP/g) || []).length, 1, "1 split B-rep solid for part 0");
 
+  // Verify split STEP exports with carbon fiber spar tube hole and interlocking joint features
+  const fabWithTubeAndJoint = JSON.stringify({
+    split_parts: 2,
+    split_ratio: 0.5,
+    spar_hole_diameter_mm: 5.0,
+    spar_hole_depth_mm: 200.0,
+    align_shape: "lip",
+    active_part: 0,
+  });
+  const stepPart0WithFab = export_fabricated_step(JSON.stringify(initialDesign), fabWithTubeAndJoint);
+  assert.ok(stepPart0WithFab.includes("MANIFOLD_SOLID_BREP"), "split part 0 with tube/joint has solid B-rep");
+  assert.ok((stepPart0WithFab.match(/PLANE/g) || []).length > 500, "STEP contains tube hole cavity and joint faces");
+
   const asmStlBytes = export_part_stl_bytes(JSON.stringify(initialDesign), "assembly");
   assert.ok(asmStlBytes.byteLength > 100000, "assembly STL has valid length");
 

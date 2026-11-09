@@ -5,11 +5,10 @@
 //! thin wasm bindings live in `lib.rs`.
 
 use blade_cad::{assembly_mesh, hub_mesh, CadKernel, Solid, TruckKernel};
-use blade_geom::{build_sections, loft, BladeSurface, Point3, Section3D};
+use blade_geom::{build_sections, loft, BladeSurface};
 use blade_mesh::{
-    alignment_report, check_mesh, compute_split_spans, spar_tube_axis_points,
-    tessellate_fabricated, write_3mf, write_stl, AlignmentShape, AlignmentSpec, FabricationSpec,
-    Mesh, SparHoleSpec,
+    alignment_report, check_mesh, spar_tube_axis_points, tessellate_fabricated, write_3mf,
+    write_stl, AlignmentShape, AlignmentSpec, FabricationSpec, Mesh, SparHoleSpec,
 };
 use blade_model::{resolve, CurveSource, Design};
 
@@ -241,68 +240,35 @@ pub fn export_3mf_with_overrides(
     Ok(write_3mf(&mesh))
 }
 
-/// Builds a [`BladeSurface`] for a spanwise sub-segment `[z_a, z_b]`.
-fn build_segment_surface(
-    surface: &BladeSurface,
-    z_a: f64,
-    z_b: f64,
-    z_shift: f64,
-) -> Result<BladeSurface, String> {
-    const SEG_STATIONS: usize = 14;
-    let span_min = surface.span_start_mm();
-    let span_max = surface.span_end_mm();
-    let point_count = surface.point_count();
-
-    let mut sections = Vec::with_capacity(SEG_STATIONS);
-    for i in 0..SEG_STATIONS {
-        let t = (i as f64) / ((SEG_STATIONS - 1) as f64);
-        let z = z_a + t * (z_b - z_a);
-        let z_eval = z.clamp(span_min, span_max);
-        let mut points = Vec::with_capacity(point_count);
-        for idx in 0..point_count {
-            let pt = surface.point_at_span_mm(z_eval, idx).map_err(as_string)?;
-            let p = Point3::new(pt.x, pt.y, z + z_shift).map_err(as_string)?;
-            points.push(p);
-        }
-        let sec = Section3D::new(z + z_shift, points).map_err(as_string)?;
-        sections.push(sec);
-    }
-    loft(&sections).map_err(as_string)
-}
-
-/// Builds B-rep solids for split segments (either a single active part or all parts).
+/// Builds B-rep solids for split segments (either a single active part or all parts)
+/// including carbon-fiber spar hole cavities and interlocking joint features.
 fn build_split_solids(
     surface: &BladeSurface,
-    split_parts: usize,
-    split_ratio: Option<f64>,
-    active_part: Option<usize>,
-    explode_gap_mm: f64,
+    overrides: &Overrides,
     kernel: &TruckKernel,
 ) -> Result<Vec<Solid>, String> {
-    let parts = split_parts.clamp(1, 8);
-    let span_start = surface.span_start_mm();
-    let span_end = surface.span_end_mm();
-    let bounds = compute_split_spans(span_start, span_end, parts, split_ratio);
+    let fab = overrides.fabrication_spec();
+    let parts = fab.split_parts.clamp(1, 8);
 
-    let part_range: std::ops::Range<usize> = match active_part {
+    let part_range: std::ops::Range<usize> = match fab.active_part {
         Some(idx) if idx < parts => idx..(idx + 1),
         _ => 0..parts,
     };
 
-    let explode_gap = if active_part.is_none() && parts > 1 {
-        explode_gap_mm.max(0.0)
+    let explode_gap = if fab.active_part.is_none() && parts > 1 {
+        fab.explode_gap_mm.max(0.0)
     } else {
         0.0
     };
 
     let mut solids = Vec::with_capacity(part_range.len());
     for part_idx in part_range {
-        let z_a = bounds[part_idx];
-        let z_b = bounds[part_idx + 1];
-        let z_shift = (part_idx as f64) * explode_gap;
+        let mut part_spec = fab;
+        part_spec.active_part = Some(part_idx);
+        part_spec.explode_gap_mm = (part_idx as f64) * explode_gap;
 
-        let seg_surface = build_segment_surface(surface, z_a, z_b, z_shift)?;
-        let solid = kernel.blade_solid(&seg_surface).map_err(as_string)?;
+        let part_mesh = tessellate_fabricated(surface, &part_spec).map_err(as_string)?;
+        let solid = kernel.mesh_solid(&part_mesh).map_err(as_string)?;
         solids.push(solid);
     }
     Ok(solids)
@@ -336,24 +302,17 @@ pub fn export_step_with_overrides(
     let kernel = TruckKernel::new();
     let part_norm = part.trim().to_ascii_lowercase();
 
-    let split_parts = overrides.split_parts.unwrap_or(1).clamp(1, 8);
-    let split_ratio = overrides.split_ratio;
-    let explode_gap = overrides.explode_gap_mm.unwrap_or(0.0).max(0.0);
+    let fab = overrides.fabrication_spec();
+    let has_fab_features =
+        fab.spar_hole.is_some() || fab.split_parts > 1 || fab.alignment.is_some();
 
     let bodies = match part_norm.as_str() {
         "hub" => vec![kernel.hub_solid(&resolved.hub).map_err(as_string)?],
         "assembly" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            let mut solids = if split_parts > 1 {
-                build_split_solids(
-                    &surface,
-                    split_parts,
-                    split_ratio,
-                    overrides.active_part,
-                    explode_gap,
-                    &kernel,
-                )?
+            let mut solids = if has_fab_features {
+                build_split_solids(&surface, overrides, &kernel)?
             } else {
                 vec![kernel.blade_solid(&surface).map_err(as_string)?]
             };
@@ -363,27 +322,18 @@ pub fn export_step_with_overrides(
         "split" | "split_all" | "blade_split" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            build_split_solids(
-                &surface,
-                split_parts.max(2),
-                split_ratio,
-                None,
-                explode_gap,
-                &kernel,
-            )?
+            let mut split_overrides = overrides.clone();
+            if split_overrides.split_parts.unwrap_or(1) < 2 {
+                split_overrides.split_parts = Some(2);
+            }
+            split_overrides.active_part = None;
+            build_split_solids(&surface, &split_overrides, &kernel)?
         }
         "" | "blade" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            if split_parts > 1 {
-                build_split_solids(
-                    &surface,
-                    split_parts,
-                    split_ratio,
-                    overrides.active_part,
-                    explode_gap,
-                    &kernel,
-                )?
+            if has_fab_features {
+                build_split_solids(&surface, overrides, &kernel)?
             } else {
                 vec![kernel.blade_solid(&surface).map_err(as_string)?]
             }
@@ -398,14 +348,11 @@ pub fn export_step_with_overrides(
                     .map_err(|_| format!("invalid split part index `{idx_str}`"))?;
                 let sections = build_sections(&resolved).map_err(as_string)?;
                 let surface = loft(&sections).map_err(as_string)?;
-                build_split_solids(
-                    &surface,
-                    split_parts.max(idx + 1),
-                    split_ratio,
-                    Some(idx),
-                    0.0,
-                    &kernel,
-                )?
+                let mut part_overrides = overrides.clone();
+                let split_parts = part_overrides.split_parts.unwrap_or(1).max(idx + 1);
+                part_overrides.split_parts = Some(split_parts);
+                part_overrides.active_part = Some(idx);
+                build_split_solids(&surface, &part_overrides, &kernel)?
             } else {
                 return Err(format!(
                     "unsupported part `{other}` for STEP export (expected 'blade', 'hub', 'assembly', 'split', or 'blade_part_<N>')"
@@ -663,6 +610,46 @@ mod tests {
 
         let step_p1 = export_step(FIXTURE, "blade_part_1").expect("blade_part_1 export");
         assert_eq!(step_p1.matches("MANIFOLD_SOLID_BREP").count(), 1);
+
+        // Split segments with carbon-fiber tube hole and interlocking joint features
+        let overrides_fab = Overrides {
+            split_parts: Some(2),
+            split_ratio: Some(0.5),
+            spar_hole_diameter_mm: Some(6.0),
+            spar_hole_depth_mm: Some(240.0),
+            align_shape: Some("lip".to_string()),
+            ..Overrides::default()
+        };
+        let step_part0_fab = export_step_with_overrides(
+            FIXTURE,
+            &Overrides {
+                active_part: Some(0),
+                ..overrides_fab.clone()
+            },
+            "blade",
+        )
+        .expect("part 0 step with tube and joint");
+        assert!(step_part0_fab.contains("MANIFOLD_SOLID_BREP"));
+        eprintln!("PLANE count = {}", step_part0_fab.matches("PLANE").count());
+        assert!(
+            step_part0_fab.matches("PLANE").count() > 500,
+            "part 0 STEP must include tube hole bore and interlocking lip faces"
+        );
+
+        let step_part1_fab = export_step_with_overrides(
+            FIXTURE,
+            &Overrides {
+                active_part: Some(1),
+                ..overrides_fab.clone()
+            },
+            "blade",
+        )
+        .expect("part 1 step with tube and joint");
+        assert!(step_part1_fab.contains("MANIFOLD_SOLID_BREP"));
+        assert!(
+            step_part1_fab.matches("PLANE").count() > 500,
+            "part 1 STEP must include tube hole bore and interlocking socket faces"
+        );
     }
 
     #[test]

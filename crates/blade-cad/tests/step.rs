@@ -300,3 +300,85 @@ fn all_five_golden_fixtures_export_valid_step_solids_with_expected_span_bounds()
         );
     }
 }
+
+#[test]
+fn test_mesh_to_solid_converts_tetrahedron_and_writes_step() {
+    let pts = vec![
+        blade_geom::Point3::new(0.0, 0.0, 0.0).unwrap(),
+        blade_geom::Point3::new(10.0, 0.0, 0.0).unwrap(),
+        blade_geom::Point3::new(0.0, 10.0, 0.0).unwrap(),
+        blade_geom::Point3::new(0.0, 0.0, 10.0).unwrap(),
+    ];
+    let tris = vec![
+        blade_mesh::Triangle::new(0, 2, 1),
+        blade_mesh::Triangle::new(0, 1, 3),
+        blade_mesh::Triangle::new(0, 3, 2),
+        blade_mesh::Triangle::new(1, 2, 3),
+    ];
+    let mesh = blade_mesh::Mesh {
+        vertices: pts,
+        triangles: tris,
+    };
+
+    let kernel = TruckKernel::new();
+    let solid = kernel
+        .mesh_solid(&mesh)
+        .expect("tetrahedron forms closed solid");
+    let step = kernel.write_step(&[solid]).expect("writes step");
+    assert!(step.contains("MANIFOLD_SOLID_BREP"));
+}
+
+#[test]
+fn test_fabricated_split_mesh_to_solid_with_tube_and_joint_writes_step() {
+    use blade_mesh::{
+        tessellate_fabricated, AlignmentShape, AlignmentSpec, FabricationSpec, SparHoleSpec,
+    };
+
+    let surface = fixture_surface();
+    let spec = FabricationSpec {
+        spar_hole: Some(SparHoleSpec {
+            diameter_mm: 5.0,
+            depth_mm: 200.0,
+            offset_x_mm: 0.0,
+            offset_y_mm: 0.0,
+            tolerance_mm: 0.2,
+        }),
+        split_parts: 2,
+        split_ratio: Some(0.5),
+        active_part: Some(0),
+        explode_gap_mm: 0.0,
+        alignment: Some(AlignmentSpec {
+            shape: AlignmentShape::AirfoilLip,
+            count: 1,
+            size_mm: 2.0,
+            key_length_mm: 10.0,
+            height_mm: 4.0,
+            spacing_mm: 0.0,
+            clearance_mm: 0.2,
+            depth_clearance_mm: 0.5,
+            min_wall_mm: 0.8,
+        }),
+    };
+
+    let kernel = TruckKernel::new();
+    let mesh0 = tessellate_fabricated(&surface, &spec).expect("part 0 tessellates");
+    assert!(mesh0.triangles.len() > 100);
+    let solid0 = kernel
+        .mesh_solid(&mesh0)
+        .expect("part 0 forms closed solid");
+
+    // Also test Part 1 (with matching socket pocket)
+    let spec1 = FabricationSpec {
+        active_part: Some(1),
+        ..spec
+    };
+    let mesh1 = tessellate_fabricated(&surface, &spec1).expect("part 1 tessellates");
+    let solid1 = kernel
+        .mesh_solid(&mesh1)
+        .expect("part 1 forms closed solid");
+
+    let step = kernel
+        .write_step(&[solid0, solid1])
+        .expect("writes multi-solid step");
+    assert_eq!(step.matches("MANIFOLD_SOLID_BREP").count(), 2);
+}

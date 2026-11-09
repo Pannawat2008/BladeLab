@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 98**
-> **LAST_UPDATED: 2026-11-10 00:30 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 99**
+> **LAST_UPDATED: 2026-11-10 00:55 (UTC+7) by geom-1**
 
 ---
 
@@ -552,6 +552,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Implemented client-side and CAD kernel split blade STEP solid export ("also export all split as step"): (1) `crates/blade-wasm/src/mesh.rs` implements `build_segment_surface` and `build_split_solids`, sampling smooth spanwise cross-sections ($M \ge 14$ stations) for each split interval $[z_a, z_b]$ along the lofted blade surface with exact planar capping at $z = z_a + z\_shift$ and $z = z_b + z\_shift$; (2) uses `TruckKernel::blade_solid` to construct watertight, closed 4-face manifold B-rep `Solid`s for each split segment, supporting exploded gap translation along $z$ (`z_shift = part_idx * explode_gap_mm`) or assembly alignment; (3) exposed `export_fabricated_step(design_json, overrides_json)`, `export_all_split_step(design_json, overrides_json)`, and `export_part_step(design_json, overrides_json, part)` via WebAssembly; (4) updated `crates/blade-cad/src/lib.rs` to re-export `Solid`; (5) added `#btn-export-split-all-step` to `#layer-fabrication` alongside `#btn-export-split-all` (STL), added `#btn-export-split-step` to `#export-dropdown-menu`, and wired both to trigger individual `.step` downloads for each split part (`bladelab-R<radius>-part<p+1>of<parts>.step`) as well as multi-solid assembly STEP downloads; (6) updated `web/package.json` wasm build to compile both web and nodejs targets; (7) verified with Rust unit tests in `blade-wasm` (3 B-rep solids in multi-solid STEP, 1 B-rep solid in single part STEP), 18/18 Node tests in `types.test.mjs`, TypeScript typechecking, and production Vite build.
   refs: crates/blade-cad/src/lib.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/index.html, web/src/{main,vite-env.d}.ts, web/package.json, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-069** | 2026-11-10 00:55 | geom-1 | T-105
+  Preserved carbon-fiber spar tube bore cavity and interlocking joint features (lips/pins/keys/sockets) in CAD STEP exports: (1) root-caused missing features in split STEP exports—previously `export_step_with_overrides` called `build_segment_surface` which sampled sub-sections from the unpunctured lofted blade surface, producing a smooth 4-face solid and discarding all internal cavities and joint protrusions/sockets; (2) implemented `TruckKernel::mesh_solid(&self, mesh: &blade_mesh::Mesh) -> Result<Solid, CadError>` in `crates/blade-cad/src/kernel.rs`, converting any closed, watertight, orientable 2-manifold triangle mesh into a topological truck `Solid` (`builder::try_attach_plane` on line-edge wires with topological shared-edge pairing `Edge::inverse()`); (3) updated `build_split_solids` in `crates/blade-wasm/src/mesh.rs` to generate fabricated solids from `blade_mesh::tessellate_fabricated(&surface, &part_spec)` converted via `mesh_solid`, ensuring every split segment STEP solid includes the exact cylindrical spar hole cavity, punctured cap faces, and mating interlocking joint tenons (airfoil lips, pins, keys, dovetails, snaplocks) and mortise pockets; (4) preserves the smooth B-spline 4-face solid path when no fabrication features are active; (5) verified with `crates/blade-cad/tests/step.rs` (`test_mesh_to_solid_converts_tetrahedron_and_writes_step`, `test_fabricated_split_mesh_to_solid_with_tube_and_joint_writes_step`), 8 WASM tests, 18/18 Node integration tests in `web/scripts/types.test.mjs` (`> 500` plane faces), and full workspace `cargo test` passing.
+  refs: crates/blade-cad/src/kernel.rs, crates/blade-cad/tests/step.rs, crates/blade-wasm/src/mesh.rs, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -1004,3 +1008,4 @@ note="user requested: 'also export all split as step'; investigating in-browser 
 [END] 2026-11-10T00:30:00+07:00 agent=geom-1 mem=v98 note="Implemented in-browser and CAD kernel split blade STEP solid export (export_fabricated_step, export_all_split_step, export_part_step, build_segment_surface, multi-solid STEP B-rep solids); added Export All Split Parts (.STEP) to fabrication toolbar and Export Split Parts (.STEP) to export menu; 8 wasm tests + 18/18 Node tests + tsc + vite build clean; F-geom1-068 recorded"
 [ACK] 2026-11-10T00:40:00+07:00 agent=geom-1 mem=v98 last_entry=F-geom1-068 task=T-105
 note="user reported: 'export split is work but all component gone like tube hole Interlocking Joints'; investigating representation of spar tube bore cavity and interlocking joint features (spigot/socket/pins/keys/lips) in CAD STEP B-rep export"
+[END] 2026-11-10T00:55:00+07:00 agent=geom-1 mem=v99 note="Implemented TruckKernel::mesh_solid and fabricated split STEP solids preserving carbon-fiber spar tube hole cavities and interlocking joint tenons/mortises (lips, pins, keys, dovetails, snaplocks); 8 wasm tests + 11 cad tests + 18/18 Node tests + workspace tests clean; F-geom1-069 recorded"

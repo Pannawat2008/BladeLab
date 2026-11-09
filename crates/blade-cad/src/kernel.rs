@@ -74,6 +74,57 @@ impl TruckKernel {
     pub const fn new() -> Self {
         Self
     }
+
+    /// Converts a closed, watertight, manifold triangle [`blade_mesh::Mesh`] into a [`Solid`].
+    pub fn mesh_solid(&self, mesh: &blade_mesh::Mesh) -> Result<Solid, CadError> {
+        let vertices: Vec<Vertex> = mesh
+            .vertices
+            .iter()
+            .map(|p| to_point(*p).map(builder::vertex))
+            .collect::<Result<_, _>>()?;
+
+        let mut edge_map: std::collections::HashMap<(u32, u32), Edge> =
+            std::collections::HashMap::with_capacity(mesh.triangles.len() * 3 / 2);
+        let mut faces = Vec::with_capacity(mesh.triangles.len());
+
+        for tri in &mesh.triangles {
+            let idx = tri.indices();
+            let mut tri_edges = Vec::with_capacity(3);
+            for k in 0..3 {
+                let a = idx[k];
+                let b = idx[(k + 1) % 3];
+                let key = (a.min(b), a.max(b));
+                let edge = if let Some(existing) = edge_map.get(&key) {
+                    if a < b {
+                        existing.clone()
+                    } else {
+                        existing.inverse()
+                    }
+                } else {
+                    let curve = Curve::Line(truck_modeling::Line(
+                        vertices[key.0 as usize].point(),
+                        vertices[key.1 as usize].point(),
+                    ));
+                    let e =
+                        Edge::try_new(&vertices[key.0 as usize], &vertices[key.1 as usize], curve)
+                            .map_err(topology)?;
+                    edge_map.insert(key, e.clone());
+                    if a < b {
+                        e
+                    } else {
+                        e.inverse()
+                    }
+                };
+                tri_edges.push(edge);
+            }
+            let wire: Wire = tri_edges.into();
+            let face = builder::try_attach_plane(&[wire]).map_err(topology)?;
+            faces.push(face);
+        }
+
+        let shell: Shell = faces.into_iter().collect();
+        Solid::try_new(vec![shell]).map_err(topology)
+    }
 }
 
 impl CadKernel for TruckKernel {
