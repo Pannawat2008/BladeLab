@@ -1016,3 +1016,5 @@ note="user reported: 'export split is work but all component gone like tube hole
 [ACK] 2026-11-10T00:58:00+07:00 agent=geom-1 mem=v99 last_entry=F-geom1-069 task=T-105
 note="user reported: 'git hub page said error404'; investigating GitHub Pages branch, deploy workflow, repository settings, and 404 cause"
 [END] 2026-11-10T01:05:00+07:00 agent=geom-1 mem=v100 note="Enabled GitHub Pages via GitHub REST API for Pannawat2008/BladeLab (branch gh-pages, path /); live site verified returning HTTP 200 OK with full HTML/JS/WASM bundles; F-geom1-070 recorded"
+[ACK] 2026-11-10T01:16:00+07:00 agent=geom-1 mem=v100 last_entry=F-geom1-070 task=T-105
+note="user reported: 'now the model export as Step are also has ripple rought serface'; investigating faceted mesh STEP export vs smooth B-spline NURBS surface solids with spar hole and joint features"
