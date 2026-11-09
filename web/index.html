@@ -1168,18 +1168,47 @@
         width: 100%;
         overflow-x: auto;
       }
+      .table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        max-height: 360px;
+        overflow-y: auto;
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+      }
       table.station-table {
         width: 100%;
-        border-collapse: collapse;
+        border-collapse: separate;
+        border-spacing: 0;
         font: 400 12px/16px var(--font-mono);
         font-variant-numeric: tabular-nums;
       }
       table.station-table th {
         text-align: right;
-        font: 400 12px/16px var(--font-sans);
+        font: 500 11.5px/16px var(--font-sans);
         color: var(--text-muted);
-        padding: 8px 4px;
-        border-bottom: 1px solid var(--border-hairline);
+        padding: 6px 6px;
+        border-bottom: 1px solid var(--border-strong);
+        position: sticky;
+        top: 0;
+        background: var(--bg-deep);
+        z-index: 3;
+      }
+      table.station-table th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        background: var(--bg-deep);
+      }
+      table.station-table td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: var(--bg-card);
+        box-shadow: 1px 0 0 var(--border-hairline);
+      }
+      table.station-table tr.overridden td:first-child {
+        background: #142230;
       }
       table.station-table th:first-child,
       table.station-table td:first-child {
@@ -1188,12 +1217,12 @@
       table.station-table td {
         text-align: right;
         height: 32px;
-        padding: 4px;
+        padding: 4px 6px;
         border-bottom: 1px solid var(--border-hairline);
         color: var(--text-secondary);
       }
       table.station-table tr:hover td {
-        background: rgba(255, 255, 255, 0.02);
+        background: rgba(255, 255, 255, 0.04);
       }
       table.station-table tr.overridden {
         background: var(--accent-dim);
@@ -1223,6 +1252,88 @@
         color: var(--status-ok);
         padding: 0 4px;
         font-variant-numeric: tabular-nums;
+      }
+
+      /* Unified Export Dropdown Menu */
+      .export-dropdown-wrapper {
+        position: relative;
+        display: inline-flex;
+      }
+      .export-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        min-width: 260px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-card);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+        padding: 6px;
+        z-index: 60;
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .export-dropdown-menu.open {
+        display: flex;
+      }
+      .export-menu-header {
+        font: 500 10px/14px var(--font-mono);
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 6px 8px 2px;
+      }
+      .export-menu-item {
+        width: 100%;
+        height: auto;
+        padding: 6px 10px;
+        border-radius: var(--radius-control);
+        background: transparent;
+        border: 1px solid transparent;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        cursor: pointer;
+        transition: all 0.12s var(--ease);
+      }
+      .export-menu-item:hover {
+        background: var(--bg-raised);
+        border-color: var(--border-hairline);
+      }
+      .export-menu-item strong {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+      .export-menu-sub {
+        font: 400 11px/14px var(--font-mono);
+        color: var(--text-muted);
+      }
+      .export-menu-divider {
+        height: 1px;
+        background: var(--border-hairline);
+        margin: 4px 0;
+      }
+      .export-menu-target {
+        padding: 6px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 11.5px;
+        color: var(--text-secondary);
+      }
+
+      @media (pointer: coarse), (max-width: 1180px) {
+        button.btn-mini {
+          min-height: 32px;
+          padding: 0 10px;
+        }
+        .compact-select {
+          min-height: 32px;
+        }
       }
 
       /* Live Auto-Save Status Pill & Saved Projects Drawer */
@@ -1529,10 +1640,25 @@
       body.hide-left-dock.hide-right-dock #viewport-datum-hud {
         left: 50%;
       }
+      @media (max-width: 1440px) {
+        #collective-pitch-toolbar-group {
+          display: none !important;
+        }
+      }
       @media (max-width: 1280px) {
-        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-datum-hud,
-        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-heatmap-legend {
+        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-datum-hud {
           display: none;
+        }
+        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-heatmap-legend {
+          bottom: calc(var(--dock-gap) + 8px);
+          font-size: 10px;
+          height: 24px;
+          padding: 0 8px;
+          gap: 6px;
+        }
+        body:not(.hide-left-dock):not(.hide-right-dock) #viewport-heatmap-legend .heatmap-gradient-bar {
+          width: 64px;
+          height: 6px;
         }
       }
       #viewport-datum-hud .datum-sep {
@@ -1687,7 +1813,8 @@
 
     <!-- Top-Right 3D Viewport Mode & CAD Export Bar -->
     <header id="top-dock" role="banner" aria-label="Viewport and CAD Export Toolbar">
-      <div class="toolbar">
+      <!-- Zone 1: Workspaces & Dock Toggles -->
+      <div class="toolbar" id="toolbar-zone-left">
         <!-- Studio Workspace Switcher: Blade vs Gearbox -->
         <div class="studio-tabs" role="tablist" aria-label="Studio Mode">
           <button id="tab-studio-blade" class="active" type="button" role="tab" aria-selected="true" title="Blade CAD &amp; Aerodynamics Studio">
@@ -1718,15 +1845,16 @@
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
             <span>Full 3D</span>
           </button>
-          <span class="toolbar-divider"></span>
         </div>
+      </div>
 
+      <!-- Zone 2: Viewport HUD, Cameras & Modes -->
+      <div class="toolbar" id="toolbar-zone-center">
         <!-- Blade View Controls (visible in Blade mode) -->
         <div class="toolbar" id="blade-view-controls">
-          <span class="toolbar-label">View</span>
           <button id="btn-view-single" class="btn-mini" type="button" aria-pressed="false" title="Single Blade 3D view">Single</button>
           <button id="btn-view-rotor" class="btn-mini active" type="button" aria-pressed="true" title="Full Rotor B-blade + Hub assembly preview">Rotor (B×)</button>
-          <button id="btn-view-gearbox" class="btn-mini" type="button" aria-pressed="false" title="3D Involute Spur/Helical Gearbox Prototype view">Gearbox</button>
+          <button id="btn-view-gearbox" class="btn-mini" type="button" aria-pressed="false" title="3D Involute Spur/Helical Gearbox Prototype view" style="display: none">Gearbox</button>
           <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
             <option value="segment">Color: CAD Segments</option>
             <option value="wind_impact">Heatmap: Wind Impact &amp; Stagnation</option>
@@ -1735,57 +1863,90 @@
             <option value="torque">Heatmap: Torque dQ/dr</option>
             <option value="wall_stress">Heatmap: Bending Stress</option>
           </select>
-          <span class="toolbar-divider"></span>
-          <div class="toolbar" id="collective-pitch-toolbar-group" title="Collective Blade Pitch Angle (degrees) — rotate blade in 3D &amp; simulate feathering">
+
+          <!-- Collapsible Pitch Group (preserved for test assertions & wide screens) -->
+          <div class="toolbar" id="collective-pitch-toolbar-group" title="Collective Blade Pitch Angle (degrees)">
             <span class="toolbar-label">Pitch</span>
-            <input id="tb-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" style="width: 68px; accent-color: var(--accent);" />
-            <span id="tb-pitch-val" class="section-meta" style="min-width: 28px">0.0°</span>
+            <input id="tb-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" style="width: 52px; accent-color: var(--accent);" />
+            <span id="tb-pitch-val" class="section-meta" style="min-width: 24px">0.0°</span>
             <button id="btn-pitch-feather" class="btn-mini" type="button" title="Quick Feather / Aerodynamic Brake (+30°)">Feather</button>
             <button id="btn-flip-blade" class="btn-mini active" type="button" aria-pressed="true" title="Flip blade orientation 180° around pitch axis">Flip 180°</button>
           </div>
-          <span class="toolbar-divider"></span>
         </div>
 
         <!-- Gearbox Toolbar Controls (visible only in Gearbox Studio) -->
         <div class="toolbar" id="gearbox-toolbar-controls">
           <button id="btn-toggle-gearbox-inspector" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Gear Settings Inspector">
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>
-            <span>⚙ Gear Settings</span>
+            <span>⚙ Settings</span>
           </button>
           <span class="toolbar-divider"></span>
-          <span class="toolbar-label">Layout</span>
           <button id="btn-tb-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference Layout">Side-by-Side</button>
           <button id="btn-tb-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout">Meshed</button>
           <span class="toolbar-divider"></span>
           <button id="btn-tb-gear-spin" class="btn-mini" type="button" title="Animate teeth mesh rotation">▶ Spin</button>
-          <span class="toolbar-divider"></span>
-          <button id="btn-tb-gear-export-all" class="btn-primary btn-mini" type="button" title="Download all 3 gears arranged flat on build plate as STL">Export 3 Gears (STL)</button>
-          <span class="toolbar-divider"></span>
+          <button id="btn-tb-gear-export-all" class="btn-primary btn-mini" type="button" title="Download all 3 gears arranged flat on build plate as STL">Export 3 Gears</button>
         </div>
 
-        <!-- Shared 3D Viewport Controls -->
-        <button id="btn-view-wireframe" class="btn-mini" type="button" aria-pressed="false" title="Toggle triangle wireframe mesh">Wireframe</button>
-        <button id="btn-view-spin" class="btn-mini" type="button" aria-pressed="false" title="Animate rotor rotation at design RPM">Spin</button>
         <span class="toolbar-divider"></span>
+
+        <!-- Shared 3D Viewport Controls -->
         <button id="btn-cam-iso" class="btn-mini" type="button" title="Isometric camera view">Iso</button>
         <button id="btn-cam-top" class="btn-mini" type="button" title="Planform top view">Plan</button>
         <button id="btn-cam-tip" class="btn-mini" type="button" title="Tip-down airfoil view">Tip</button>
+        <span class="toolbar-divider"></span>
+        <button id="btn-view-spin" class="btn-mini" type="button" aria-pressed="false" title="Animate rotor rotation at design RPM">▶ Spin</button>
+        <button id="btn-view-wireframe" class="btn-mini" type="button" aria-pressed="false" title="Toggle triangle wireframe mesh">Wire</button>
       </div>
 
+      <!-- Zone 3: Storage & Unified Export Menu -->
       <div class="toolbar" id="export-bar">
-        <button id="autosave-badge" type="button" class="autosave-badge" aria-live="polite" title="Automatic browser session persistence — click to open Projects &amp; Slots">Auto-saved</button>
+        <button id="autosave-badge" type="button" class="autosave-badge" aria-live="polite" title="Saved designs &amp; Cloud Gists — click to open Projects &amp; Slots">Auto-saved</button>
         <span class="toolbar-divider"></span>
-        <span class="toolbar-label">Export</span>
-        <select id="export-part" class="compact-select" aria-label="Select part to export" title="Select part to export">
-          <option value="blade">Blade Only</option>
-          <option value="assembly">Full Assembly (Blade + Hub)</option>
-          <option value="hub">Hub Only</option>
-        </select>
-        <button id="btn-export-stl" class="btn-primary btn-mini" type="button" title="Download watertight binary STL">STL</button>
-        <button id="btn-export-3mf" class="btn-mini" type="button" title="Download 3MF package (mm units)">3MF</button>
-        <button id="btn-export-step" class="btn-mini" type="button" title="Download ISO-10303-21 B-rep STEP solid">STEP</button>
-        <button id="btn-export-json" class="btn-mini" type="button" title="Download full Workbench Snapshot JSON (Design + Fabrication + Settings)">Export JSON</button>
-        <button id="btn-load-json" class="btn-mini" type="button" title="Load a Workbench Snapshot or Blade Design JSON file">Load JSON</button>
+
+        <!-- Unified Export Dropdown -->
+        <div class="export-dropdown-wrapper">
+          <button id="btn-export-main" class="btn-primary btn-mini" type="button" aria-expanded="false" aria-haspopup="true" title="Export CAD &amp; Mesh Files">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" style="stroke: currentColor; width: 13px; height: 13px"><path d="M8 2v8m-3-3l3 3 3-3M2.5 13.5h11"/></svg>
+            <span>Export</span>
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" style="width: 10px; height: 10px; stroke: currentColor"><path d="M4 6l4 4 4-4"/></svg>
+          </button>
+          <div id="export-dropdown-menu" class="export-dropdown-menu" role="menu" aria-label="Export Formats">
+            <div class="export-menu-header">3D Printing &amp; Meshes</div>
+            <button id="btn-export-stl" type="button" role="menuitem" class="export-menu-item" title="Download watertight binary STL">
+              <strong>STL Mesh</strong>
+              <span class="export-menu-sub">Watertight binary triangle mesh</span>
+            </button>
+            <button id="btn-export-3mf" type="button" role="menuitem" class="export-menu-item" title="Download 3MF package (mm units)">
+              <strong>3MF Package</strong>
+              <span class="export-menu-sub">Bambu Lab / PrusaSlicer color package</span>
+            </button>
+            <div class="export-menu-divider"></div>
+            <div class="export-menu-header">CAD Solid &amp; Data</div>
+            <button id="btn-export-step" type="button" role="menuitem" class="export-menu-item" title="Download ISO-10303-21 B-rep STEP solid">
+              <strong>STEP Solid</strong>
+              <span class="export-menu-sub">Exact B-rep for Fusion 360 / SolidWorks</span>
+            </button>
+            <button id="btn-export-json" type="button" role="menuitem" class="export-menu-item" title="Download full Workbench Snapshot JSON">
+              <strong>Export Snapshot JSON</strong>
+              <span class="export-menu-sub">Full parameters &amp; fabrication specs</span>
+            </button>
+            <button id="btn-load-json" type="button" role="menuitem" class="export-menu-item" title="Load a Workbench Snapshot or Blade Design JSON file">
+              <strong>Load JSON File</strong>
+              <span class="export-menu-sub">Open saved design from computer</span>
+            </button>
+            <div class="export-menu-divider"></div>
+            <div class="export-menu-target">
+              <label for="export-part">Export Target:</label>
+              <select id="export-part" class="compact-select">
+                <option value="blade">Blade Only</option>
+                <option value="assembly" selected>Full Assembly (Blade + Hub)</option>
+                <option value="hub">Hub Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <input id="input-load-json-file" type="file" accept=".json,application/json" hidden />
         <span id="export-status" role="status" aria-live="polite">Ready</span>
       </div>

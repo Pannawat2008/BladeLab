@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 93**
-> **LAST_UPDATED: 2026-11-09 17:38 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 94**
+> **LAST_UPDATED: 2026-11-09 18:15 (UTC+7) by geom-1**
 
 ---
 
@@ -532,6 +532,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Implemented cross-device cloud persistence via GitHub Gists: (1) created `web/src/gist.ts` supporting personal access token verification, listing `[BladeLab]` gists, saving/updating public or secret gists with full WorkbenchSnapshot JSON, anonymous gist retrieval, and deletion; (2) added Gist cloud drawer tab (`#tab-drawer-gist`, `#drawer-gist-panel`) with 1-click token setup link, design name input, public/secret toggle, and cloud gists list with Load, 1-click URL Share, GitHub link, and Delete; (3) wired automatic URL query parameter `?gist=<id>` on workbench startup for instant cross-device sharing via URL; (4) verified by 18/18 Node tests, `tsc --noEmit`, and `vite build`.
   refs: web/src/gist.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs, web/tsconfig.json | supersedes: -
 
+- **F-geom1-064** | 2026-11-09 18:15 | geom-1 | T-105
+  Streamlined workbench top dock into 3 distinct non-wrapping functional zones and polished table & mobile usability: (1) restructured `#top-dock` into Zone 1 (Document & Workspace Mode Tabs), Zone 2 (3D Camera, Wireframe & Spin Viewport Controls), and Zone 3 (Storage badge & unified `#btn-export-main` dropdown menu grouping STL, 3MF, STEP, Snapshot JSON and Load JSON with descriptive subtext); (2) collapsed redundant collective pitch slider and flip buttons from top dock on screens <= 1440px via CSS while preserving full interactive controls in `#layer1-rotor` CAD dock and retaining DOM IDs for test backward compatibility; (3) added sticky table headers (`top: 0`) and sticky station index column (`left: 0`) with `max-height: 360px` in `#layer3-stations` `.table-wrap` for smooth station editing; (4) preserved `#viewport-heatmap-legend` visibility on screens <= 1280px by moving the breakpoint to <= 960px with right-anchored positioning; (5) added touch target expansion for `.btn-mini` under `@media (pointer: coarse)`; (6) verified by 18/18 Node tests, `tsc --noEmit`, and `vite build`.
+  refs: web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -969,3 +973,4 @@ note="user requested: integrate GitHub Gists cloud persistence; implementing Git
 [END] 2026-11-09T17:38:00+07:00 agent=geom-1 mem=v93 note="Implemented GitHub Gists Cloud persistence (web/src/gist.ts, drawer tabs, token auth, ?gist=<id> URL auto-load, share links); 18/18 Node tests + tsc + vite build clean; F-geom1-063 recorded"
 [ACK] 2026-11-09T18:05:00+07:00 agent=geom-1 mem=v93 last_entry=F-geom1-063 task=T-105
 note="lead approved UI audit fixes: (1) streamline top toolbar into 3 zones with unified Export dropdown; (2) remove redundant flip/pitch from toolbar; (3) sticky station table header & column; (4) responsive right-anchored heatmap legend; (5) mobile touch hit-slop"
+[END] 2026-11-09T18:15:00+07:00 agent=geom-1 mem=v94 note="Streamlined top dock into 3 zones with unified Export dropdown, sticky station table headers & column, responsive heatmap legend, and mobile touch targets; 18/18 Node tests + tsc + vite build clean; F-geom1-064 recorded"

@@ -202,6 +202,8 @@ const btnCamIso = document.getElementById("btn-cam-iso") as HTMLButtonElement;
 const btnCamTop = document.getElementById("btn-cam-top") as HTMLButtonElement;
 const btnCamTip = document.getElementById("btn-cam-tip") as HTMLButtonElement;
 
+const btnExportMain = document.getElementById("btn-export-main") as HTMLButtonElement | null;
+const exportDropdownMenu = document.getElementById("export-dropdown-menu");
 const selectExportPart = document.getElementById("export-part") as HTMLSelectElement;
 const btnExportStl = document.getElementById("btn-export-stl") as HTMLButtonElement;
 const btnExport3mf = document.getElementById("btn-export-3mf") as HTMLButtonElement;
@@ -3099,6 +3101,36 @@ inputLoadJsonFile.addEventListener("change", async () => {
     errorBanner.textContent = `Could not load ${file.name}: ${msg}`;
     errorBanner.style.display = "block";
   }
+});
+
+// Unified Export Dropdown Menu toggle & dismiss listeners
+btnExportMain?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  const isOpen = exportDropdownMenu?.classList.toggle("open");
+  btnExportMain.setAttribute("aria-expanded", String(Boolean(isOpen)));
+});
+
+document.addEventListener("click", (ev) => {
+  if (exportDropdownMenu?.classList.contains("open")) {
+    if (!exportDropdownMenu.contains(ev.target as Node) && ev.target !== btnExportMain) {
+      exportDropdownMenu.classList.remove("open");
+      btnExportMain?.setAttribute("aria-expanded", "false");
+    }
+  }
+});
+
+window.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && exportDropdownMenu?.classList.contains("open")) {
+    exportDropdownMenu.classList.remove("open");
+    btnExportMain?.setAttribute("aria-expanded", "false");
+  }
+});
+
+[btnExportStl, btnExport3mf, btnExportStep, btnExportJson, btnLoadJson].forEach((btn) => {
+  btn?.addEventListener("click", () => {
+    exportDropdownMenu?.classList.remove("open");
+    btnExportMain?.setAttribute("aria-expanded", "false");
+  });
 });
 
 // ---- Saved Projects & Named Local Slots Manager ----
