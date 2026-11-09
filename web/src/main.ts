@@ -82,6 +82,7 @@ import {
   PRINTER_PRESETS,
   type PrinterPresetKey,
   RATIO_EPS,
+  remapSpanRatio,
   removeSavedSlot,
   renderAirfoilSectionSvgMarkup,
   renderCpTsrSvgMarkup,
@@ -3298,14 +3299,29 @@ bindRotorNumberInput(inputStations, "station_count", true);
 inputBladeLength.addEventListener("change", () => {
   const len = Number.parseFloat(inputBladeLength.value);
   if (Number.isFinite(len) && len >= 10) {
-    commitDesign(updateBladeLengthMm(workingDesign, len));
+    const oldHub = workingDesign.rotor.hub_radius_mm / workingDesign.rotor.radius_mm;
+    const next = updateBladeLengthMm(workingDesign, len);
+    const newHub = next.rotor.hub_radius_mm / next.rotor.radius_mm;
+    if (Math.abs(newHub - oldHub) > RATIO_EPS && lockedSpanRatios.length > 0) {
+      for (let i = 0; i < lockedSpanRatios.length; i++) {
+        lockedSpanRatios[i] = remapSpanRatio(lockedSpanRatios[i]!, oldHub, newHub);
+      }
+    }
+    commitDesign(next);
   }
 });
 
 sliderBladeLength.addEventListener("input", () => {
   const len = sliderBladeLength.valueAsNumber;
   bladeLengthVal.textContent = `${len} mm`;
+  const oldHub = history.current().rotor.hub_radius_mm / history.current().rotor.radius_mm;
   workingDesign = updateBladeLengthMm(history.current(), len);
+  const newHub = workingDesign.rotor.hub_radius_mm / workingDesign.rotor.radius_mm;
+  if (Math.abs(newHub - oldHub) > RATIO_EPS && lockedSpanRatios.length > 0) {
+    for (let i = 0; i < lockedSpanRatios.length; i++) {
+      lockedSpanRatios[i] = remapSpanRatio(lockedSpanRatios[i]!, oldHub, newHub);
+    }
+  }
   inputRadius.value = String(workingDesign.rotor.radius_mm);
   inputBladeLength.value = String(len);
   renderStationTable(workingDesign);

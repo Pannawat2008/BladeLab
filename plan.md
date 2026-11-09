@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 94**
-> **LAST_UPDATED: 2026-11-09 18:15 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 95**
+> **LAST_UPDATED: 2026-11-09 21:50 (UTC+7) by geom-1**
 
 ---
 
@@ -536,6 +536,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Streamlined workbench top dock into 3 distinct non-wrapping functional zones and polished table & mobile usability: (1) restructured `#top-dock` into Zone 1 (Document & Workspace Mode Tabs), Zone 2 (3D Camera, Wireframe & Spin Viewport Controls), and Zone 3 (Storage badge & unified `#btn-export-main` dropdown menu grouping STL, 3MF, STEP, Snapshot JSON and Load JSON with descriptive subtext); (2) collapsed redundant collective pitch slider and flip buttons from top dock on screens <= 1440px via CSS while preserving full interactive controls in `#layer1-rotor` CAD dock and retaining DOM IDs for test backward compatibility; (3) added sticky table headers (`top: 0`) and sticky station index column (`left: 0`) with `max-height: 360px` in `#layer3-stations` `.table-wrap` for smooth station editing; (4) preserved `#viewport-heatmap-legend` visibility on screens <= 1280px by moving the breakpoint to <= 960px with right-anchored positioning; (5) added touch target expansion for `.btn-mini` under `@media (pointer: coarse)`; (6) verified by 18/18 Node tests, `tsc --noEmit`, and `vite build`.
   refs: web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-065** | 2026-11-09 21:50 | geom-1 | T-105
+  Resolved "design validation failed with 1 issue(s) when i make length below 520": (1) root-caused to station overrides preserving fixed radial fractions $span\_ratio = r / R$; when reducing blade length $L$ (or radius $R$), $hub\_ratio = hub\_radius / R$ increases, causing any override at or near the blade root to drop below the hub ($span\_ratio < hub\_ratio - \epsilon$), violating `check_overrides` ("must be within the blade span [hub_radius/R, 1]"); (2) implemented `adaptOverridesToRotor` and `remapSpanRatio` in `web/src/state.ts` that dynamically re-scale station overrides along relative blade span $s \in [0, 1]$ and strictly clamp them to $[hub\_ratio_{new}, 1.0]$, preserving root and mid-span stations without ever dropping below the hub; (3) integrated into `updateBladeLengthMm`, `updateRotorField`, `preserveLockedStations`, and snapshot loading/creation; (4) added regression unit tests in `web/scripts/types.test.mjs` verifying that blade length reduction down to 450 mm and below with active root overrides maintains valid span ratios and builds watertight WASM meshes without throwing validation errors.
+  refs: web/src/state.ts, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -976,3 +980,4 @@ note="lead approved UI audit fixes: (1) streamline top toolbar into 3 zones with
 [END] 2026-11-09T18:15:00+07:00 agent=geom-1 mem=v94 note="Streamlined top dock into 3 zones with unified Export dropdown, sticky station table headers & column, responsive heatmap legend, and mobile touch targets; 18/18 Node tests + tsc + vite build clean; F-geom1-064 recorded"
 [ACK] 2026-11-09T21:31:30+07:00 agent=geom-1 mem=v94 last_entry=F-geom1-064 task=T-105
 note="user reported 'design validation failed with 1 issue(s) when i make length below 520'; investigating crates/blade-model validation rules (radius vs hub_radius vs station grid or spar depth) and web blade length / radius coupling"
+[END] 2026-11-09T21:50:00+07:00 agent=geom-1 mem=v95 note="Fixed blade length validation error when length < 520 mm: added adaptOverridesToRotor and remapSpanRatio to scale and clamp station overrides to [hub_ratio, 1.0] across length/radius edits; 18/18 Node tests + tsc + vite build clean; F-geom1-065 recorded"

@@ -381,6 +381,17 @@ test("blade length L, pitch-axis pivot, global chord width shift/scale, and airf
   assert.equal(withLen.rotor.hub_radius_mm, 60);
   assert.equal(withLen.rotor.radius_mm, 760);
 
+  // 1b. Direct Blade Length reduction below 520 adapts overrides to remain valid on blade span
+  const withRootOverride = structuredClone(initialDesign);
+  withRootOverride.overrides = [
+    { span_ratio: 60 / 580, chord_mm: 70, twist_deg: 20, airfoil: null },
+  ];
+  const shortBlade = updateBladeLengthMm(withRootOverride, 450);
+  assert.equal(shortBlade.rotor.radius_mm, 510);
+  const newHubRatio = 60 / 510;
+  assert.ok(shortBlade.overrides[0].span_ratio >= newHubRatio - 1e-6);
+  assert.ok(shortBlade.overrides[0].span_ratio <= 1.0 + 1e-6);
+
   // 2. Pitch-axis ratio clamps to [0, 1]
   const withPitchAxis = updatePitchAxisRatio(withLen, 0.35);
   assert.equal(withPitchAxis.rotor.pitch_axis_ratio, 0.35);
@@ -415,6 +426,8 @@ test("blade length L, pitch-axis pivot, global chord width shift/scale, and airf
     const thinMesh = build_mesh(JSON.stringify(scaled), "{}");
     const thickMesh = build_mesh(JSON.stringify(thickNaca), "{}");
     assert.ok(thickMesh.volume_mm3 > thinMesh.volume_mm3 * 1.3);
+    const shortMesh = build_mesh(JSON.stringify(shortBlade), "{}");
+    assert.ok(shortMesh.triangle_count > 0);
   }
 });
 
