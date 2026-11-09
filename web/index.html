@@ -1997,6 +1997,13 @@
             Save designs visible on any device: <a href="https://github.com/settings/tokens/new?scopes=gist&description=BladeLab+Workbench" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline">Create GitHub Token with 'gist' scope ↗</a>
           </div>
 
+          <!-- Load Public Gist by ID or URL (No token required for public gists) -->
+          <div class="slot-save-row" style="margin-bottom: 6px">
+            <input id="gist-load-input" type="text" placeholder="Gist ID or URL (e.g. 7fa4b12c890 or https://gist.github.com/...)" aria-label="Load Gist ID or URL" style="font-family: var(--font-mono); font-size: 11.5px" />
+            <button id="btn-gist-load" class="btn-primary btn-mini" type="button" title="Load public or shared design from GitHub Gist ID or URL">Load Gist</button>
+          </div>
+          <div id="gist-load-status" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; display: none"></div>
+
           <!-- Connected User Header (shown when authenticated) -->
           <div id="gist-user-bar" class="bind-row" style="margin: 0 0 8px 0; border: none; padding: 0; display: none">
             <span style="font-size: 11.5px; color: var(--text-secondary)">Connected as <strong id="gist-user-login" style="color: var(--accent)"></strong></span>

@@ -63,12 +63,14 @@ import {
   exportGearStlBytes,
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
+  snapSpanRatioToGrid,
 } from "../src/state.ts";
 import {
   BLADELAB_GIST_FILENAME,
   BLADELAB_GIST_PREFIX,
   GITHUB_TOKEN_STORAGE_KEY,
   buildGistShareUrl,
+  extractGistId,
 } from "../src/gist.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1163,11 +1165,36 @@ test("GitHub Gists Cloud integration: constants, share URLs, and DOM elements (T
   assert.equal(BLADELAB_GIST_PREFIX, "[BladeLab] ");
   assert.equal(GITHUB_TOKEN_STORAGE_KEY, "bladelab.github_token");
 
-  // 2. Share URL builder
+  // 2. Share URL builder and extractGistId parser
   const shareUrl = buildGistShareUrl("7fa4b12c890");
   assert.ok(shareUrl.includes("?gist=7fa4b12c890"), `URL must contain gist query param: ${shareUrl}`);
 
-  // 3. Mock Gist JSON round-trip through parseLoadedProjectJson
+  assert.equal(extractGistId("7fa4b12c890"), "7fa4b12c890");
+  assert.equal(extractGistId("https://gist.github.com/Pannawat2008/7fa4b12c890"), "7fa4b12c890");
+  assert.equal(extractGistId("https://gist.github.com/7fa4b12c890"), "7fa4b12c890");
+  assert.equal(extractGistId("https://gist.githubusercontent.com/Pannawat2008/7fa4b12c890/raw/abc"), "7fa4b12c890");
+  assert.equal(extractGistId("https://api.github.com/gists/7fa4b12c890"), "7fa4b12c890");
+  assert.equal(extractGistId("https://site.com/?gist=7fa4b12c890"), "7fa4b12c890");
+  assert.equal(extractGistId("?gist=https%3A%2F%2Fgist.github.com%2Fuser%2F7fa4b12c890"), "7fa4b12c890");
+
+  // 3. snapSpanRatioToGrid prevents float-rounding mismatch with kernel RATIO_EPS
+  const testRotor = {
+    radius_mm: 600,
+    hub_radius_mm: 50,
+    blade_count: 3,
+    design_tsr: 6.0,
+    wind_speed_mps: 10.0,
+    station_count: 16,
+    pitch_axis_ratio: 0.3,
+  };
+  const expectedHub = 50 / 600;
+  assert.equal(snapSpanRatioToGrid(0.083333, testRotor), expectedHub);
+  assert.equal(snapSpanRatioToGrid(0.0833333, testRotor), expectedHub);
+  const expectedSt1 = expectedHub + (1 - expectedHub) * 1 / 15;
+  assert.equal(snapSpanRatioToGrid(0.144444, testRotor), expectedSt1);
+  assert.equal(snapSpanRatioToGrid(0.999999, testRotor), 1.0);
+
+  // 4. Mock Gist JSON round-trip through parseLoadedProjectJson
   const mockGistContent = JSON.stringify({
     schema_version: 1,
     design: initialDesign,
@@ -1180,13 +1207,16 @@ test("GitHub Gists Cloud integration: constants, share URLs, and DOM elements (T
   assert.equal(parsed.name, "Gist Competition Blade");
   assert.equal(parsed.design.rotor.radius_mm, initialDesign.rotor.radius_mm);
 
-  // 4. HTML Elements Verification
+  // 5. HTML Elements Verification
   const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
   assert.ok(html.includes('id="tab-drawer-gist"'), "Projects drawer must contain tab-drawer-gist button");
   assert.ok(html.includes('id="tab-drawer-local"'), "Projects drawer must contain tab-drawer-local button");
   assert.ok(html.includes('id="drawer-gist-panel"'), "Projects drawer must contain drawer-gist-panel");
   assert.ok(html.includes('id="gist-token-input"'), "Projects drawer must contain gist-token-input");
   assert.ok(html.includes('id="btn-gist-connect"'), "Projects drawer must contain btn-gist-connect button");
+  assert.ok(html.includes('id="gist-load-input"'), "Projects drawer must contain gist-load-input for pasting Gist link or ID");
+  assert.ok(html.includes('id="btn-gist-load"'), "Projects drawer must contain btn-gist-load button");
+  assert.ok(html.includes('id="gist-load-status"'), "Projects drawer must contain gist-load-status");
   assert.ok(html.includes('id="btn-gist-refresh"'), "Projects drawer must contain btn-gist-refresh button");
   assert.ok(html.includes('id="btn-gist-disconnect"'), "Projects drawer must contain btn-gist-disconnect button");
   assert.ok(html.includes('id="btn-save-gist"'), "Projects drawer must contain btn-save-gist button");

@@ -120,6 +120,7 @@ import {
   fetchBladeLabGist,
   deleteBladeLabGist,
   buildGistShareUrl,
+  extractGistId,
   type BladeLabGistSummary,
 } from "./gist";
 import type { AirfoilSpec, BezierControlPoint, Design } from "./types/blade-model";
@@ -956,9 +957,16 @@ function buildCleanBladeGeometry(
         outNormals[outBase + 1] = sy / slen;
         outNormals[outBase + 2] = sz / slen;
       } else {
-        outNormals[outBase] = ux;
-        outNormals[outBase + 1] = uy;
-        outNormals[outBase + 2] = uz;
+        const ulen = Math.hypot(ux, uy, uz);
+        if (ulen > 1e-12) {
+          outNormals[outBase] = ux / ulen;
+          outNormals[outBase + 1] = uy / ulen;
+          outNormals[outBase + 2] = uz / ulen;
+        } else {
+          outNormals[outBase] = 0;
+          outNormals[outBase + 1] = 1;
+          outNormals[outBase + 2] = 0;
+        }
       }
     }
   }
@@ -2383,7 +2391,33 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
       selectGear(wb.gearbox_selected_gear, Boolean(wb.gearbox_inspector_open ?? true));
     }
   } else {
-    setStudioMode("blade");
+    studioMode = "blade";
+    tabStudioBlade?.classList.add("active");
+    tabStudioBlade?.setAttribute("aria-selected", "true");
+    tabStudioGearbox?.classList.remove("active");
+    tabStudioGearbox?.setAttribute("aria-selected", "false");
+    document.body.classList.remove("studio-gearbox-mode");
+    gearboxInspector?.classList.remove("open");
+    btnToggleGearboxInspector?.classList.remove("active");
+    btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+    selectGear(null, false);
+
+    const r = workingDesign.rotor.radius_mm;
+    if (viewMode === "single") {
+      camera.position.set(r * 0.7, r * 0.55, r * 1.35);
+      controls.target.set(30, 0, r * 0.55);
+    } else {
+      camera.position.set(r * 0.7, r * 0.55, r * 1.35);
+      controls.target.set(0, 0, 0);
+    }
+    controls.update();
+
+    const l = Math.max(0, r - workingDesign.rotor.hub_radius_mm);
+    if (hudRotorSpec) {
+      hudRotorSpec.textContent = `R ${r} mm  L ${l.toFixed(0)} mm  B ${workingDesign.rotor.blade_count}`;
+    }
+    syncDockAccessibilityState();
+    syncTopDockOffset();
   }
 
   wireframeMode = Boolean(wb.wireframe_mode);
@@ -2470,18 +2504,17 @@ function applyWorkbenchSnapshot(
   const prevSuppress = suppressAutoSave;
   suppressAutoSave = true;
   try {
+    if (options.commitToHistory !== false) {
+      history.commit(snapshot.design);
+    }
+    workingDesign = history.current();
     applyFabricationSnapshotToDom(snapshot.fabrication);
     applyWorkbenchUiSnapshotToDom(snapshot.workbench);
     if (snapshot.name) {
       slotNameInput.value = snapshot.name;
     }
-    if (options.commitToHistory !== false) {
-      history.commit(snapshot.design);
-    }
-    workingDesign = history.current();
     syncControlsFromDesign(workingDesign);
     rebuild3D(workingDesign);
-    applyMeshChordOffset();
   } finally {
     suppressAutoSave = prevSuppress;
   }
@@ -3935,6 +3968,9 @@ const gistIsPublicCheck = document.getElementById("gist-is-public") as HTMLInput
 const btnSaveGist = document.getElementById("btn-save-gist") as HTMLButtonElement | null;
 const gistStatusEl = document.getElementById("gist-status");
 const gistDesignsListEl = document.getElementById("gist-designs-list");
+const gistLoadInput = document.getElementById("gist-load-input") as HTMLInputElement | null;
+const btnGistLoad = document.getElementById("btn-gist-load") as HTMLButtonElement | null;
+const gistLoadStatus = document.getElementById("gist-load-status");
 
 // Aero Dock Cloud widgets
 const inputCloudDesignName = document.getElementById("cloud-design-name") as HTMLInputElement | null;
@@ -4255,6 +4291,70 @@ btnGistDisconnect?.addEventListener("click", () => {
   if (confirm("Disconnect GitHub account and remove token from this browser?")) {
     setStoredGitHubToken(null);
     void syncGistAuthState();
+  }
+});
+
+async function handleLoadGistFromInput() {
+  const raw = gistLoadInput?.value.trim();
+  if (!raw) {
+    if (gistLoadStatus) {
+      gistLoadStatus.textContent = "Please enter a Gist ID or URL.";
+      gistLoadStatus.style.display = "block";
+      gistLoadStatus.style.color = "var(--status-err)";
+    }
+    return;
+  }
+  const cleanId = extractGistId(raw);
+  if (!cleanId) {
+    if (gistLoadStatus) {
+      gistLoadStatus.textContent = "Could not parse a valid Gist ID from the input.";
+      gistLoadStatus.style.display = "block";
+      gistLoadStatus.style.color = "var(--status-err)";
+    }
+    return;
+  }
+  try {
+    if (btnGistLoad) {
+      btnGistLoad.textContent = "Loading...";
+      btnGistLoad.disabled = true;
+    }
+    if (gistLoadStatus) {
+      gistLoadStatus.textContent = `Fetching Gist ${cleanId.slice(0, 7)}...`;
+      gistLoadStatus.style.display = "block";
+      gistLoadStatus.style.color = "var(--text-muted)";
+    }
+    const gistData = await fetchBladeLabGist(cleanId, getStoredGitHubToken());
+    applyWorkbenchSnapshot(gistData.snapshot, { commitToHistory: true, badgePrefix: "Gist" });
+    if (gistDesignNameInput) gistDesignNameInput.value = gistData.name;
+    if (inputCloudDesignName) inputCloudDesignName.value = gistData.name;
+    if (gistLoadStatus) {
+      gistLoadStatus.textContent = `Loaded "${gistData.name}" successfully!`;
+      gistLoadStatus.style.color = "var(--status-ok)";
+    }
+    if (btnGistLoad) btnGistLoad.textContent = "Loaded!";
+    setTimeout(() => {
+      if (btnGistLoad) {
+        btnGistLoad.textContent = "Load Gist";
+        btnGistLoad.disabled = false;
+      }
+    }, 1500);
+  } catch (err) {
+    console.error("Failed to load Gist from input:", err);
+    if (gistLoadStatus) {
+      gistLoadStatus.textContent = `Error: ${String(err)}`;
+      gistLoadStatus.style.color = "var(--status-err)";
+    }
+    if (btnGistLoad) {
+      btnGistLoad.textContent = "Load Gist";
+      btnGistLoad.disabled = false;
+    }
+  }
+}
+btnGistLoad?.addEventListener("click", handleLoadGistFromInput);
+gistLoadInput?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    void handleLoadGistFromInput();
   }
 });
 
@@ -4810,13 +4910,14 @@ const urlParams = new URLSearchParams(window.location.search);
 const gistParam = urlParams.get("gist");
 if (gistParam) {
   try {
-    const gistData = await fetchBladeLabGist(gistParam, getStoredGitHubToken());
+    const cleanGistId = extractGistId(gistParam);
+    const gistData = await fetchBladeLabGist(cleanGistId, getStoredGitHubToken());
     applyWorkbenchSnapshot(gistData.snapshot, {
       commitToHistory: true,
       badgePrefix: "Gist",
     });
     autosaveBadge.textContent = `Gist: ${gistData.name}`;
-    autosaveBadge.title = `Loaded from GitHub Gist ${gistParam}`;
+    autosaveBadge.title = `Loaded from GitHub Gist ${cleanGistId}`;
     if (gistDesignNameInput) gistDesignNameInput.value = gistData.name;
     if (inputCloudDesignName) inputCloudDesignName.value = gistData.name;
     restoredOnStartup = true;

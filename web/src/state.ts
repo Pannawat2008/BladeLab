@@ -240,6 +240,30 @@ export function resolveStationsPreview(design: Design): ResolvedStationRow[] {
 }
 
 /**
+ * Snaps a span ratio to the blade span [hub_radius/R, 1.0] and aligns with
+ * exact uniform station grid floats to prevent float-rounding mismatch with
+ * Rust kernel RATIO_EPS (which causes duplicate micro-loft stations and crumpled mesh).
+ */
+export function snapSpanRatioToGrid(ratio: number, rotor: Rotor): number {
+  const hubRatio = rotor.hub_radius_mm / rotor.radius_mm;
+  if (!Number.isFinite(ratio) || ratio <= hubRatio + 1e-5) {
+    return hubRatio;
+  }
+  if (ratio >= 1.0 - 1e-5) {
+    return 1.0;
+  }
+  const count = Math.max(2, Math.round(rotor.station_count));
+  const span = 1.0 - hubRatio;
+  for (let i = 0; i < count; i++) {
+    const uni = hubRatio + span * (i / (count - 1));
+    if (Math.abs(ratio - uni) <= 1e-4) {
+      return uni;
+    }
+  }
+  return ratio;
+}
+
+/**
  * Adapts station overrides when rotor radius or hub radius changes so that
  * all station positions remain physically on the blade span [hub_radius / R, 1.0].
  */
@@ -247,8 +271,18 @@ export function adaptOverridesToRotor(
   overrides: readonly StationOverride[],
   oldHubRatio: number,
   newHubRatio: number,
+  rotor?: Rotor,
 ): StationOverride[] {
   if (!overrides || overrides.length === 0) return [];
+  if (Math.abs(newHubRatio - oldHubRatio) < 1e-9) {
+    if (rotor) {
+      return overrides.map((ov) => ({
+        ...ov,
+        span_ratio: snapSpanRatioToGrid(ov.span_ratio, rotor),
+      }));
+    }
+    return [...overrides];
+  }
   const safeOldHub =
     Number.isFinite(oldHubRatio) && oldHubRatio >= 0 && oldHubRatio < 1.0
       ? oldHubRatio
@@ -259,9 +293,10 @@ export function adaptOverridesToRotor(
   const remapped = overrides.map((ov) => {
     // Relative span fraction along blade: 0 = root, 1 = tip
     const s = Math.max(0, Math.min(1, (ov.span_ratio - safeOldHub) / oldSpan));
-    const newRatio = Number(
-      Math.max(newHubRatio, Math.min(1.0, newHubRatio + newSpan * s)).toFixed(6),
-    );
+    let newRatio = Math.max(newHubRatio, Math.min(1.0, newHubRatio + newSpan * s));
+    if (rotor) {
+      newRatio = snapSpanRatioToGrid(newRatio, rotor);
+    }
     return {
       ...ov,
       span_ratio: newRatio,
@@ -280,6 +315,7 @@ export function remapSpanRatio(
   spanRatio: number,
   oldHubRatio: number,
   newHubRatio: number,
+  rotor?: Rotor,
 ): number {
   const safeOldHub =
     Number.isFinite(oldHubRatio) && oldHubRatio >= 0 && oldHubRatio < 1.0
@@ -288,7 +324,8 @@ export function remapSpanRatio(
   const oldSpan = Math.max(1e-6, 1.0 - safeOldHub);
   const newSpan = Math.max(1e-6, 1.0 - newHubRatio);
   const s = Math.max(0, Math.min(1, (spanRatio - safeOldHub) / oldSpan));
-  return Number(Math.max(newHubRatio, Math.min(1.0, newHubRatio + newSpan * s)).toFixed(6));
+  const rawRatio = Math.max(newHubRatio, Math.min(1.0, newHubRatio + newSpan * s));
+  return rotor ? snapSpanRatioToGrid(rawRatio, rotor) : rawRatio;
 }
 
 /**
@@ -311,7 +348,7 @@ export function updateRotorField<K extends keyof Rotor>(
     newHubRatio < 1.0 &&
     next.overrides.length > 0
   ) {
-    next.overrides = adaptOverridesToRotor(next.overrides, oldHubRatio, newHubRatio);
+    next.overrides = adaptOverridesToRotor(next.overrides, oldHubRatio, newHubRatio, next.rotor);
   }
   return next;
 }
@@ -333,7 +370,7 @@ export function updateBladeLengthMm(design: Design, bladeLengthMm: number): Desi
     newHubRatio < 1.0 &&
     next.overrides.length > 0
   ) {
-    next.overrides = adaptOverridesToRotor(next.overrides, oldHubRatio, newHubRatio);
+    next.overrides = adaptOverridesToRotor(next.overrides, oldHubRatio, newHubRatio, next.rotor);
   }
   return next;
 }
@@ -488,8 +525,9 @@ export function preserveLockedStations(
     );
     if (matched) {
       const s = Math.max(0, Math.min(1, (matched.span_ratio - beforeHub) / beforeSpan));
-      const targetRatio = Number(
-        Math.max(afterHub, Math.min(1.0, afterHub + afterSpan * s)).toFixed(6),
+      const targetRatio = snapSpanRatioToGrid(
+        Math.max(afterHub, Math.min(1.0, afterHub + afterSpan * s)),
+        next.rotor,
       );
       next = setStationOverride(next, targetRatio, {
         chord_mm: matched.effective_chord_mm,
@@ -1819,7 +1857,12 @@ export function createWorkbenchSnapshot(
   const clonedDesign = cloneDesign(design);
   if (Array.isArray(clonedDesign.overrides) && clonedDesign.overrides.length > 0) {
     const hubRatio = clonedDesign.rotor.hub_radius_mm / clonedDesign.rotor.radius_mm;
-    clonedDesign.overrides = adaptOverridesToRotor(clonedDesign.overrides, hubRatio, hubRatio);
+    clonedDesign.overrides = adaptOverridesToRotor(
+      clonedDesign.overrides,
+      hubRatio,
+      hubRatio,
+      clonedDesign.rotor,
+    );
   }
   const fab: FabricationSnapshot = {
     ...defaultFabricationSnapshot(),

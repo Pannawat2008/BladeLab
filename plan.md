@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 96**
-> **LAST_UPDATED: 2026-11-09 22:37 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 97**
+> **LAST_UPDATED: 2026-11-09 23:15 (UTC+7) by geom-1**
 
 ---
 
@@ -544,6 +544,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Resolved "Export failed: Error: HTTP 405: 405 Not Allowed" on STEP export: (1) root-caused to static hosting (GitHub Pages) rejecting `POST /api/v1/export`; (2) compiled `blade-cad` with `truck` CAD kernel directly into WebAssembly (`wasm32-unknown-unknown`) inside `crates/blade-wasm`, adding `export_step(design_json, part)` (ISO 10303-21 B-rep text generation), `export_part_stl_bytes(design_json, part)`, and `export_part_3mf_bytes(design_json, part)` for blade, hub, and assembly solids; (3) wired in-browser `export_step` into `handleExport` in `web/src/main.ts`, downloading `.step` files instantly in-browser with zero server dependency; (4) added in-browser fallback and sanitized error display for static hosting environments; (5) verified with FreeCAD/truck STEP validation tests in `blade-wasm` and 18/18 Node tests passing.
   refs: crates/blade-wasm/Cargo.toml, crates/blade-wasm/src/lib.rs, crates/blade-wasm/src/mesh.rs, web/src/main.ts, web/src/vite-env.d.ts, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-067** | 2026-11-09 23:15 | geom-1 | T-105
+  Resolved "load gist was fail and when not fail the model was messy": (1) Gist load failure root causes: (a) `fetchBladeLabGist` lacked URL parsing—pasting full Gist links or query parameters failed with HTTP 404; (b) invalid/expired localStorage tokens caused 401/403 failures on public gists instead of falling back to unauthenticated public fetches; (c) missing content on large/truncated files failed instead of retrieving `file.raw_url`; (d) the drawer UI had no direct input field for cross-device public gist loading without personal access tokens. (2) Messy model root causes: `adaptOverridesToRotor` and snapshot persistence previously truncated station override $span\_ratio$ with `.toFixed(6)` (e.g. 0.083333 vs exact 0.08333333333333333); because the difference $|3.33 \times 10^{-7}| > \text{RATIO\_EPS} (10^{-9})$, Rust's `resolve` station deduplication failed to merge the override with the uniform station grid, duplicating every station into adjacent micro-sections separated by $\sim 0.0002$ mm; B-spline surface interpolation matrix rows became nearly linearly dependent, causing ill-conditioned matrix inversion and exploding surface control points into jagged, wrinkled, messy meshes. Furthermore, in `applyWorkbenchSnapshot`, UI snapshot restoration preceded design commitment, and `applyMeshChordOffset` was not called consistently. (3) Fixes: (a) implemented `extractGistId` in `web/src/gist.ts` supporting any URL/ID format; (b) added automatic anonymous retry on 401/403 and `raw_url` fallback for truncated contents; (c) added `#gist-load-input` + `#btn-gist-load` in `#drawer-gist-panel`; (d) added `snapSpanRatioToGrid` in `web/src/state.ts` to strictly snap station overrides to double-precision uniform station grid positions, eliminating `.toFixed(6)` truncation mismatch with `RATIO_EPS`; (e) updated `applyWorkbenchSnapshot` to commit design before DOM sync, respect `view_mode`, ensure fallback normal vectors in `buildCleanBladeGeometry`, and sync mesh offsets in `rebuild3D`.
+  refs: web/src/gist.ts, web/src/state.ts, web/src/main.ts, web/index.html, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -990,3 +994,4 @@ note="user reported: 'when i click the export step its said Export failed: Error
 [END] 2026-11-09T22:37:00+07:00 agent=geom-1 mem=v96 note="Fixed STEP export 405 error on static hosting: compiled blade-cad into blade-wasm, exposing in-browser export_step, export_part_stl_bytes, and export_part_3mf_bytes; wired into web/src/main.ts handleExport; all 18 Node tests + wasm tests + vite build pass; F-geom1-066 recorded"
 [ACK] 2026-11-09T22:45:00+07:00 agent=geom-1 mem=v96 last_entry=F-geom1-066 task=T-105
 note="user reported: 'load gist was fail and when not fail the model was messy'; investigating gist loading (auth/CORS/parsing) and state restoration / 3D model rendering"
+[END] 2026-11-09T23:15:00+07:00 agent=geom-1 mem=v97 note="Fixed Gist loading failures and messy 3D model: extractGistId, anonymous retry, raw_url fallback, direct drawer Gist input, snapSpanRatioToGrid to eliminate duplicate micro-loft stations from float truncation, clean snapshot apply order; 18/18 Node tests + tsc + vite build + workspace cargo tests clean; F-geom1-067 recorded"
