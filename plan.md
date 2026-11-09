@@ -1009,3 +1009,5 @@ note="user requested: 'also export all split as step'; investigating in-browser 
 [ACK] 2026-11-10T00:40:00+07:00 agent=geom-1 mem=v98 last_entry=F-geom1-068 task=T-105
 note="user reported: 'export split is work but all component gone like tube hole Interlocking Joints'; investigating representation of spar tube bore cavity and interlocking joint features (spigot/socket/pins/keys/lips) in CAD STEP B-rep export"
 [END] 2026-11-10T00:55:00+07:00 agent=geom-1 mem=v99 note="Implemented TruckKernel::mesh_solid and fabricated split STEP solids preserving carbon-fiber spar tube hole cavities and interlocking joint tenons/mortises (lips, pins, keys, dovetails, snaplocks); 8 wasm tests + 11 cad tests + 18/18 Node tests + workspace tests clean; F-geom1-069 recorded"
+[ACK] 2026-11-10T00:58:00+07:00 agent=geom-1 mem=v99 last_entry=F-geom1-069 task=T-105
+note="user reported: 'git hub page said error404'; investigating GitHub Pages branch, deploy workflow, repository settings, and 404 cause"
