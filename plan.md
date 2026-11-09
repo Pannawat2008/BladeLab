@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 91**
-> **LAST_UPDATED: 2026-11-08 21:04 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 92**
+> **LAST_UPDATED: 2026-11-09 17:20 (UTC+7) by geom-1**
 
 ---
 
@@ -524,6 +524,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Flipped 3D blade model orientation 180° around its spanwise pitch axis ($X=0$): (1) configured `inner.rotation.z = (bladeFlipped ? Math.PI : 0) + (collectivePitchDeg * Math.PI) / 180` with `bladeFlipped = true` by default in `web/src/main.ts` and `web/src/state.ts` (`WorkbenchUiSnapshot.flip_blade`); (2) correctly aligns the leading edge facing into the rotor spin direction (+X) with trailing edge behind, and flat pressure face facing oncoming wind (+Y); (3) added synchronized "Flip 180°" quick toggle buttons in the top toolbar (`#btn-flip-blade`) and CAD rotor panel (`#btn-flip-blade-panel`); (4) verified by 17/17 Node tests, `tsc --noEmit`, and `vite build`.
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-062** | 2026-11-09 17:20 | geom-1 | T-105
+  Configured GitHub Pages deployment for BladeLab: (1) updated `web/vite.config.ts` with `base: "./"` for portable relative asset path resolution across root or subpath domains; (2) added `web/public/.nojekyll` to bypass Jekyll processing on GitHub Pages; (3) created `.github/workflows/deploy-pages.yml` for automated CI/CD compiling Rust wasm-pack + Vite web dist on push to `main`; (4) initialized public repository `Pannawat2008/BladeLab` on GitHub and published pre-built static bundle directly to `gh-pages` branch for instant live availability at `https://pannawat2008.github.io/BladeLab/`.
+  refs: web/vite.config.ts, web/public/.nojekyll, .github/workflows/deploy-pages.yml | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -953,3 +957,6 @@ note="lead requested: also flip the model; analyzing blade 3D orientation, pitch
 [ACK] 2026-11-09T10:47:30+07:00 agent=geom-1 mem=v91 last_entry=F-geom1-061 task=T-105
 note="user requested: turn on web; restarting web dev server on port 5173"
 [END] 2026-11-09T10:48:00+07:00 agent=geom-1 mem=v91 note="Started Vite dev server on port 5173"
+[ACK] 2026-11-09T17:15:00+07:00 agent=geom-1 mem=v91 last_entry=F-geom1-061 task=T-105
+note="user requested: upload to github page; configuring GitHub Pages deployment with base: './' in Vite, creating GitHub remote/repo or deploying to gh-pages branch, and setting up automated GitHub Actions workflow"
+[END] 2026-11-09T17:20:00+07:00 agent=geom-1 mem=v92 note="Configured GitHub Pages deployment for Pannawat2008/BladeLab: base './' in Vite, .nojekyll, deploy-pages.yml CI/CD workflow, published to gh-pages branch; F-geom1-062 recorded"
