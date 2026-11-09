@@ -967,3 +967,5 @@ note="user requested: upload to github page; configuring GitHub Pages deployment
 [ACK] 2026-11-09T17:30:30+07:00 agent=geom-1 mem=v92 last_entry=F-geom1-062 task=T-105
 note="user requested: integrate GitHub Gists cloud persistence; implementing GitHub Gists client in web workbench for cross-device cloud save/load/sync with personal access token + URL ?gist=<id> parameter loading"
 [END] 2026-11-09T17:38:00+07:00 agent=geom-1 mem=v93 note="Implemented GitHub Gists Cloud persistence (web/src/gist.ts, drawer tabs, token auth, ?gist=<id> URL auto-load, share links); 18/18 Node tests + tsc + vite build clean; F-geom1-063 recorded"
+[ACK] 2026-11-09T18:05:00+07:00 agent=geom-1 mem=v93 last_entry=F-geom1-063 task=T-105
+note="lead approved UI audit fixes: (1) streamline top toolbar into 3 zones with unified Export dropdown; (2) remove redundant flip/pitch from toolbar; (3) sticky station table header & column; (4) responsive right-anchored heatmap legend; (5) mobile touch hit-slop"
