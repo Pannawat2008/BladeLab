@@ -36,7 +36,7 @@ jobs:
       # The community package tracks weekly builds of FreeCAD 1.x.
       - name: Install FreeCAD (headless OCCT kernel)
         shell: powershell
-        run: choco install freecad --prerelease -y --no-progress
+        run: choco install freecad -y --no-progress
 
       - name: Build and export STEP
         run: cargo run -p blade-cad --example export_step

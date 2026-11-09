@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 99**
-> **LAST_UPDATED: 2026-11-10 00:55 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 100**
+> **LAST_UPDATED: 2026-11-10 01:05 (UTC+7) by geom-1**
 
 ---
 
@@ -556,6 +556,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Preserved carbon-fiber spar tube bore cavity and interlocking joint features (lips/pins/keys/sockets) in CAD STEP exports: (1) root-caused missing features in split STEP exports—previously `export_step_with_overrides` called `build_segment_surface` which sampled sub-sections from the unpunctured lofted blade surface, producing a smooth 4-face solid and discarding all internal cavities and joint protrusions/sockets; (2) implemented `TruckKernel::mesh_solid(&self, mesh: &blade_mesh::Mesh) -> Result<Solid, CadError>` in `crates/blade-cad/src/kernel.rs`, converting any closed, watertight, orientable 2-manifold triangle mesh into a topological truck `Solid` (`builder::try_attach_plane` on line-edge wires with topological shared-edge pairing `Edge::inverse()`); (3) updated `build_split_solids` in `crates/blade-wasm/src/mesh.rs` to generate fabricated solids from `blade_mesh::tessellate_fabricated(&surface, &part_spec)` converted via `mesh_solid`, ensuring every split segment STEP solid includes the exact cylindrical spar hole cavity, punctured cap faces, and mating interlocking joint tenons (airfoil lips, pins, keys, dovetails, snaplocks) and mortise pockets; (4) preserves the smooth B-spline 4-face solid path when no fabrication features are active; (5) verified with `crates/blade-cad/tests/step.rs` (`test_mesh_to_solid_converts_tetrahedron_and_writes_step`, `test_fabricated_split_mesh_to_solid_with_tube_and_joint_writes_step`), 8 WASM tests, 18/18 Node integration tests in `web/scripts/types.test.mjs` (`> 500` plane faces), and full workspace `cargo test` passing.
   refs: crates/blade-cad/src/kernel.rs, crates/blade-cad/tests/step.rs, crates/blade-wasm/src/mesh.rs, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-070** | 2026-11-10 01:05 | geom-1 | T-105
+  Resolved GitHub Pages 404 error on `https://pannawat2008.github.io/BladeLab/`: (1) root-caused to GitHub Pages not being enabled in the repository settings—`GET https://api.github.com/repos/Pannawat2008/BladeLab/pages` returned HTTP 404 ("Not Found") because GitHub does not automatically publish from newly pushed `gh-pages` branches until Pages is explicitly enabled; (2) enabled GitHub Pages programmatically via `gh api --method POST repos/Pannawat2008/BladeLab/pages -f "source[branch]=gh-pages" -f "source[path]=/"`, which provisioned the site and triggered immediate build; (3) verified live site: `curl.exe -IL https://pannawat2008.github.io/BladeLab/` returns `HTTP/1.1 200 OK`, HTML (120,402 bytes), bundled JavaScript (773,713 bytes), and WebAssembly binary (838,488 bytes, `application/wasm`) all serving cleanly with zero errors; (4) updated `.github/workflows/step-check.yml` to use stable `choco install freecad -y --no-progress` (removing outdated `--prerelease` weekly build).
+  refs: .github/workflows/deploy-pages.yml, .github/workflows/step-check.yml, web/dist | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -1011,3 +1015,4 @@ note="user reported: 'export split is work but all component gone like tube hole
 [END] 2026-11-10T00:55:00+07:00 agent=geom-1 mem=v99 note="Implemented TruckKernel::mesh_solid and fabricated split STEP solids preserving carbon-fiber spar tube hole cavities and interlocking joint tenons/mortises (lips, pins, keys, dovetails, snaplocks); 8 wasm tests + 11 cad tests + 18/18 Node tests + workspace tests clean; F-geom1-069 recorded"
 [ACK] 2026-11-10T00:58:00+07:00 agent=geom-1 mem=v99 last_entry=F-geom1-069 task=T-105
 note="user reported: 'git hub page said error404'; investigating GitHub Pages branch, deploy workflow, repository settings, and 404 cause"
+[END] 2026-11-10T01:05:00+07:00 agent=geom-1 mem=v100 note="Enabled GitHub Pages via GitHub REST API for Pannawat2008/BladeLab (branch gh-pages, path /); live site verified returning HTTP 200 OK with full HTML/JS/WASM bundles; F-geom1-070 recorded"
