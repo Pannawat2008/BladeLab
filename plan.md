@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 92**
-> **LAST_UPDATED: 2026-11-09 17:20 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 93**
+> **LAST_UPDATED: 2026-11-09 17:38 (UTC+7) by geom-1**
 
 ---
 
@@ -528,6 +528,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Configured GitHub Pages deployment for BladeLab: (1) updated `web/vite.config.ts` with `base: "./"` for portable relative asset path resolution across root or subpath domains; (2) added `web/public/.nojekyll` to bypass Jekyll processing on GitHub Pages; (3) created `.github/workflows/deploy-pages.yml` for automated CI/CD compiling Rust wasm-pack + Vite web dist on push to `main`; (4) initialized public repository `Pannawat2008/BladeLab` on GitHub and published pre-built static bundle directly to `gh-pages` branch for instant live availability at `https://pannawat2008.github.io/BladeLab/`.
   refs: web/vite.config.ts, web/public/.nojekyll, .github/workflows/deploy-pages.yml | supersedes: -
 
+- **F-geom1-063** | 2026-11-09 17:38 | geom-1 | T-105
+  Implemented cross-device cloud persistence via GitHub Gists: (1) created `web/src/gist.ts` supporting personal access token verification, listing `[BladeLab]` gists, saving/updating public or secret gists with full WorkbenchSnapshot JSON, anonymous gist retrieval, and deletion; (2) added Gist cloud drawer tab (`#tab-drawer-gist`, `#drawer-gist-panel`) with 1-click token setup link, design name input, public/secret toggle, and cloud gists list with Load, 1-click URL Share, GitHub link, and Delete; (3) wired automatic URL query parameter `?gist=<id>` on workbench startup for instant cross-device sharing via URL; (4) verified by 18/18 Node tests, `tsc --noEmit`, and `vite build`.
+  refs: web/src/gist.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs, web/tsconfig.json | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -962,3 +966,4 @@ note="user requested: upload to github page; configuring GitHub Pages deployment
 [END] 2026-11-09T17:20:00+07:00 agent=geom-1 mem=v92 note="Configured GitHub Pages deployment for Pannawat2008/BladeLab: base './' in Vite, .nojekyll, deploy-pages.yml CI/CD workflow, published to gh-pages branch; F-geom1-062 recorded"
 [ACK] 2026-11-09T17:30:30+07:00 agent=geom-1 mem=v92 last_entry=F-geom1-062 task=T-105
 note="user requested: integrate GitHub Gists cloud persistence; implementing GitHub Gists client in web workbench for cross-device cloud save/load/sync with personal access token + URL ?gist=<id> parameter loading"
+[END] 2026-11-09T17:38:00+07:00 agent=geom-1 mem=v93 note="Implemented GitHub Gists Cloud persistence (web/src/gist.ts, drawer tabs, token auth, ?gist=<id> URL auto-load, share links); 18/18 Node tests + tsc + vite build clean; F-geom1-063 recorded"

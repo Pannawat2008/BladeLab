@@ -64,6 +64,12 @@ import {
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
 } from "../src/state.ts";
+import {
+  BLADELAB_GIST_FILENAME,
+  BLADELAB_GIST_PREFIX,
+  GITHUB_TOKEN_STORAGE_KEY,
+  buildGistShareUrl,
+} from "../src/gist.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const typesPath = path.resolve(__dirname, "../src/types/blade-model.ts");
@@ -1121,6 +1127,44 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
   assert.ok(html.includes('id="winglet-sweep"'), "Rotor panel must contain winglet-sweep input");
   assert.ok(html.includes('id="winglet-radius"'), "Rotor panel must contain winglet-radius input");
 });
+
+test("GitHub Gists Cloud integration: constants, share URLs, and DOM elements (T-105)", () => {
+  // 1. Constants
+  assert.equal(BLADELAB_GIST_FILENAME, "bladelab-design.json");
+  assert.equal(BLADELAB_GIST_PREFIX, "[BladeLab] ");
+  assert.equal(GITHUB_TOKEN_STORAGE_KEY, "bladelab.github_token");
+
+  // 2. Share URL builder
+  const shareUrl = buildGistShareUrl("7fa4b12c890");
+  assert.ok(shareUrl.includes("?gist=7fa4b12c890"), `URL must contain gist query param: ${shareUrl}`);
+
+  // 3. Mock Gist JSON round-trip through parseLoadedProjectJson
+  const mockGistContent = JSON.stringify({
+    schema_version: 1,
+    design: initialDesign,
+    fabrication: defaultFabricationSnapshot(),
+    workbench: defaultWorkbenchUiSnapshot(),
+    saved_at: "2026-11-09T17:30:00Z",
+    name: "Gist Competition Blade",
+  });
+  const parsed = parseLoadedProjectJson(mockGistContent);
+  assert.equal(parsed.name, "Gist Competition Blade");
+  assert.equal(parsed.design.rotor.radius_mm, initialDesign.rotor.radius_mm);
+
+  // 4. HTML Elements Verification
+  const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  assert.ok(html.includes('id="tab-drawer-gist"'), "Projects drawer must contain tab-drawer-gist button");
+  assert.ok(html.includes('id="tab-drawer-local"'), "Projects drawer must contain tab-drawer-local button");
+  assert.ok(html.includes('id="drawer-gist-panel"'), "Projects drawer must contain drawer-gist-panel");
+  assert.ok(html.includes('id="gist-token-input"'), "Projects drawer must contain gist-token-input");
+  assert.ok(html.includes('id="btn-gist-connect"'), "Projects drawer must contain btn-gist-connect button");
+  assert.ok(html.includes('id="btn-gist-refresh"'), "Projects drawer must contain btn-gist-refresh button");
+  assert.ok(html.includes('id="btn-gist-disconnect"'), "Projects drawer must contain btn-gist-disconnect button");
+  assert.ok(html.includes('id="btn-save-gist"'), "Projects drawer must contain btn-save-gist button");
+  assert.ok(html.includes('id="gist-designs-list"'), "Projects drawer must contain gist-designs-list");
+  assert.ok(html.includes('id="btn-cloud-open-drawer"'), "Aero dock must contain btn-cloud-open-drawer button");
+});
+
 
 
 

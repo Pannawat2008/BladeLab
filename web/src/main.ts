@@ -107,6 +107,17 @@ import {
   type WorkbenchSnapshot,
   type WorkbenchUiSnapshot,
 } from "./state";
+import {
+  getStoredGitHubToken,
+  setStoredGitHubToken,
+  verifyGitHubUser,
+  listBladeLabGists,
+  saveBladeLabGist,
+  fetchBladeLabGist,
+  deleteBladeLabGist,
+  buildGistShareUrl,
+  type BladeLabGistSummary,
+} from "./gist";
 import type { AirfoilSpec, BezierControlPoint, Design } from "./types/blade-model";
 
 // ---- wasm bootstrap ----
@@ -3787,112 +3798,418 @@ inputExpData.addEventListener("input", () => {
   scheduleAutoSave();
 });
 
-// ---- Phase 4 Team & Cloud Workspace Listeners ----
-const selectCloudTeam = document.getElementById("cloud-team") as HTMLSelectElement;
-const inputCloudAuthor = document.getElementById("cloud-author") as HTMLInputElement;
-const inputCloudDesignName = document.getElementById("cloud-design-name") as HTMLInputElement;
-const btnCloudSave = document.getElementById("btn-cloud-save") as HTMLButtonElement;
-const btnCloudRefresh = document.getElementById("btn-cloud-refresh") as HTMLButtonElement;
-const cloudStatusEl = document.getElementById("cloud-status")!;
-const cloudDesignsListEl = document.getElementById("cloud-designs-list")!;
+// ---- GitHub Gists Cloud Storage & Team Workspace ----
+const tabDrawerGist = document.getElementById("tab-drawer-gist") as HTMLButtonElement | null;
+const tabDrawerLocal = document.getElementById("tab-drawer-local") as HTMLButtonElement | null;
+const drawerGistPanel = document.getElementById("drawer-gist-panel");
+const drawerLocalPanel = document.getElementById("drawer-local-panel");
 
-interface CloudDesignSummary {
-  id: string;
-  name: string;
-  team_id: string;
-  author: string;
-  current_version: number;
-}
+const gistAuthRow = document.getElementById("gist-auth-row");
+const gistTokenInput = document.getElementById("gist-token-input") as HTMLInputElement | null;
+const btnGistConnect = document.getElementById("btn-gist-connect") as HTMLButtonElement | null;
+const gistTokenHelp = document.getElementById("gist-token-help");
+const gistUserBar = document.getElementById("gist-user-bar");
+const gistUserLogin = document.getElementById("gist-user-login");
+const btnGistRefresh = document.getElementById("btn-gist-refresh") as HTMLButtonElement | null;
+const btnGistDisconnect = document.getElementById("btn-gist-disconnect") as HTMLButtonElement | null;
+const gistSaveContainer = document.getElementById("gist-save-container");
+const gistDesignNameInput = document.getElementById("gist-design-name") as HTMLInputElement | null;
+const gistIsPublicCheck = document.getElementById("gist-is-public") as HTMLInputElement | null;
+const btnSaveGist = document.getElementById("btn-save-gist") as HTMLButtonElement | null;
+const gistStatusEl = document.getElementById("gist-status");
+const gistDesignsListEl = document.getElementById("gist-designs-list");
 
-async function refreshCloudDesigns() {
-  const team = selectCloudTeam.value || "team-default";
-  try {
-    const resp = await fetch(`/api/v1/designs?team_id=${encodeURIComponent(team)}`);
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-    const items = (await resp.json()) as CloudDesignSummary[];
-    cloudDesignsListEl.innerHTML = "";
-    if (items.length === 0) {
-      cloudStatusEl.textContent = `0 saved designs in ${team}`;
-      return;
-    }
-    cloudStatusEl.textContent = `${items.length} design(s) in ${team}`;
-    for (const item of items) {
-      const row = document.createElement("div");
-      row.className = "bind-row";
-      row.style.margin = "0";
+// Aero Dock Cloud widgets
+const inputCloudDesignName = document.getElementById("cloud-design-name") as HTMLInputElement | null;
+const btnCloudSave = document.getElementById("btn-cloud-save") as HTMLButtonElement | null;
+const btnCloudOpenDrawer = document.getElementById("btn-cloud-open-drawer") as HTMLButtonElement | null;
+const cloudStatusEl = document.getElementById("cloud-status");
+const cloudDesignsListEl = document.getElementById("cloud-designs-list");
 
-      const info = document.createElement("span");
-      info.style.fontSize = "11px";
-      info.textContent = `${item.name} [v${item.current_version} @${item.author}]`;
+tabDrawerGist?.addEventListener("click", () => {
+  tabDrawerGist.classList.add("active");
+  tabDrawerGist.setAttribute("aria-selected", "true");
+  tabDrawerLocal?.classList.remove("active");
+  tabDrawerLocal?.setAttribute("aria-selected", "false");
+  if (drawerGistPanel) drawerGistPanel.style.display = "block";
+  if (drawerLocalPanel) drawerLocalPanel.style.display = "none";
+});
 
-      const loadBtn = document.createElement("button");
-      loadBtn.type = "button";
-      loadBtn.className = "btn-mini";
-      loadBtn.textContent = "Load";
-      loadBtn.addEventListener("click", async () => {
-        try {
-          const r = await fetch(`/api/v1/designs/${encodeURIComponent(item.id)}`);
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const rec = (await r.json()) as { name: string; design: Design; current_version: number };
-          inputCloudDesignName.value = rec.name;
-          commitDesign(rec.design);
-          cloudStatusEl.textContent = `Loaded ${rec.name} (v${rec.current_version})`;
-        } catch (err) {
-          cloudStatusEl.textContent = `Load failed: ${String(err)}`;
+tabDrawerLocal?.addEventListener("click", () => {
+  tabDrawerLocal.classList.add("active");
+  tabDrawerLocal.setAttribute("aria-selected", "true");
+  tabDrawerGist?.classList.remove("active");
+  tabDrawerGist?.setAttribute("aria-selected", "false");
+  if (drawerGistPanel) drawerGistPanel.style.display = "none";
+  if (drawerLocalPanel) drawerLocalPanel.style.display = "block";
+});
+
+btnCloudOpenDrawer?.addEventListener("click", () => {
+  toggleProjectsDrawer(true);
+  tabDrawerGist?.click();
+});
+
+let currentGists: BladeLabGistSummary[] = [];
+
+function renderGistsList(gists: BladeLabGistSummary[]) {
+  if (gistDesignsListEl) {
+    gistDesignsListEl.innerHTML = "";
+    if (gists.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "slot-empty";
+      empty.textContent = "No BladeLab Gists saved yet in this account.";
+      gistDesignsListEl.appendChild(empty);
+    } else {
+      for (const g of gists) {
+        const row = document.createElement("div");
+        row.className = "slot-row";
+
+        const info = document.createElement("div");
+        info.className = "slot-info";
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "slot-name";
+        nameEl.style.display = "flex";
+        nameEl.style.alignItems = "center";
+        nameEl.style.gap = "6px";
+
+        const nameText = document.createElement("span");
+        nameText.textContent = g.name;
+
+        const badge = document.createElement("span");
+        badge.className = "layer-tag";
+        badge.style.fontSize = "10px";
+        badge.textContent = g.is_public ? "Public" : "Secret";
+        if (g.is_public) {
+          badge.style.color = "var(--accent)";
+          badge.style.borderColor = "var(--accent)";
         }
-      });
 
-      row.append(info, loadBtn);
-      cloudDesignsListEl.appendChild(row);
+        nameEl.append(nameText, badge);
+
+        const sub = document.createElement("div");
+        sub.className = "slot-sub";
+        const dateStr = new Date(g.updated_at).toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        sub.textContent = `${dateStr} · ID: ${g.id.slice(0, 7)}`;
+
+        info.append(nameEl, sub);
+
+        const actions = document.createElement("div");
+        actions.className = "slot-actions";
+
+        // Load button
+        const loadBtn = document.createElement("button");
+        loadBtn.type = "button";
+        loadBtn.className = "btn-mini btn-primary";
+        loadBtn.textContent = "Load";
+        loadBtn.title = `Load Gist "${g.name}" into workbench`;
+        loadBtn.addEventListener("click", async () => {
+          try {
+            loadBtn.textContent = "Loading...";
+            loadBtn.disabled = true;
+            const res = await fetchBladeLabGist(g.id, getStoredGitHubToken());
+            applyWorkbenchSnapshot(res.snapshot, { commitToHistory: true, badgePrefix: "Gist" });
+            if (gistDesignNameInput) gistDesignNameInput.value = res.name;
+            if (inputCloudDesignName) inputCloudDesignName.value = res.name;
+            if (gistStatusEl) gistStatusEl.textContent = `Loaded "${res.name}"`;
+            loadBtn.textContent = "Loaded!";
+            setTimeout(() => {
+              loadBtn.textContent = "Load";
+              loadBtn.disabled = false;
+            }, 1200);
+          } catch (err) {
+            alert(`Failed to load Gist: ${String(err)}`);
+            loadBtn.textContent = "Load";
+            loadBtn.disabled = false;
+          }
+        });
+
+        // Share button (copies ?gist=<id> URL)
+        const shareBtn = document.createElement("button");
+        shareBtn.type = "button";
+        shareBtn.className = "btn-mini";
+        shareBtn.textContent = "Share";
+        shareBtn.title = "Copy shareable link for any device";
+        shareBtn.addEventListener("click", async () => {
+          const shareUrl = buildGistShareUrl(g.id);
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            shareBtn.textContent = "Copied!";
+            shareBtn.style.color = "var(--status-ok)";
+            setTimeout(() => {
+              shareBtn.textContent = "Share";
+              shareBtn.style.color = "";
+            }, 1500);
+          } catch {
+            prompt("Share link:", shareUrl);
+          }
+        });
+
+        // View on GitHub
+        const linkBtn = document.createElement("a");
+        linkBtn.href = g.html_url;
+        linkBtn.target = "_blank";
+        linkBtn.rel = "noopener";
+        linkBtn.className = "btn-mini";
+        linkBtn.title = "View raw Gist file & Git history on GitHub";
+        linkBtn.textContent = "↗";
+        linkBtn.style.display = "inline-flex";
+        linkBtn.style.alignItems = "center";
+        linkBtn.style.textDecoration = "none";
+
+        // Delete button
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn-mini";
+        delBtn.textContent = "×";
+        delBtn.title = `Delete Gist "${g.name}"`;
+        delBtn.style.color = "var(--status-err)";
+        delBtn.addEventListener("click", async () => {
+          if (!confirm(`Delete Gist "${g.name}" permanently from GitHub?`)) return;
+          const token = getStoredGitHubToken();
+          if (!token) return;
+          try {
+            delBtn.textContent = "...";
+            delBtn.disabled = true;
+            await deleteBladeLabGist(token, g.id);
+            currentGists = currentGists.filter((item) => item.id !== g.id);
+            renderGistsList(currentGists);
+            if (gistStatusEl) gistStatusEl.textContent = `Deleted Gist "${g.name}"`;
+          } catch (err) {
+            alert(`Failed to delete Gist: ${String(err)}`);
+            delBtn.textContent = "×";
+            delBtn.disabled = false;
+          }
+        });
+
+        actions.append(loadBtn, shareBtn, linkBtn, delBtn);
+        row.append(info, actions);
+        gistDesignsListEl.appendChild(row);
+      }
     }
-  } catch {
-    cloudStatusEl.textContent = "Cloud server offline (local WASM active)";
+  }
+
+  // Also update right dock cloud list if present
+  if (cloudDesignsListEl) {
+    cloudDesignsListEl.innerHTML = "";
+    if (gists.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "slot-empty";
+      empty.textContent = "No cloud Gists saved yet.";
+      cloudDesignsListEl.appendChild(empty);
+    } else {
+      for (const g of gists) {
+        const itemRow = document.createElement("div");
+        itemRow.className = "bind-row";
+        itemRow.style.margin = "0";
+
+        const label = document.createElement("span");
+        label.style.fontSize = "11px";
+        label.textContent = `${g.name} [${g.is_public ? "Public" : "Secret"}]`;
+
+        const btnLoad = document.createElement("button");
+        btnLoad.type = "button";
+        btnLoad.className = "btn-mini";
+        btnLoad.textContent = "Load";
+        btnLoad.addEventListener("click", async () => {
+          try {
+            btnLoad.textContent = "...";
+            const res = await fetchBladeLabGist(g.id, getStoredGitHubToken());
+            applyWorkbenchSnapshot(res.snapshot, { commitToHistory: true, badgePrefix: "Gist" });
+            if (cloudStatusEl) cloudStatusEl.textContent = `Loaded ${res.name}`;
+            btnLoad.textContent = "Load";
+          } catch (err) {
+            alert(`Load failed: ${String(err)}`);
+            btnLoad.textContent = "Load";
+          }
+        });
+
+        const btnShare = document.createElement("button");
+        btnShare.type = "button";
+        btnShare.className = "btn-mini";
+        btnShare.textContent = "Share";
+        btnShare.addEventListener("click", async () => {
+          const url = buildGistShareUrl(g.id);
+          try {
+            await navigator.clipboard.writeText(url);
+            btnShare.textContent = "Copied!";
+            setTimeout(() => { btnShare.textContent = "Share"; }, 1500);
+          } catch {
+            prompt("Share link:", url);
+          }
+        });
+
+        itemRow.append(label, btnLoad, btnShare);
+        cloudDesignsListEl.appendChild(itemRow);
+      }
+    }
+    if (cloudStatusEl) cloudStatusEl.textContent = `GitHub Gists: ${gists.length} saved`;
   }
 }
 
-btnCloudSave.addEventListener("click", async () => {
-  const team = selectCloudTeam.value === "all" ? "team-default" : selectCloudTeam.value;
-  const author = inputCloudAuthor.value.trim() || "engineer";
-  const name =
-    inputCloudDesignName.value.trim() ||
-    `Rotor-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}`;
+async function refreshGistsFromGitHub(token: string) {
+  if (gistStatusEl) gistStatusEl.textContent = "Fetching gists...";
   try {
-    const resp = await fetch("/api/v1/designs", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-bladelab-team": team,
-        "x-bladelab-user": author,
-      },
-      body: JSON.stringify({
-        name,
-        design: workingDesign,
-        note: `Saved from Web Workbench by @${author}`,
-        team_id: team,
-        author,
-      }),
-    });
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-    const created = (await resp.json()) as CloudDesignSummary;
-    cloudStatusEl.textContent = `Saved ${created.name} (${created.id} v${created.current_version}) to ${created.team_id}`;
-    await refreshCloudDesigns();
+    currentGists = await listBladeLabGists(token);
+    renderGistsList(currentGists);
+    if (gistStatusEl) gistStatusEl.textContent = `${currentGists.length} cloud design(s)`;
   } catch (err) {
-    cloudStatusEl.textContent = `Cloud save error: ${String(err)}`;
+    if (gistStatusEl) gistStatusEl.textContent = `Fetch error: ${String(err)}`;
+  }
+}
+
+async function syncGistAuthState() {
+  const token = getStoredGitHubToken();
+  if (token) {
+    try {
+      if (btnGistConnect) {
+        btnGistConnect.textContent = "Verifying...";
+        btnGistConnect.disabled = true;
+      }
+      const user = await verifyGitHubUser(token);
+      if (gistAuthRow) gistAuthRow.style.display = "none";
+      if (gistTokenHelp) gistTokenHelp.style.display = "none";
+      if (gistUserBar) gistUserBar.style.display = "flex";
+      if (gistUserLogin) gistUserLogin.textContent = `@${user.login}`;
+      if (gistSaveContainer) gistSaveContainer.style.display = "block";
+      if (gistDesignNameInput && !gistDesignNameInput.value) {
+        gistDesignNameInput.value = `Rotor-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}`;
+      }
+      if (cloudStatusEl) cloudStatusEl.textContent = `Connected as @${user.login}`;
+      await refreshGistsFromGitHub(token);
+    } catch (err) {
+      console.warn("GitHub token verification failed:", err);
+      setStoredGitHubToken(null);
+      if (gistAuthRow) gistAuthRow.style.display = "flex";
+      if (gistTokenHelp) gistTokenHelp.style.display = "block";
+      if (gistUserBar) gistUserBar.style.display = "none";
+      if (gistSaveContainer) gistSaveContainer.style.display = "none";
+      if (gistDesignsListEl) {
+        gistDesignsListEl.innerHTML = `<div class="slot-empty" style="color: var(--status-err)">Invalid token or expired. Please re-enter your GitHub token.</div>`;
+      }
+      if (cloudStatusEl) cloudStatusEl.textContent = "Not connected to GitHub";
+    } finally {
+      if (btnGistConnect) {
+        btnGistConnect.textContent = "Connect";
+        btnGistConnect.disabled = false;
+      }
+    }
+  } else {
+    if (gistAuthRow) gistAuthRow.style.display = "flex";
+    if (gistTokenHelp) gistTokenHelp.style.display = "block";
+    if (gistUserBar) gistUserBar.style.display = "none";
+    if (gistSaveContainer) gistSaveContainer.style.display = "none";
+    if (gistDesignsListEl) {
+      gistDesignsListEl.innerHTML = `<div class="slot-empty">Connect your GitHub token to view and save cloud designs</div>`;
+    }
+    if (cloudStatusEl) cloudStatusEl.textContent = "Not connected to GitHub";
+  }
+}
+
+btnGistConnect?.addEventListener("click", async () => {
+  const tokenVal = gistTokenInput?.value.trim() || "";
+  if (!tokenVal) {
+    alert("Please enter a GitHub personal access token with 'gist' scope.");
+    return;
+  }
+  setStoredGitHubToken(tokenVal);
+  if (gistTokenInput) gistTokenInput.value = "";
+  await syncGistAuthState();
+});
+
+gistTokenInput?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    btnGistConnect?.click();
   }
 });
 
-btnCloudRefresh.addEventListener("click", () => {
-  void refreshCloudDesigns();
+btnGistRefresh?.addEventListener("click", () => {
+  const token = getStoredGitHubToken();
+  if (token) void refreshGistsFromGitHub(token);
 });
 
-selectCloudTeam.addEventListener("change", () => {
-  void refreshCloudDesigns();
+btnGistDisconnect?.addEventListener("click", () => {
+  if (confirm("Disconnect GitHub account and remove token from this browser?")) {
+    setStoredGitHubToken(null);
+    void syncGistAuthState();
+  }
 });
-void refreshCloudDesigns();
+
+async function handleSaveCurrentToGist() {
+  const token = getStoredGitHubToken();
+  if (!token) {
+    toggleProjectsDrawer(true);
+    tabDrawerGist?.click();
+    gistTokenInput?.focus();
+    return;
+  }
+
+  const nameVal =
+    gistDesignNameInput?.value.trim() ||
+    inputCloudDesignName?.value.trim() ||
+    `Rotor-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}`;
+
+  const isPublic = gistIsPublicCheck?.checked || false;
+
+  try {
+    if (btnSaveGist) {
+      btnSaveGist.textContent = "Saving...";
+      btnSaveGist.disabled = true;
+    }
+    if (btnCloudSave) {
+      btnCloudSave.textContent = "Saving...";
+      btnCloudSave.disabled = true;
+    }
+    if (gistStatusEl) gistStatusEl.textContent = "Saving to GitHub Gist...";
+
+    const snap = buildCurrentWorkbenchSnapshot(nameVal);
+    const created = await saveBladeLabGist(token, nameVal, snap, isPublic);
+
+    if (gistStatusEl) gistStatusEl.textContent = `Saved: ${created.id.slice(0, 7)}`;
+    if (exportStatus) exportStatus.textContent = `Saved to Gist "${nameVal}"`;
+    flushAutoSaveNow("Saved to Gist");
+
+    await refreshGistsFromGitHub(token);
+
+    if (btnSaveGist) {
+      btnSaveGist.textContent = "Saved!";
+      setTimeout(() => {
+        btnSaveGist.textContent = "Save to Gist";
+        btnSaveGist.disabled = false;
+      }, 1500);
+    }
+    if (btnCloudSave) {
+      btnCloudSave.textContent = "Saved!";
+      setTimeout(() => {
+        btnCloudSave.textContent = "Save to Gist";
+        btnCloudSave.disabled = false;
+      }, 1500);
+    }
+  } catch (err) {
+    alert(`Failed to save Gist: ${String(err)}`);
+    if (btnSaveGist) {
+      btnSaveGist.textContent = "Save to Gist";
+      btnSaveGist.disabled = false;
+    }
+    if (btnCloudSave) {
+      btnCloudSave.textContent = "Save to Gist";
+      btnCloudSave.disabled = false;
+    }
+    if (gistStatusEl) gistStatusEl.textContent = "Save error";
+  }
+}
+
+btnSaveGist?.addEventListener("click", handleSaveCurrentToGist);
+btnCloudSave?.addEventListener("click", handleSaveCurrentToGist);
+
+// Initialize Gists Auth state
+void syncGistAuthState();
 
 // ---- Undo / Redo / Reset ----
 function performUndo() {
@@ -4365,25 +4682,52 @@ addEventListener("beforeunload", () => {
   flushAutoSaveNow("Auto-saved");
 });
 
-// ---- Startup Restore (Auto-Save & Saved Slots) ----
+// ---- Startup Restore (Auto-Save, Saved Slots & ?gist= URL param) ----
 savedSlots = loadSavedSlotsFromStorage();
 renderSavedSlotsList();
 
 let restoredOnStartup = false;
-try {
-  const rawAutoSave = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
-  if (rawAutoSave) {
-    const restoredSnapshot = parseLoadedProjectJson(rawAutoSave);
-    const isDifferentFromInitial =
-      JSON.stringify(restoredSnapshot.design) !== JSON.stringify(initialDesign);
-    applyWorkbenchSnapshot(restoredSnapshot, {
-      commitToHistory: isDifferentFromInitial,
-      badgePrefix: "Restored",
+
+// 1. Check if a ?gist=<gist_id> URL parameter was passed for instant cross-device opening
+const urlParams = new URLSearchParams(window.location.search);
+const gistParam = urlParams.get("gist");
+if (gistParam) {
+  try {
+    const gistData = await fetchBladeLabGist(gistParam, getStoredGitHubToken());
+    applyWorkbenchSnapshot(gistData.snapshot, {
+      commitToHistory: true,
+      badgePrefix: "Gist",
     });
+    autosaveBadge.textContent = `Gist: ${gistData.name}`;
+    autosaveBadge.title = `Loaded from GitHub Gist ${gistParam}`;
+    if (gistDesignNameInput) gistDesignNameInput.value = gistData.name;
+    if (inputCloudDesignName) inputCloudDesignName.value = gistData.name;
     restoredOnStartup = true;
+    console.log(`Loaded design from GitHub Gist ${gistParam} (${gistData.name})`);
+  } catch (err) {
+    console.error("Failed to load Gist from URL param:", err);
+    errorBanner.textContent = `Could not load design from Gist URL: ${String(err)}`;
+    errorBanner.style.display = "block";
   }
-} catch {
-  // Ignore corrupted storage and start from initialDesign
+}
+
+// 2. If no Gist URL param, restore from local auto-save
+if (!restoredOnStartup) {
+  try {
+    const rawAutoSave = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
+    if (rawAutoSave) {
+      const restoredSnapshot = parseLoadedProjectJson(rawAutoSave);
+      const isDifferentFromInitial =
+        JSON.stringify(restoredSnapshot.design) !== JSON.stringify(initialDesign);
+      applyWorkbenchSnapshot(restoredSnapshot, {
+        commitToHistory: isDifferentFromInitial,
+        badgePrefix: "Restored",
+      });
+      restoredOnStartup = true;
+    }
+  } catch {
+    // Ignore corrupted storage and start from initialDesign
+  }
 }
 
 if (!restoredOnStartup) {
