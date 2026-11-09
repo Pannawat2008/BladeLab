@@ -22,7 +22,7 @@ const HOLE_CIRCLE_SEGMENTS: usize = 32;
 const PIN_CIRCLE_SEGMENTS: usize = 24;
 
 /// Minimum spanwise station count per split segment.
-const MIN_SEGMENT_STATIONS: usize = 14;
+const MIN_SEGMENT_STATIONS: usize = 32;
 
 /// Radius scale factors tried (in order) when a pin does not fit the local
 /// airfoil thickness.

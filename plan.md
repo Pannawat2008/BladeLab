@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 100**
-> **LAST_UPDATED: 2026-11-10 01:05 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 101**
+> **LAST_UPDATED: 2026-11-10 01:32 (UTC+7) by geom-1**
 
 ---
 
@@ -560,6 +560,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Resolved GitHub Pages 404 error on `https://pannawat2008.github.io/BladeLab/`: (1) root-caused to GitHub Pages not being enabled in the repository settings—`GET https://api.github.com/repos/Pannawat2008/BladeLab/pages` returned HTTP 404 ("Not Found") because GitHub does not automatically publish from newly pushed `gh-pages` branches until Pages is explicitly enabled; (2) enabled GitHub Pages programmatically via `gh api --method POST repos/Pannawat2008/BladeLab/pages -f "source[branch]=gh-pages" -f "source[path]=/"`, which provisioned the site and triggered immediate build; (3) verified live site: `curl.exe -IL https://pannawat2008.github.io/BladeLab/` returns `HTTP/1.1 200 OK`, HTML (120,402 bytes), bundled JavaScript (773,713 bytes), and WebAssembly binary (838,488 bytes, `application/wasm`) all serving cleanly with zero errors; (4) updated `.github/workflows/step-check.yml` to use stable `choco install freecad -y --no-progress` (removing outdated `--prerelease` weekly build).
   refs: .github/workflows/deploy-pages.yml, .github/workflows/step-check.yml, web/dist | supersedes: -
 
+- **F-geom1-071** | 2026-11-10 01:32 | geom-1 | T-105
+  Resolved ripple/rough faceted surface on STEP exports ("now the model export as Step are also has ripple rought serface"): (1) Root causes: (a) In `export_step_with_overrides`, `has_fab_features` checked `spar_hole_diameter_mm.is_some()`; because `buildFabricationOverridesJson` sent default spar hole diameter (5.0 mm), even single blade and full assembly exports were routed into `build_split_solids` -> `mesh_solid`, converting the continuous mathematical B-spline surface into thousands of flat planar triangles; (b) In `crates/blade-mesh/src/fabrication.rs`, `MIN_SEGMENT_STATIONS = 14` caused 20–40 mm station spans; triangulating $30\text{ mm} \times 1.5\text{ mm}$ quads created diagonal facet ridges with $\sim 0.2\text{ mm}$ sag across the curved airfoil loft, showing up as wavy diagonal ripples in CAD specular shading; (2) Fixes: (a) Restricted single blade and assembly exports to ALWAYS use `kernel.blade_solid(&surface)` and `kernel.hub_solid(&resolved.hub)` whenever `split_parts <= 1`, ensuring the main blade export is a 100% mathematically continuous B-spline NURBS solid with zero ripples, zero seams, and zero faceting; (b) Re-introduced `build_segment_surface` in `crates/blade-wasm/src/mesh.rs` and added `step_mode` support (`"smooth"` vs `"features"` / `"fabricated"`), allowing split parts to be exported as smooth B-spline segment solids (`B_SPLINE_SURFACE_WITH_KNOTS`); (c) Increased `MIN_SEGMENT_STATIONS` in `crates/blade-mesh` from `14` to `32`, dropping spanwise facet crease error by over $5\times$; (d) Added explicit "Export Split (.STEP Smooth)" and "Export Split (.STEP with Joints)" buttons across the top export dropdown and the fabrication dock; (3) Verified with 8 WASM tests, 18/18 Node tests in `web/scripts/types.test.mjs`, TypeScript typecheck, production Vite build, and full workspace `cargo test` passing.
+  refs: crates/blade-mesh/src/fabrication.rs, crates/blade-wasm/src/{lib,mesh}.rs, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -1018,3 +1022,4 @@ note="user reported: 'git hub page said error404'; investigating GitHub Pages br
 [END] 2026-11-10T01:05:00+07:00 agent=geom-1 mem=v100 note="Enabled GitHub Pages via GitHub REST API for Pannawat2008/BladeLab (branch gh-pages, path /); live site verified returning HTTP 200 OK with full HTML/JS/WASM bundles; F-geom1-070 recorded"
 [ACK] 2026-11-10T01:16:00+07:00 agent=geom-1 mem=v100 last_entry=F-geom1-070 task=T-105
 note="user reported: 'now the model export as Step are also has ripple rought serface'; investigating faceted mesh STEP export vs smooth B-spline NURBS surface solids with spar hole and joint features"
+[END] 2026-11-10T01:32:00+07:00 agent=geom-1 mem=v101 note="Eliminated ripple/rough faceted surface on STEP exports: single blade and assembly exports strictly use continuous B-spline NURBS solids (B_SPLINE_SURFACE_WITH_KNOTS); split parts support both smooth B-spline segment solids and refined fabricated solids (MIN_SEGMENT_STATIONS=32); added dual export buttons in UI; 8 wasm tests + 18/18 Node tests + workspace tests clean; F-geom1-071 recorded"

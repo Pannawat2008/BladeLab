@@ -5,10 +5,11 @@
 //! thin wasm bindings live in `lib.rs`.
 
 use blade_cad::{assembly_mesh, hub_mesh, CadKernel, Solid, TruckKernel};
-use blade_geom::{build_sections, loft, BladeSurface};
+use blade_geom::{build_sections, loft, BladeSurface, Point3, Section3D};
 use blade_mesh::{
-    alignment_report, check_mesh, spar_tube_axis_points, tessellate_fabricated, write_3mf,
-    write_stl, AlignmentShape, AlignmentSpec, FabricationSpec, Mesh, SparHoleSpec,
+    alignment_report, check_mesh, compute_split_spans, spar_tube_axis_points,
+    tessellate_fabricated, write_3mf, write_stl, AlignmentShape, AlignmentSpec, FabricationSpec,
+    Mesh, SparHoleSpec,
 };
 use blade_model::{resolve, CurveSource, Design};
 
@@ -84,6 +85,8 @@ pub struct Overrides {
     pub align_depth_clearance_mm: Option<f64>,
     /// Minimum wall between a socket and the airfoil skin in mm.
     pub align_min_wall_mm: Option<f64>,
+    /// Optional STEP export mode: `"smooth"` or `"features"` / `"fabricated"`.
+    pub step_mode: Option<String>,
 }
 
 impl Overrides {
@@ -242,6 +245,43 @@ pub fn export_3mf_with_overrides(
 
 /// Builds B-rep solids for split segments (either a single active part or all parts)
 /// including carbon-fiber spar hole cavities and interlocking joint features.
+/// Slices the lofted blade surface into a sub-span `[z_a, z_b]` and builds a smooth B-spline surface.
+fn build_segment_surface(
+    surface: &BladeSurface,
+    z_a: f64,
+    z_b: f64,
+    z_shift: f64,
+) -> Result<BladeSurface, String> {
+    const SEG_STATIONS: usize = 14;
+    let span_min = surface.span_start_mm();
+    let span_max = surface.span_end_mm();
+    let point_count = surface.point_count();
+
+    let mut sections = Vec::with_capacity(SEG_STATIONS);
+    for i in 0..SEG_STATIONS {
+        let t = (i as f64) / ((SEG_STATIONS - 1) as f64);
+        let z = z_a + t * (z_b - z_a);
+        let z_eval = z.clamp(span_min, span_max);
+        let mut points = Vec::with_capacity(point_count);
+        for idx in 0..point_count {
+            let pt = surface.point_at_span_mm(z_eval, idx).map_err(as_string)?;
+            let p = Point3::new(pt.x, pt.y, z + z_shift).map_err(as_string)?;
+            points.push(p);
+        }
+        let sec = Section3D::new(z + z_shift, points).map_err(as_string)?;
+        sections.push(sec);
+    }
+    loft(&sections).map_err(as_string)
+}
+
+/// Builds B-rep solids for split segments (either a single active part or all parts).
+///
+/// In smooth mode (default for standard CAD), each segment is built as a pure, mathematically
+/// continuous B-spline solid (`B_SPLINE_SURFACE_WITH_KNOTS`) with zero facet ripples or seams.
+///
+/// In features/fabricated mode (when spar hole or alignment joints are enabled and step_mode is
+/// `"features"` / `"fabricated"`), segments include internal spar tube bore cavities and
+/// mating interlocking joint features (spigot/socket/pins/keys/lips).
 fn build_split_solids(
     surface: &BladeSurface,
     overrides: &Overrides,
@@ -249,6 +289,9 @@ fn build_split_solids(
 ) -> Result<Vec<Solid>, String> {
     let fab = overrides.fabrication_spec();
     let parts = fab.split_parts.clamp(1, 8);
+    let span_start = surface.span_start_mm();
+    let span_end = surface.span_end_mm();
+    let split_spans = compute_split_spans(span_start, span_end, parts, fab.split_ratio);
 
     let part_range: std::ops::Range<usize> = match fab.active_part {
         Some(idx) if idx < parts => idx..(idx + 1),
@@ -261,15 +304,29 @@ fn build_split_solids(
         0.0
     };
 
+    let has_fab_components = fab.spar_hole.is_some() || fab.alignment.is_some();
+    let mode = overrides.step_mode.as_deref().unwrap_or("auto");
+    let use_smooth_bspline =
+        mode == "smooth" || (!has_fab_components && mode != "features" && mode != "fabricated");
+
     let mut solids = Vec::with_capacity(part_range.len());
     for part_idx in part_range {
-        let mut part_spec = fab;
-        part_spec.active_part = Some(part_idx);
-        part_spec.explode_gap_mm = (part_idx as f64) * explode_gap;
+        let z_shift = (part_idx as f64) * explode_gap;
+        if use_smooth_bspline {
+            let z_a = split_spans[part_idx];
+            let z_b = split_spans[part_idx + 1];
+            let seg_surf = build_segment_surface(surface, z_a, z_b, z_shift)?;
+            let solid = kernel.blade_solid(&seg_surf).map_err(as_string)?;
+            solids.push(solid);
+        } else {
+            let mut part_spec = fab;
+            part_spec.active_part = Some(part_idx);
+            part_spec.explode_gap_mm = z_shift;
 
-        let part_mesh = tessellate_fabricated(surface, &part_spec).map_err(as_string)?;
-        let solid = kernel.mesh_solid(&part_mesh).map_err(as_string)?;
-        solids.push(solid);
+            let part_mesh = tessellate_fabricated(surface, &part_spec).map_err(as_string)?;
+            let solid = kernel.mesh_solid(&part_mesh).map_err(as_string)?;
+            solids.push(solid);
+        }
     }
     Ok(solids)
 }
@@ -302,16 +359,12 @@ pub fn export_step_with_overrides(
     let kernel = TruckKernel::new();
     let part_norm = part.trim().to_ascii_lowercase();
 
-    let fab = overrides.fabrication_spec();
-    let has_fab_features =
-        fab.spar_hole.is_some() || fab.split_parts > 1 || fab.alignment.is_some();
-
     let bodies = match part_norm.as_str() {
         "hub" => vec![kernel.hub_solid(&resolved.hub).map_err(as_string)?],
         "assembly" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            let mut solids = if has_fab_features {
+            let mut solids = if overrides.split_parts.unwrap_or(1) > 1 {
                 build_split_solids(&surface, overrides, &kernel)?
             } else {
                 vec![kernel.blade_solid(&surface).map_err(as_string)?]
@@ -332,7 +385,7 @@ pub fn export_step_with_overrides(
         "" | "blade" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            if has_fab_features {
+            if overrides.split_parts.unwrap_or(1) > 1 {
                 build_split_solids(&surface, overrides, &kernel)?
             } else {
                 vec![kernel.blade_solid(&surface).map_err(as_string)?]

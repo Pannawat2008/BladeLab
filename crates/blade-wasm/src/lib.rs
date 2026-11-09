@@ -72,6 +72,8 @@ struct OverridesDto {
     align_depth_clearance_mm: Option<f64>,
     /// Minimum wall between a socket and the airfoil skin in mm.
     align_min_wall_mm: Option<f64>,
+    /// Optional STEP export mode: `"smooth"` or `"features"` / `"fabricated"`.
+    step_mode: Option<String>,
 }
 
 impl From<OverridesDto> for Overrides {
@@ -98,6 +100,7 @@ impl From<OverridesDto> for Overrides {
             align_clearance_mm: dto.align_clearance_mm,
             align_depth_clearance_mm: dto.align_depth_clearance_mm,
             align_min_wall_mm: dto.align_min_wall_mm,
+            step_mode: dto.step_mode,
         }
     }
 }

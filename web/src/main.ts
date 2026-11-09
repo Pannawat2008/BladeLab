@@ -216,6 +216,7 @@ const btnExportStl = document.getElementById("btn-export-stl") as HTMLButtonElem
 const btnExport3mf = document.getElementById("btn-export-3mf") as HTMLButtonElement;
 const btnExportStep = document.getElementById("btn-export-step") as HTMLButtonElement;
 const btnExportSplitStep = document.getElementById("btn-export-split-step") as HTMLButtonElement | null;
+const btnExportSplitFabStep = document.getElementById("btn-export-split-fab-step") as HTMLButtonElement | null;
 const btnExportJson = document.getElementById("btn-export-json") as HTMLButtonElement;
 const btnLoadJson = document.getElementById("btn-load-json") as HTMLButtonElement;
 const inputLoadJsonFile = document.getElementById("input-load-json-file") as HTMLInputElement;
@@ -362,6 +363,7 @@ const sliderSplitExplodeGap = document.getElementById("split-explode-gap") as HT
 const splitExplodeVal = document.getElementById("split-explode-val")!;
 const btnExportSplitAll = document.getElementById("btn-export-split-all") as HTMLButtonElement;
 const btnExportSplitAllStep = document.getElementById("btn-export-split-all-step") as HTMLButtonElement | null;
+const btnExportSplitAllFabStep = document.getElementById("btn-export-split-all-fab-step") as HTMLButtonElement | null;
 const inputSparHoleTolerance = document.getElementById("spar-hole-tolerance") as HTMLInputElement;
 const selectAlignShape = document.getElementById("align-shape") as HTMLSelectElement;
 const selectAlignCount = document.getElementById("align-count") as HTMLSelectElement;
@@ -647,7 +649,10 @@ function applyMeshChordOffset() {
   });
 }
 
-function buildFabricationOverridesJson(overrideActivePart?: number | null): string {
+function buildFabricationOverridesJson(
+  overrideActivePart?: number | null,
+  stepMode?: "smooth" | "features",
+): string {
   const holeEnabled = inputSparHoleEnabled.checked;
   const holeDiameter = Math.max(0.5, Number.parseFloat(inputSparHoleDiameter.value) || 5.0);
   const holeDepth = Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240);
@@ -669,6 +674,9 @@ function buildFabricationOverridesJson(overrideActivePart?: number | null): stri
   }
 
   const dto: Record<string, unknown> = {};
+  if (stepMode) {
+    dto.step_mode = stepMode;
+  }
   if (holeEnabled) {
     dto.spar_hole_diameter_mm = holeDiameter;
     dto.spar_hole_depth_mm = holeDepth;
@@ -2895,7 +2903,7 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     if (format === "step") {
       try {
         const stepText =
-          fabJson === "{}"
+          part === "blade" || part === "assembly" || part === "hub" || fabJson === "{}"
             ? export_step(JSON.stringify(workingDesign), part)
             : export_fabricated_step(JSON.stringify(workingDesign), fabJson);
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
@@ -3155,25 +3163,28 @@ btnExportSplitAll.addEventListener("click", () => {
   exportStatus.textContent = `Saved ${splitParts} split STL part(s)`;
 });
 
-function handleExportSplitAllStep() {
+function handleExportSplitAllStep(stepMode: "smooth" | "features" = "smooth") {
   const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
-  const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
-  exportStatus.textContent = `Exporting ${splitParts} split STEP part(s)...`;
+  const holeSuffix = inputSparHoleEnabled.checked && stepMode === "features" ? "-cfhole" : "";
+  const modeSuffix = stepMode === "features" ? "-joints" : "-smooth";
+  exportStatus.textContent = `Exporting ${splitParts} split STEP part(s) (${stepMode})...`;
   try {
     for (let p = 0; p < splitParts; p++) {
-      const fabJson = buildFabricationOverridesJson(p);
+      const fabJson = buildFabricationOverridesJson(p, stepMode);
       const stepText = export_fabricated_step(JSON.stringify(workingDesign), fabJson);
-      const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}.step`;
+      const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}${modeSuffix}.step`;
       triggerBlobDownload(stepText, fname, "application/step");
     }
-    exportStatus.textContent = `Saved ${splitParts} split STEP part(s)`;
+    exportStatus.textContent = `Saved ${splitParts} split STEP part(s) (${stepMode})`;
   } catch (err) {
     exportStatus.textContent = `STEP export failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
-btnExportSplitAllStep?.addEventListener("click", handleExportSplitAllStep);
-btnExportSplitStep?.addEventListener("click", handleExportSplitAllStep);
+btnExportSplitAllStep?.addEventListener("click", () => handleExportSplitAllStep("smooth"));
+btnExportSplitStep?.addEventListener("click", () => handleExportSplitAllStep("smooth"));
+btnExportSplitAllFabStep?.addEventListener("click", () => handleExportSplitAllStep("features"));
+btnExportSplitFabStep?.addEventListener("click", () => handleExportSplitAllStep("features"));
 
 btnExportStl.addEventListener("click", () => {
   void handleExport("stl");

@@ -557,6 +557,11 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   assert.ok(stepAsm.includes("MANIFOLD_SOLID_BREP"), "assembly STEP has solid B-rep");
 
   // Verify split STEP exports
+  const smoothBladeStep = export_step(JSON.stringify(initialDesign), "blade");
+  assert.ok(smoothBladeStep.includes("B_SPLINE_SURFACE_WITH_KNOTS"), "blade STEP is smooth B-spline");
+  assert.equal((smoothBladeStep.match(/B_SPLINE_SURFACE_WITH_KNOTS/g) || []).length, 2, "2 B-spline surfaces for side and TE");
+  assert.ok((smoothBladeStep.match(/PLANE/g) || []).length <= 4, "only 2 planar caps (root & tip), zero facet ripple");
+
   const splitFabJson = JSON.stringify({ split_parts: 3, split_ratio: 0.35, explode_gap_mm: 10.0 });
   const stepAllSplit = export_all_split_step(JSON.stringify(initialDesign), splitFabJson);
   assert.ok(stepAllSplit.includes("MANIFOLD_SOLID_BREP"), "all-split STEP has solid B-rep");

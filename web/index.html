@@ -1924,12 +1924,16 @@
             <div class="export-menu-divider"></div>
             <div class="export-menu-header">CAD Solid &amp; Data</div>
             <button id="btn-export-step" type="button" role="menuitem" class="export-menu-item" title="Download ISO-10303-21 B-rep STEP solid">
-              <strong>STEP Solid</strong>
-              <span class="export-menu-sub">Exact B-rep for Fusion 360 / SolidWorks</span>
+              <strong>STEP Solid (Smooth NURBS)</strong>
+              <span class="export-menu-sub">Exact mathematical B-spline for Fusion 360 / SolidWorks</span>
             </button>
-            <button id="btn-export-split-step" type="button" role="menuitem" class="export-menu-item" title="Download ISO-10303-21 STEP B-rep solids for all split segments">
-              <strong>Export Split Parts (.STEP)</strong>
-              <span class="export-menu-sub">Exact B-rep solid for each printable segment</span>
+            <button id="btn-export-split-step" type="button" role="menuitem" class="export-menu-item" title="Download smooth ISO-10303-21 STEP B-rep solids for all split segments">
+              <strong>Export Split Parts (.STEP Smooth)</strong>
+              <span class="export-menu-sub">Smooth B-spline solid for each segment (ripple-free)</span>
+            </button>
+            <button id="btn-export-split-fab-step" type="button" role="menuitem" class="export-menu-item" title="Download STEP solids with carbon tube hole and interlocking joint features">
+              <strong>Export Split Parts (.STEP with Joints)</strong>
+              <span class="export-menu-sub">Split solids with spar tube bore &amp; alignment joints</span>
             </button>
             <button id="btn-export-json" type="button" role="menuitem" class="export-menu-item" title="Download full Workbench Snapshot JSON">
               <strong>Export Snapshot JSON</strong>
@@ -2576,9 +2580,10 @@
             </div>
             <div id="align-status" class="fit-badge">Alignment off</div>
 
-            <div class="toolbar" style="margin-top: 8px; gap: 8px; display: flex">
-              <button id="btn-export-split-all" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STL)</button>
-              <button id="btn-export-split-all-step" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STEP)</button>
+            <div class="toolbar" style="margin-top: 8px; gap: 6px; display: flex; flex-wrap: wrap">
+              <button id="btn-export-split-all" class="btn-primary btn-mini" type="button" style="flex: 1" title="Download all split segments as binary STL">Export Split (.STL)</button>
+              <button id="btn-export-split-all-step" class="btn-primary btn-mini" type="button" style="flex: 1" title="Download smooth B-spline STEP solids for all split segments">Export Split (.STEP Smooth)</button>
+              <button id="btn-export-split-all-fab-step" class="btn-secondary btn-mini" type="button" style="flex: 1" title="Download STEP solids with carbon tube hole and interlocking joint features">Export Split (.STEP with Joints)</button>
             </div>
           </div>
 
