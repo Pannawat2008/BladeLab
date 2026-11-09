@@ -981,3 +981,5 @@ note="lead approved UI audit fixes: (1) streamline top toolbar into 3 zones with
 [ACK] 2026-11-09T21:31:30+07:00 agent=geom-1 mem=v94 last_entry=F-geom1-064 task=T-105
 note="user reported 'design validation failed with 1 issue(s) when i make length below 520'; investigating crates/blade-model validation rules (radius vs hub_radius vs station grid or spar depth) and web blade length / radius coupling"
 [END] 2026-11-09T21:50:00+07:00 agent=geom-1 mem=v95 note="Fixed blade length validation error when length < 520 mm: added adaptOverridesToRotor and remapSpanRatio to scale and clamp station overrides to [hub_ratio, 1.0] across length/radius edits; 18/18 Node tests + tsc + vite build clean; F-geom1-065 recorded"
+[ACK] 2026-11-09T22:21:30+07:00 agent=geom-1 mem=v95 last_entry=F-geom1-065 task=T-105
+note="user reported: 'when i click the export step its said Export failed: Error: HTTP 405: 405 Not Allowed'; investigating STEP export endpoint on static GitHub Pages deployment"
