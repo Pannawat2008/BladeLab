@@ -988,3 +988,5 @@ note="user reported 'design validation failed with 1 issue(s) when i make length
 [ACK] 2026-11-09T22:21:30+07:00 agent=geom-1 mem=v95 last_entry=F-geom1-065 task=T-105
 note="user reported: 'when i click the export step its said Export failed: Error: HTTP 405: 405 Not Allowed'; investigating STEP export endpoint on static GitHub Pages deployment"
 [END] 2026-11-09T22:37:00+07:00 agent=geom-1 mem=v96 note="Fixed STEP export 405 error on static hosting: compiled blade-cad into blade-wasm, exposing in-browser export_step, export_part_stl_bytes, and export_part_3mf_bytes; wired into web/src/main.ts handleExport; all 18 Node tests + wasm tests + vite build pass; F-geom1-066 recorded"
+[ACK] 2026-11-09T22:45:00+07:00 agent=geom-1 mem=v96 last_entry=F-geom1-066 task=T-105
+note="user reported: 'load gist was fail and when not fail the model was messy'; investigating gist loading (auth/CORS/parsing) and state restoration / 3D model rendering"
