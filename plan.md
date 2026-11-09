@@ -1002,3 +1002,5 @@ note="user reported: 'load gist was fail and when not fail the model was messy';
 [ACK] 2026-11-10T00:07:30+07:00 agent=geom-1 mem=v97 last_entry=F-geom1-067 task=T-105
 note="user requested: 'also export all split as step'; investigating in-browser / kernel STEP export for split blade parts (segments 0..N-1, spar bore, alignment keys/lips)"
 [END] 2026-11-10T00:30:00+07:00 agent=geom-1 mem=v98 note="Implemented in-browser and CAD kernel split blade STEP solid export (export_fabricated_step, export_all_split_step, export_part_step, build_segment_surface, multi-solid STEP B-rep solids); added Export All Split Parts (.STEP) to fabrication toolbar and Export Split Parts (.STEP) to export menu; 8 wasm tests + 18/18 Node tests + tsc + vite build clean; F-geom1-068 recorded"
+[ACK] 2026-11-10T00:40:00+07:00 agent=geom-1 mem=v98 last_entry=F-geom1-068 task=T-105
+note="user reported: 'export split is work but all component gone like tube hole Interlocking Joints'; investigating representation of spar tube bore cavity and interlocking joint features (spigot/socket/pins/keys/lips) in CAD STEP B-rep export"
