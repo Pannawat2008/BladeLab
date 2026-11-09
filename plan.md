@@ -950,3 +950,6 @@ note="investigating user feedback: 'i think you put the blade the wrong sided ri
 [ACK] 2026-11-08T20:59:15+07:00 agent=geom-1 mem=v90 last_entry=F-geom1-060 task=T-105
 note="lead requested: also flip the model; analyzing blade 3D orientation, pitch axis flip (180 deg around pitch axis or chord flip), hub mounting, and spin direction"
 [END] 2026-11-08T21:04:00+07:00 agent=geom-1 mem=v91 note="Flipped 3D blade model 180 deg around pitch axis by default and added 'Flip 180 deg' toolbar/panel toggle buttons; 17/17 Node tests + tsc + vite build clean; F-geom1-061 recorded"
+[ACK] 2026-11-09T10:47:30+07:00 agent=geom-1 mem=v91 last_entry=F-geom1-061 task=T-105
+note="user requested: turn on web; restarting web dev server on port 5173"
+[END] 2026-11-09T10:48:00+07:00 agent=geom-1 mem=v91 note="Started Vite dev server on port 5173"
