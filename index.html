@@ -1,0 +1,1410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>BladeLab — Rotor CAD &amp; BEM Telemetry Workbench</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>:root{--lightningcss-light: ;--lightningcss-dark:initial;color-scheme:dark;--font-sans:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;--font-mono:"IBM Plex Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;--bg-canvas:#0b0d14;--bg-deep:#07080d;--bg-panel:#0b0d14;--bg-card:#11141c;--bg-raised:#1a1e28;--bg-raised-hover:#222734;--border-hairline:#eef0f514;--border-strong:#eef0f524;--top-highlight:inset 0 1px 0 #ffffff14;--text-primary:#eef0f5;--text-secondary:#a3a9b8;--text-muted:#8b93a7;--fg:#eef0f5;--accent:#38bdf8;--accent-dim:#38bdf81f;--datum:#f59e0b;--status-ok:#4cc38a;--status-err:#e5484d;--radius-panel:16px;--radius-card:12px;--radius-control:8px;--radius-tag:4px;--ease:cubic-bezier(.22, 1, .36, 1);--panel-left-w:400px;--panel-right-w:384px;--top-dock-h:52px;--dock-gap:12px}*{box-sizing:border-box}html,body{background:var(--bg-canvas);height:100%;color:var(--text-primary);font:400 13px/20px var(--font-sans);letter-spacing:0;caret-color:var(--accent);text-underline-offset:3px;-webkit-font-smoothing:antialiased;margin:0;overflow:hidden}::selection{color:var(--text-primary);background:#38bdf847}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}*{scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-tag)}::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}#app{z-index:1;position:fixed;inset:0}#panel{top:var(--dock-gap);left:var(--dock-gap);bottom:var(--dock-gap);width:var(--panel-left-w);background:var(--bg-panel);border:1px solid var(--border-hairline);border-radius:var(--radius-panel);z-index:10;max-width:calc(100vw - 24px);transition:transform .28s var(--ease), opacity .18s var(--ease);flex-direction:column;display:flex;position:fixed;overflow:hidden}#top-dock{top:var(--dock-gap);right:var(--dock-gap);left:calc(var(--panel-left-w) + var(--dock-gap) * 2);background:var(--bg-panel);border:1px solid var(--border-hairline);border-radius:var(--radius-panel);z-index:12;transition:transform .28s var(--ease), opacity .18s var(--ease);flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;padding:8px 12px;display:flex;position:fixed}#aero-dock{top:calc(var(--dock-gap) * 2 + var(--top-dock-h));right:var(--dock-gap);bottom:var(--dock-gap);width:var(--panel-right-w);background:var(--bg-panel);border:1px solid var(--border-hairline);border-radius:var(--radius-panel);z-index:10;max-width:calc(100vw - 24px);transition:transform .28s var(--ease), opacity .18s var(--ease);flex-direction:column;display:flex;position:fixed;overflow:hidden}body.hide-left-dock #panel{opacity:0;pointer-events:none;transform:translate(calc(-100% - 24px))}body.hide-left-dock #top-dock{left:var(--dock-gap)}body.hide-right-dock #aero-dock{opacity:0;pointer-events:none;transform:translate(calc(100% + 24px))}.studio-tabs{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-sm);align-items:center;gap:2px;padding:2px;display:inline-flex}.studio-tabs button{border-radius:calc(var(--radius-sm) - 2px);height:26px;color:var(--text-secondary);cursor:pointer;transition:all .15s var(--ease);background:0 0;border:1px solid #0000;align-items:center;gap:6px;padding:0 10px;font-size:11.5px;font-weight:500;display:inline-flex}.studio-tabs button:hover{color:var(--text-primary);background:var(--bg-hover)}.studio-tabs button.active{color:#fff;background:var(--bg-panel);border-color:var(--border-hairline);box-shadow:0 1px 4px #0006}.studio-tabs button#tab-studio-gearbox.active{color:#38bdf8;border-color:#38bdf866}#gearbox-toolbar-controls{align-items:center;gap:6px;display:none}body.studio-gearbox-mode #panel,body.studio-gearbox-mode #aero-dock,body.studio-gearbox-mode #dock-toggles-desktop,body.studio-gearbox-mode #blade-view-controls,body.studio-gearbox-mode #export-bar{display:none!important}body.studio-gearbox-mode #top-dock{left:var(--dock-gap)!important}body.studio-gearbox-mode #gearbox-toolbar-controls{display:inline-flex!important}#gearbox-inspector{top:calc(var(--dock-gap) * 2 + var(--top-dock-h));left:var(--dock-gap);bottom:var(--dock-gap);background:var(--bg-panel);border:1px solid var(--border-hairline);border-radius:var(--radius-panel);z-index:25;opacity:0;pointer-events:none;width:420px;max-width:calc(100vw - 24px);transition:transform .28s var(--ease), opacity .18s var(--ease);flex-direction:column;display:none;position:fixed;overflow:hidden;transform:translate(calc(-100% - 24px));box-shadow:0 20px 48px #0000008c}body.studio-gearbox-mode #gearbox-inspector{display:flex}body.studio-gearbox-mode #gearbox-inspector.open{opacity:1;pointer-events:auto;transform:translate(0)}.gear-card{transition:border-color .2s var(--ease), box-shadow .2s var(--ease), background .2s var(--ease)}.gear-card.card-selected{box-shadow:0 0 16px #38bdf840;background:#38bdf814!important;border-left-width:4px!important}.panel-header{border-bottom:1px solid var(--border-hairline);background:var(--bg-deep);justify-content:space-between;align-items:center;gap:8px;min-height:48px;padding:8px 16px;display:flex}.brand-title{align-items:center;gap:8px;min-width:0;display:flex}.brand-dot{background:var(--datum);border-radius:50%;flex-shrink:0;width:8px;height:8px}.panel-header h1,.panel-header h2{letter-spacing:0;color:var(--text-primary);white-space:nowrap;text-overflow:ellipsis;margin:0;font-size:14px;font-weight:500;line-height:20px;overflow:hidden}.brand-sub{font:400 11px/16px var(--font-mono);color:var(--text-muted);border-left:1px solid var(--border-hairline);padding-left:8px}.ui-icon{stroke:currentColor;stroke-width:1.5px;stroke-linecap:round;stroke-linejoin:round;fill:none;width:16px;height:16px;color:var(--text-muted);flex-shrink:0}button:hover .ui-icon,button.active .ui-icon{color:currentColor}kbd,.layer-tag{height:16px;font:400 11px/16px var(--font-mono);color:var(--text-muted);background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:var(--radius-tag);flex-shrink:0;justify-content:center;align-items:center;padding:0 4px;display:inline-flex}.layer-tag{color:var(--text-secondary)}.section-nav{background:var(--bg-deep);border-bottom:1px solid var(--border-hairline);scrollbar-width:none;align-items:center;gap:4px;padding:6px 10px;display:flex;overflow-x:auto}.section-nav::-webkit-scrollbar{display:none}.section-nav button{border-radius:var(--radius-control);min-width:0;height:28px;color:var(--text-muted);text-align:center;white-space:nowrap;background:0 0;border:1px solid #0000;flex:1 1 0;justify-content:center;padding:0 5px;font-size:11.5px;font-weight:500}.section-nav button:hover{color:var(--text-primary);background:var(--bg-card)}.section-nav button.active{color:var(--text-primary);background:var(--bg-raised);border-color:var(--border-strong);box-shadow:var(--top-highlight)}.toolbar{flex-wrap:wrap;align-items:center;gap:4px;display:flex}.toolbar-label{letter-spacing:0;color:var(--text-muted);margin-right:4px;font-size:12px;font-weight:400;line-height:16px}.toolbar-divider{background:var(--border-hairline);width:1px;height:20px;margin:0 4px}button{background:var(--bg-raised);height:32px;color:var(--text-primary);border:1px solid var(--border-hairline);border-radius:var(--radius-control);letter-spacing:0;cursor:pointer;transition:background-color .14s var(--ease), border-color .14s var(--ease), color .14s var(--ease), transform .12s var(--ease);justify-content:center;align-items:center;gap:8px;padding:0 12px;font-family:inherit;font-size:12px;font-weight:500;line-height:16px;display:inline-flex}button:hover:not(:disabled){background:var(--bg-raised-hover);border-color:var(--border-strong);color:var(--text-primary)}button:active:not(:disabled){transform:scale(.98)}button.active{background:var(--bg-raised-hover);border-color:var(--accent);color:var(--text-primary);box-shadow:var(--top-highlight)}button.btn-primary{background:var(--text-primary);border-color:var(--text-primary);color:var(--bg-deep);font-weight:500}button.btn-primary:hover:not(:disabled){color:var(--bg-deep);background:#fff;border-color:#fff}button:disabled{opacity:.4;cursor:not-allowed}.btn-mini{height:28px;padding:0 8px;font-size:12px}.panel-scroll{scroll-behavior:smooth;flex:1;padding:12px;overflow:hidden auto}section{background:var(--bg-card);border:1px solid var(--border-hairline);border-radius:var(--radius-card);transition:border-color .16s var(--ease);margin-bottom:12px;padding:16px}section:last-child{margin-bottom:0}.section-title{color:var(--text-primary);justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;font-weight:500;line-height:20px;display:flex}.section-toggle-btn{height:28px;color:var(--text-primary);border-radius:var(--radius-control);cursor:pointer;text-align:left;background:0 0;border:none;align-items:center;gap:8px;margin:0 -4px;padding:0 4px;font-size:13px;font-weight:500;display:inline-flex}.section-toggle-btn:hover:not(:disabled){color:var(--accent);background:0 0;border-color:#0000}.section-chevron{width:16px;height:16px;stroke:var(--text-muted);stroke-width:1.5px;fill:none;transition:transform .16s var(--ease)}section.collapsed .section-chevron{transform:rotate(-90deg)}section.collapsed{padding-bottom:12px}section.collapsed .section-title{margin-bottom:0}section.collapsed>:not(.section-title){display:none!important}.section-meta{font:400 12px/16px var(--font-mono);color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap}.grid-2{grid-template-columns:1fr 1fr;gap:8px 12px;display:grid}.telemetry-deck{grid-template-columns:1.15fr 1fr;gap:8px;margin-bottom:12px;display:grid}.telemetry-lead{background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:var(--radius-control);flex-direction:column;justify-content:space-between;gap:8px;padding:12px;display:flex}.telemetry-lead-top{justify-content:space-between;align-items:baseline;gap:8px;display:flex}.telemetry-lead-val{font:500 24px/28px var(--font-mono);color:var(--accent);font-variant-numeric:tabular-nums}.betz-meter{flex-direction:column;gap:4px;display:flex}.betz-meter-meta{font:400 11px/16px var(--font-mono);color:var(--text-muted);font-variant-numeric:tabular-nums;justify-content:space-between;display:flex}.betz-meter-track{background:var(--bg-raised);border-radius:var(--radius-tag);height:4px;overflow:hidden}.betz-meter-fill{background:var(--accent);width:0%;height:100%;transition:width .2s var(--ease)}.telemetry-strip{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);flex-direction:column;justify-content:space-between;padding:4px 12px;display:flex}.telemetry-row{border-bottom:1px solid var(--border-hairline);justify-content:space-between;align-items:center;gap:8px;height:28px;display:flex}.telemetry-row:last-child{border-bottom:none}.kpi-label{letter-spacing:0;color:var(--text-muted);font-size:12px;font-weight:400;line-height:16px}.kpi-val{color:var(--text-primary);font-size:12px;font-weight:500;line-height:16px;font-family:var(--font-mono);font-variant-numeric:tabular-nums}.field{flex-direction:column;gap:4px;min-width:0;display:flex}.field label{color:var(--text-secondary);white-space:nowrap;text-overflow:ellipsis;justify-content:space-between;align-items:center;font-size:12px;font-weight:400;line-height:16px;display:flex;overflow:hidden}.scrub-label{cursor:ew-resize;-webkit-user-select:none;user-select:none;touch-action:none;border-bottom:1px dashed var(--border-strong);transition:color .14s var(--ease), border-color .14s var(--ease)}.scrub-label:hover{color:var(--text-primary);border-bottom-color:var(--datum)}.field input[type=number],.field input[type=text],.field select,.compact-select,#opt-objective{background:var(--bg-raised);height:32px;color:var(--text-primary);border:1px solid var(--border-hairline);border-radius:var(--radius-control);font-size:12px;line-height:16px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;transition:border-color .14s var(--ease);padding:0 8px}.field select,.compact-select,#opt-objective{font-family:inherit}.field input[type=number],.field input[type=text],.field select{width:100%}.field input[type=number]:focus,.field input[type=text]:focus,.field select:focus,.compact-select:focus,#opt-objective:focus{border-color:var(--accent)}.bind-row{border-top:1px solid var(--border-hairline);color:var(--text-secondary);flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin:8px 0;padding:8px 0;font-size:12px;line-height:16px;display:flex}.bind-row label{cursor:pointer;color:var(--text-secondary);align-items:center;gap:8px;display:flex}.bind-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;width:16px;height:16px;margin:0}.bind-row input[type=number]{background:var(--bg-raised);width:72px;height:28px;color:var(--text-primary);border:1px solid var(--border-hairline);border-radius:var(--radius-control);font-size:12px;font-family:var(--font-mono);padding:0 8px}#bezier-svg,#cp-tsr-svg{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);touch-action:none;width:100%;height:160px;margin-bottom:8px;display:block}#airfoil-preview-svg{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);width:100%;height:96px;margin-top:8px;display:block}.aero-legend{color:var(--text-muted);flex-wrap:wrap;gap:12px;margin-bottom:8px;font-size:12px;font-weight:400;line-height:16px;display:flex}.aero-legend span{align-items:center;gap:8px;display:inline-flex}.swatch{border-radius:50%;width:8px;height:8px;display:inline-block}.aero-subbox{border-top:1px solid var(--border-hairline);color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-top:12px;padding-top:12px;font-size:12px;line-height:16px}.field textarea{background:var(--bg-raised);width:100%;color:var(--text-primary);border:1px solid var(--border-hairline);border-radius:var(--radius-control);font:400 12px/16px var(--font-mono);resize:vertical;padding:8px}.field textarea:focus{border-color:var(--accent)}.lock-btn{height:24px;color:var(--text-muted);background:0 0;border-color:#0000;padding:0 8px;font-size:12px}.lock-btn.locked{border-color:var(--datum);color:var(--datum);background:#f59e0b24}.row{margin:8px 0}.row label{color:var(--text-secondary);justify-content:space-between;align-items:center;margin-bottom:4px;font-size:12px;line-height:16px;display:flex}.row label span{font-family:var(--font-mono);color:var(--text-primary);font-size:12px;font-weight:500}.row input[type=range]{appearance:none;background:var(--bg-raised);border-radius:var(--radius-tag);cursor:pointer;width:100%;height:4px}.row input[type=range]::-webkit-slider-thumb{appearance:none;background:var(--text-primary);border:2px solid var(--bg-deep);cursor:grab;width:16px;height:16px;transition:transform .12s var(--ease), background-color .12s var(--ease);border-radius:50%}.row input[type=range]::-webkit-slider-thumb:hover{background:var(--accent);transform:scale(1.1)}.row input[type=range]::-moz-range-thumb{background:var(--text-primary);border:2px solid var(--bg-deep);cursor:grab;border-radius:50%;width:16px;height:16px}.mode-tabs{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:4px;margin-bottom:8px;padding:4px;display:grid}.mode-tabs button{height:28px;color:var(--text-muted);border-radius:var(--radius-tag);background:0 0;border:1px solid #0000;padding:0 8px;font-size:12px;font-weight:500}.mode-tabs button:hover:not(:disabled){color:var(--text-primary);background:var(--bg-card);border-color:#0000}.mode-tabs button.active{background:var(--bg-raised);color:var(--text-primary);border-color:var(--border-strong);box-shadow:var(--top-highlight)}.planform-badge{height:20px;font:500 11px/16px var(--font-mono);color:var(--accent);background:var(--accent-dim);border:1px solid #38bdf852;border-radius:999px;align-items:center;margin-left:auto;padding:0 8px;display:inline-flex}.planform-card{background:var(--bg-card);border:1px solid var(--border-hairline);border-radius:var(--radius-card);padding:12px}.planform-label{color:var(--text-secondary);margin-bottom:8px;font-size:12px;font-weight:500;line-height:16px}.planform-card .mode-tabs{grid-template-columns:1fr 1fr}.planform-card.is-linear .row{opacity:.45;pointer-events:none}.planform-card .row input[type=range]{background:linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill,50%), var(--bg-raised) var(--fill,50%), var(--bg-raised) 100%)}.zone-bar{grid-template-columns:var(--z-root,1fr) var(--z-mid,1fr) var(--z-tip,1fr);border:1px solid var(--border-strong);border-radius:var(--radius-control);height:32px;transition:grid-template-columns .2s var(--ease);margin-top:12px;display:grid;overflow:hidden}.zone{min-width:0;font:500 12px/16px var(--font-sans);color:var(--text-primary);white-space:nowrap;justify-content:center;align-items:center;gap:6px;display:flex;overflow:hidden}.zone i{background:currentColor;border-radius:50%;flex:none;width:8px;height:8px}.zone-root{color:#f6b94d;background:#f59e0b2e}.zone-mid{color:#8ea6ff;background:#6384ff33}.zone-tip{color:#6fd6a6;background:#4cc38a33}.zone-ranges{font:400 11px/16px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--text-muted);margin-top:8px}.planform-pin{color:var(--datum);border-radius:var(--radius-control);background:#f59e0b1a;border:1px solid #f59e0b52;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;padding:8px 12px;font-size:12px;line-height:16px;display:flex}.planform-pin[hidden]{display:none}.sec-tabs{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:12px;padding:4px;display:grid}.sec-tab{border-radius:var(--radius-tag);height:auto;color:var(--text-muted);text-align:left;background:0 0;border:1px solid #0000;flex-direction:column;align-items:flex-start;gap:2px;padding:8px;display:flex}.sec-tab:hover{background:var(--bg-card);color:var(--text-primary)}.sec-tab.active{background:var(--bg-raised);border-color:var(--border-strong);color:var(--text-primary);box-shadow:var(--top-highlight)}.sec-name{align-items:center;gap:6px;font-size:12px;font-weight:500;line-height:16px;display:flex}.sec-sum{font:400 11px/16px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--text-muted)}.dot{border-radius:50%;width:8px;height:8px;display:inline-block}.dot-root{background:#f6b94d}.dot-mid{background:#8ea6ff}.dot-tip{background:#6fd6a6}.sec-num{text-align:right;width:64px;height:28px;font:500 12px/16px var(--font-mono);color:var(--text-primary);background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:var(--radius-tag);padding:0 8px}.sec-num:focus-visible{outline:2px solid var(--accent);outline-offset:1px}.sec-num:disabled,#sec-thick:disabled{opacity:.45}#sec-stack{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);width:100%;height:auto;margin-top:12px;display:block}#layer2-sections .field{margin-bottom:8px}#layer2-sections .row input[type=range]{background:linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill,50%), var(--bg-raised) var(--fill,50%), var(--bg-raised) 100%)}.table-wrap{border:1px solid var(--border-hairline);border-radius:var(--radius-control);width:100%;max-height:360px;overflow:auto}table.station-table{border-collapse:separate;border-spacing:0;width:100%;font:400 12px/16px var(--font-mono);font-variant-numeric:tabular-nums}table.station-table th{text-align:right;font:500 11.5px/16px var(--font-sans);color:var(--text-muted);border-bottom:1px solid var(--border-strong);background:var(--bg-deep);z-index:3;padding:6px;position:sticky;top:0}table.station-table th:first-child{z-index:5;background:var(--bg-deep);position:sticky;left:0}table.station-table td:first-child{z-index:2;background:var(--bg-card);box-shadow:1px 0 0 var(--border-hairline);position:sticky;left:0}table.station-table tr.overridden td:first-child{background:#142230}table.station-table th:first-child,table.station-table td:first-child{text-align:left}table.station-table td{text-align:right;border-bottom:1px solid var(--border-hairline);height:32px;color:var(--text-secondary);padding:4px 6px}table.station-table tr:hover td{background:#ffffff0a}table.station-table tr.overridden{background:var(--accent-dim)}table.station-table input[type=number]{text-align:right;background:var(--bg-raised);width:64px;height:24px;color:var(--text-primary);border:1px solid var(--border-hairline);border-radius:var(--radius-tag);font-variant-numeric:tabular-nums;padding:0 4px;font-family:inherit;font-size:12px}table.station-table tr.overridden input[type=number]{border-color:var(--accent);color:var(--accent);font-weight:500}#export-status{font:400 12px/16px var(--font-mono);color:var(--status-ok);font-variant-numeric:tabular-nums;padding:0 4px}.export-dropdown-wrapper{display:inline-flex;position:relative}.export-dropdown-menu{background:var(--bg-card);border:1px solid var(--border-strong);border-radius:var(--radius-card);z-index:60;flex-direction:column;gap:2px;min-width:260px;padding:6px;display:none;position:absolute;top:calc(100% + 6px);right:0;box-shadow:0 16px 40px #000000b3}.export-dropdown-menu.open{display:flex}.export-menu-header{font:500 10px/14px var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 8px 2px}.export-menu-item{border-radius:var(--radius-control);text-align:left;cursor:pointer;width:100%;height:auto;transition:all .12s var(--ease);background:0 0;border:1px solid #0000;flex-direction:column;align-items:flex-start;gap:1px;padding:6px 10px;display:flex}.export-menu-item:hover{background:var(--bg-raised);border-color:var(--border-hairline)}.export-menu-item strong{color:var(--text-primary);font-size:12px;font-weight:500}.export-menu-sub{font:400 11px/14px var(--font-mono);color:var(--text-muted)}.export-menu-divider{background:var(--border-hairline);height:1px;margin:4px 0}.export-menu-target{color:var(--text-secondary);flex-direction:column;gap:4px;padding:6px 8px;font-size:11.5px;display:flex}@media (pointer:coarse),(width<=1180px){button.btn-mini{min-height:32px;padding:0 10px}.compact-select{min-height:32px}}.autosave-badge{border-radius:var(--radius-control);background:var(--bg-deep);border:1px solid var(--border-hairline);height:28px;font:400 11px/16px var(--font-mono);color:var(--text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;align-items:center;gap:6px;padding:0 8px;display:inline-flex}.autosave-badge:hover{color:var(--text-primary);border-color:var(--border-strong)}.autosave-badge:before{content:"";background:var(--status-ok);border-radius:50%;flex-shrink:0;width:6px;height:6px}.autosave-badge.saving:before{background:var(--datum)}#cp-tsr-svg,#wind-power-svg{cursor:crosshair;touch-action:pan-y}.chart-hover-readout{border-radius:var(--radius-tag);background:var(--bg-deep);border:1px solid var(--border-hairline);min-height:20px;font:400 11px/16px var(--font-mono);color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap;text-overflow:ellipsis;justify-content:space-between;align-items:center;margin-top:2px;padding:2px 6px;display:flex;overflow:hidden}.chart-hover-readout.active{color:var(--text-primary);border-color:var(--border-strong)}#projects-drawer{background:var(--bg-deep);border-bottom:1px solid var(--border-strong);padding:12px;display:none}#projects-drawer.open{display:block}.projects-drawer-head{justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;display:flex}.projects-drawer-title{font:500 12px/16px var(--font-sans);color:var(--text-primary)}.projects-drawer-meta{font:400 11px/16px var(--font-mono);color:var(--text-muted)}.slot-save-row{gap:8px;margin-bottom:8px;display:flex}.slot-save-row input[type=text]{border-radius:var(--radius-control);border:1px solid var(--border-hairline);background:var(--bg-card);height:32px;color:var(--text-primary);font:400 12px/16px var(--font-sans);flex:1;padding:0 10px}.saved-slots-list{flex-direction:column;gap:4px;max-height:156px;display:flex;overflow-y:auto}.slot-row{border-radius:var(--radius-control);background:var(--bg-card);border:1px solid var(--border-hairline);justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;display:flex}.slot-info{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.slot-name{font:500 12px/16px var(--font-sans);color:var(--text-primary);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.slot-sub{font:400 11px/14px var(--font-mono);color:var(--text-muted);font-variant-numeric:tabular-nums}.slot-actions{flex-shrink:0;align-items:center;gap:4px;display:inline-flex}.slot-empty{text-align:center;font:400 11px/16px var(--font-mono);color:var(--text-muted);border:1px dashed var(--border-hairline);border-radius:var(--radius-control);padding:8px}#error-banner{border-radius:var(--radius-control);border:1px solid var(--status-err);color:var(--text-primary);background:#e5484d24;margin:0 12px 8px;padding:8px 12px;font-size:12px;line-height:16px;display:none}#stats{border-top:1px solid var(--border-hairline);background:var(--bg-deep);min-height:36px;font:400 12px/16px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--text-muted);justify-content:space-between;align-items:center;padding:8px 16px;display:flex}#stats .ok{color:var(--status-ok);font-weight:500}#stats .slow{color:var(--datum);font-weight:500}.fit-badge{font:400 12px/16px var(--font-mono);color:var(--text-muted);background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);margin-top:8px;padding:8px}.fit-badge.warn{color:var(--datum);background:#f59e0b1a;border-color:#f59e0b59}.fit-badge.ok{color:var(--status-ok);background:#4cc38a14;border-color:#4cc38a4d}.fit-badge.crit{color:var(--status-err);background:#e5484d1f;border-color:#e5484d66}#viewport-heatmap-legend{bottom:calc(var(--dock-gap) + 34px);left:calc(50% + (var(--panel-left-w) - var(--panel-right-w)) / 2);z-index:6;pointer-events:none;background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:var(--radius-control);height:28px;font:400 11px/16px var(--font-mono);color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap;transition:left .28s var(--ease);align-items:center;gap:10px;padding:0 12px;display:none;position:fixed;transform:translate(-50%)}#viewport-heatmap-legend.visible{display:inline-flex}body.hide-left-dock:not(.hide-right-dock) #viewport-heatmap-legend{left:calc((100vw - var(--panel-right-w) - var(--dock-gap)) / 2)}body.hide-right-dock:not(.hide-left-dock) #viewport-heatmap-legend{left:calc(var(--panel-left-w) + var(--dock-gap) + (100vw - var(--panel-left-w) - var(--dock-gap)) / 2)}body.hide-left-dock.hide-right-dock #viewport-heatmap-legend{left:50%}.heatmap-gradient-bar{border-radius:var(--radius-tag);border:1px solid var(--border-strong);width:96px;height:8px}.struct-kpi-grid{grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;display:grid}.struct-kpi-cell{background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);flex-direction:column;gap:2px;padding:8px 10px;display:flex}.struct-kpi-cell .kpi-label{color:var(--text-muted);font-size:11px}.struct-kpi-cell .kpi-val{font:500 13px/18px var(--font-mono);color:var(--text-primary);font-variant-numeric:tabular-nums}#viewport-datum-hud{bottom:var(--dock-gap);left:calc(50% + (var(--panel-left-w) - var(--panel-right-w)) / 2);z-index:6;pointer-events:none;background:var(--bg-deep);border:1px solid var(--border-hairline);border-radius:var(--radius-control);height:28px;font:400 11px/16px var(--font-mono);color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap;transition:left .28s var(--ease);align-items:center;gap:12px;padding:0 12px;display:inline-flex;position:fixed;transform:translate(-50%)}body.hide-left-dock:not(.hide-right-dock) #viewport-datum-hud{left:calc((100vw - var(--panel-right-w) - var(--dock-gap)) / 2)}body.hide-right-dock:not(.hide-left-dock) #viewport-datum-hud{left:calc(var(--panel-left-w) + var(--dock-gap) + (100vw - var(--panel-left-w) - var(--dock-gap)) / 2)}body.hide-left-dock.hide-right-dock #viewport-datum-hud{left:50%}@media (width<=1440px){#collective-pitch-toolbar-group{display:none!important}}@media (width<=1280px){body:not(.hide-left-dock):not(.hide-right-dock) #viewport-datum-hud{display:none}body:not(.hide-left-dock):not(.hide-right-dock) #viewport-heatmap-legend{bottom:calc(var(--dock-gap) + 8px);gap:6px;height:24px;padding:0 8px;font-size:10px}body:not(.hide-left-dock):not(.hide-right-dock) #viewport-heatmap-legend .heatmap-gradient-bar{width:64px;height:6px}}#viewport-datum-hud .datum-sep{background:var(--border-hairline);width:1px;height:12px}#viewport-datum-hud .datum-key{color:var(--text-secondary)}#mobile-workspace-nav{z-index:30;background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:var(--radius-card);gap:4px;padding:4px;display:none;position:fixed;bottom:12px;left:50%;transform:translate(-50%)}#mobile-workspace-nav button{border-radius:var(--radius-control);height:32px;color:var(--text-muted);white-space:nowrap;background:0 0;border:1px solid #0000;padding:0 12px;font-size:12px;font-weight:500}#mobile-workspace-nav button.active{background:var(--bg-raised);color:var(--text-primary);border-color:var(--border-strong);box-shadow:var(--top-highlight)}@media (width<=1440px){:root{--panel-left-w:364px;--panel-right-w:348px;--dock-gap:8px}}@media (width<=1180px){#top-dock{left:var(--dock-gap);right:var(--dock-gap)}#panel,#aero-dock{top:calc(var(--dock-gap) * 2 + var(--top-dock-h));width:min(420px,100vw - 16px);bottom:60px}#viewport-datum-hud{display:none}#viewport-heatmap-legend{bottom:56px;left:50%}body:not([data-mobile-pane=canvas]) #viewport-heatmap-legend{display:none}#mobile-workspace-nav{display:inline-flex}#dock-toggles-desktop{display:none}body[data-mobile-pane=canvas] #panel,body[data-mobile-pane=canvas] #aero-dock{opacity:0;pointer-events:none;transform:translateY(12px)}body[data-mobile-pane=cad] #aero-dock{opacity:0;pointer-events:none;transform:translate(calc(100% + 24px))}body[data-mobile-pane=aero] #panel{opacity:0;pointer-events:none;transform:translate(calc(-100% - 24px))}}@media (width<=720px){:root{--dock-gap:8px}#top-dock{flex-wrap:nowrap;gap:8px;padding:8px;overflow-x:auto}#top-dock .toolbar{flex-wrap:nowrap;flex-shrink:0}#panel,#aero-dock{width:auto;max-width:none;bottom:56px;left:8px;right:8px}.telemetry-deck{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr 1fr;gap:8px}}</style>
+    <script type="module" crossorigin src="./assets/index-Bai3gKfq.js"></script>
+  </head>
+  <body data-mobile-pane="cad">
+    <div id="app"></div>
+
+    <!-- 3D Heatmap Floating Legend Bar -->
+    <div id="viewport-heatmap-legend" aria-hidden="true">
+      <span id="heatmap-legend-title" style="color: var(--text-secondary)">Heatmap</span>
+      <span id="heatmap-legend-min">0</span>
+      <span id="heatmap-legend-bar" class="heatmap-gradient-bar"></span>
+      <span id="heatmap-legend-max">1</span>
+    </div>
+
+    <!-- 3D Viewport Technical Title-Block Datum Bar -->
+    <div id="viewport-datum-hud" aria-hidden="true">
+      <span><span class="datum-key">DATUM</span> X-CHORD / Y-THICK / Z-SPAN</span>
+      <span class="datum-sep"></span>
+      <span id="hud-rotor-spec">R 600 mm  L 540 mm  B 3</span>
+      <span class="datum-sep"></span>
+      <span>UNIT mm / ISO-10303</span>
+    </div>
+
+    <!-- Top-Right 3D Viewport Mode & CAD Export Bar -->
+    <header id="top-dock" role="banner" aria-label="Viewport and CAD Export Toolbar">
+      <!-- Zone 1: Workspaces & Dock Toggles -->
+      <div class="toolbar" id="toolbar-zone-left">
+        <!-- Studio Workspace Switcher: Blade vs Gearbox -->
+        <div class="studio-tabs" role="tablist" aria-label="Studio Mode">
+          <button id="tab-studio-blade" class="active" type="button" role="tab" aria-selected="true" title="Blade CAD &amp; Aerodynamics Studio">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5L13.5 2.5M13.5 2.5C11 3.5 6 7 4 10c-1.5 2.2-1.5 3.5-1.5 3.5s1.3 0 3.5-1.5c3-2 6.5-7 7.5-9.5z"/></svg>
+            <span>Blade Studio</span>
+          </button>
+          <button id="tab-studio-gearbox" type="button" role="tab" aria-selected="false" title="Involute Helical/Spur Gearbox Prototype Studio">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
+            <span>Gearbox Studio</span>
+          </button>
+        </div>
+
+        <span class="toolbar-divider"></span>
+
+        <!-- Desktop Dock Toggles (visible in Blade mode) -->
+        <div class="toolbar" id="dock-toggles-desktop">
+          <button id="btn-toggle-left" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Left CAD &amp; Geometry Dock">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+            <span>CAD</span>
+            <kbd>[</kbd>
+          </button>
+          <button id="btn-toggle-right" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Right BEM Telemetry Dock">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+            <span>Aero</span>
+            <kbd>]</kbd>
+          </button>
+          <button id="btn-zen-3d" class="btn-mini" type="button" aria-pressed="false" title="Maximize 3D Viewport">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+            <span>Full 3D</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Zone 2: Viewport HUD, Cameras & Modes -->
+      <div class="toolbar" id="toolbar-zone-center">
+        <!-- Blade View Controls (visible in Blade mode) -->
+        <div class="toolbar" id="blade-view-controls">
+          <button id="btn-view-single" class="btn-mini" type="button" aria-pressed="false" title="Single Blade 3D view">Single</button>
+          <button id="btn-view-rotor" class="btn-mini active" type="button" aria-pressed="true" title="Full Rotor B-blade + Hub assembly preview">Rotor (B×)</button>
+          <button id="btn-view-gearbox" class="btn-mini" type="button" aria-pressed="false" title="3D Involute Spur/Helical Gearbox Prototype view" style="display: none">Gearbox</button>
+          <select id="heatmap-mode" class="compact-select" aria-label="3D Blade Color Mode" title="Color 3D blade surface by CAD segments or aerodynamic/structural heatmaps">
+            <option value="segment">Color: CAD Segments</option>
+            <option value="wind_impact">Heatmap: Wind Impact &amp; Stagnation</option>
+            <option value="alpha">Heatmap: Angle of Attack α</option>
+            <option value="cl_cd">Heatmap: Glide Ratio Cl/Cd</option>
+            <option value="torque">Heatmap: Torque dQ/dr</option>
+            <option value="wall_stress">Heatmap: Bending Stress</option>
+          </select>
+
+          <!-- Collapsible Pitch Group (preserved for test assertions & wide screens) -->
+          <div class="toolbar" id="collective-pitch-toolbar-group" title="Collective Blade Pitch Angle (degrees)">
+            <span class="toolbar-label">Pitch</span>
+            <input id="tb-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" style="width: 52px; accent-color: var(--accent);" />
+            <span id="tb-pitch-val" class="section-meta" style="min-width: 24px">0.0°</span>
+            <button id="btn-pitch-feather" class="btn-mini" type="button" title="Quick Feather / Aerodynamic Brake (+30°)">Feather</button>
+            <button id="btn-flip-blade" class="btn-mini active" type="button" aria-pressed="true" title="Flip blade orientation 180° around pitch axis">Flip 180°</button>
+          </div>
+        </div>
+
+        <!-- Gearbox Toolbar Controls (visible only in Gearbox Studio) -->
+        <div class="toolbar" id="gearbox-toolbar-controls">
+          <button id="btn-toggle-gearbox-inspector" class="btn-mini active" type="button" aria-pressed="true" title="Toggle Gear Settings Inspector">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>
+            <span>⚙ Settings</span>
+          </button>
+          <span class="toolbar-divider"></span>
+          <button id="btn-tb-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference Layout">Side-by-Side</button>
+          <button id="btn-tb-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout">Meshed</button>
+          <span class="toolbar-divider"></span>
+          <button id="btn-tb-gear-spin" class="btn-mini" type="button" title="Animate teeth mesh rotation">▶ Spin</button>
+          <button id="btn-tb-gear-export-all" class="btn-primary btn-mini" type="button" title="Download all 3 gears arranged flat on build plate as STL">Export 3 Gears</button>
+        </div>
+
+        <span class="toolbar-divider"></span>
+
+        <!-- Shared 3D Viewport Controls -->
+        <button id="btn-cam-iso" class="btn-mini" type="button" title="Isometric camera view">Iso</button>
+        <button id="btn-cam-top" class="btn-mini" type="button" title="Planform top view">Plan</button>
+        <button id="btn-cam-tip" class="btn-mini" type="button" title="Tip-down airfoil view">Tip</button>
+        <span class="toolbar-divider"></span>
+        <button id="btn-view-spin" class="btn-mini" type="button" aria-pressed="false" title="Animate rotor rotation at design RPM">▶ Spin</button>
+        <button id="btn-view-wireframe" class="btn-mini" type="button" aria-pressed="false" title="Toggle triangle wireframe mesh">Wire</button>
+      </div>
+
+      <!-- Zone 3: Storage & Unified Export Menu -->
+      <div class="toolbar" id="export-bar">
+        <button id="autosave-badge" type="button" class="autosave-badge" aria-live="polite" title="Saved designs &amp; Cloud Gists — click to open Projects &amp; Slots">Auto-saved</button>
+        <span class="toolbar-divider"></span>
+
+        <!-- Unified Export Dropdown -->
+        <div class="export-dropdown-wrapper">
+          <button id="btn-export-main" class="btn-primary btn-mini" type="button" aria-expanded="false" aria-haspopup="true" title="Export CAD &amp; Mesh Files">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" style="stroke: currentColor; width: 13px; height: 13px"><path d="M8 2v8m-3-3l3 3 3-3M2.5 13.5h11"/></svg>
+            <span>Export</span>
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" style="width: 10px; height: 10px; stroke: currentColor"><path d="M4 6l4 4 4-4"/></svg>
+          </button>
+          <div id="export-dropdown-menu" class="export-dropdown-menu" role="menu" aria-label="Export Formats">
+            <div class="export-menu-header">3D Printing &amp; Meshes</div>
+            <button id="btn-export-stl" type="button" role="menuitem" class="export-menu-item" title="Download watertight binary STL">
+              <strong>STL Mesh</strong>
+              <span class="export-menu-sub">Watertight binary triangle mesh</span>
+            </button>
+            <button id="btn-export-3mf" type="button" role="menuitem" class="export-menu-item" title="Download 3MF package (mm units)">
+              <strong>3MF Package</strong>
+              <span class="export-menu-sub">Bambu Lab / PrusaSlicer color package</span>
+            </button>
+            <div class="export-menu-divider"></div>
+            <div class="export-menu-header">CAD Solid &amp; Data</div>
+            <button id="btn-export-step" type="button" role="menuitem" class="export-menu-item" title="Download ISO-10303-21 B-rep STEP solid">
+              <strong>STEP Solid</strong>
+              <span class="export-menu-sub">Exact B-rep for Fusion 360 / SolidWorks</span>
+            </button>
+            <button id="btn-export-split-step" type="button" role="menuitem" class="export-menu-item" title="Download ISO-10303-21 STEP B-rep solids for all split segments">
+              <strong>Export Split Parts (.STEP)</strong>
+              <span class="export-menu-sub">Exact B-rep solid for each printable segment</span>
+            </button>
+            <button id="btn-export-json" type="button" role="menuitem" class="export-menu-item" title="Download full Workbench Snapshot JSON">
+              <strong>Export Snapshot JSON</strong>
+              <span class="export-menu-sub">Full parameters &amp; fabrication specs</span>
+            </button>
+            <button id="btn-load-json" type="button" role="menuitem" class="export-menu-item" title="Load a Workbench Snapshot or Blade Design JSON file">
+              <strong>Load JSON File</strong>
+              <span class="export-menu-sub">Open saved design from computer</span>
+            </button>
+            <div class="export-menu-divider"></div>
+            <div class="export-menu-target">
+              <label for="export-part">Export Target:</label>
+              <select id="export-part" class="compact-select">
+                <option value="blade">Blade Only</option>
+                <option value="assembly" selected>Full Assembly (Blade + Hub)</option>
+                <option value="hub">Hub Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <input id="input-load-json-file" type="file" accept=".json,application/json" hidden />
+        <span id="export-status" role="status" aria-live="polite">Ready</span>
+      </div>
+    </header>
+
+    <!-- Left Geometry & Airfoil Engineering Dock -->
+    <aside id="panel" aria-label="CAD Geometry and Fabrication Dock">
+      <div class="panel-header">
+        <div class="brand-title">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <h1>BladeLab</h1>
+          <span class="brand-sub">Rotor CAD &amp; Fab</span>
+        </div>
+        <div class="toolbar">
+          <button id="btn-toggle-projects" class="btn-mini" type="button" aria-expanded="false" aria-controls="projects-drawer" title="Saved Projects &amp; Local Slots">
+            <span>Projects</span>
+            <span id="saved-slots-count" class="layer-tag">0</span>
+          </button>
+          <button id="btn-undo" class="btn-mini" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button id="btn-redo" class="btn-mini" type="button" title="Redo (Ctrl+Y)" disabled>Redo</button>
+          <button id="btn-reset" class="btn-mini" type="button" title="Reset design and fabrication settings to factory defaults">Reset</button>
+        </div>
+      </div>
+
+      <!-- Collapsible Saved Projects & Slots Manager -->
+      <div id="projects-drawer" role="region" aria-label="Saved Projects and Slots">
+        <div class="projects-drawer-head">
+          <span class="projects-drawer-title">Projects &amp; Cloud Storage</span>
+          <span id="autosave-detail" class="projects-drawer-meta">Session auto-save active</span>
+        </div>
+
+        <div class="mode-tabs" role="tablist" style="margin-bottom: 10px; grid-template-columns: 1fr 1fr">
+          <button id="tab-drawer-gist" class="active" type="button" role="tab" aria-selected="true" title="Cloud storage across all devices using GitHub Gists">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" style="width: 14px; height: 14px; margin-right: 4px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            <span>GitHub Gists (Cloud)</span>
+          </button>
+          <button id="tab-drawer-local" type="button" role="tab" aria-selected="false" title="Local browser storage for this machine only">Browser Slots (Offline)</button>
+        </div>
+
+        <!-- Sub-panel 1: GitHub Gists Cloud (All Devices) -->
+        <div id="drawer-gist-panel">
+          <!-- Auth / Token Input Row -->
+          <div id="gist-auth-row" class="slot-save-row" style="margin-bottom: 6px">
+            <input id="gist-token-input" type="password" placeholder="GitHub Personal Access Token (classic with 'gist' scope)" aria-label="GitHub Token" style="font-family: var(--font-mono)" />
+            <button id="btn-gist-connect" class="btn-primary btn-mini" type="button" title="Connect GitHub account using token">Connect</button>
+          </div>
+          <div id="gist-token-help" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px">
+            Save designs visible on any device: <a href="https://github.com/settings/tokens/new?scopes=gist&description=BladeLab+Workbench" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline">Create GitHub Token with 'gist' scope ↗</a>
+          </div>
+
+          <!-- Load Public Gist by ID or URL (No token required for public gists) -->
+          <div class="slot-save-row" style="margin-bottom: 6px">
+            <input id="gist-load-input" type="text" placeholder="Gist ID or URL (e.g. 7fa4b12c890 or https://gist.github.com/...)" aria-label="Load Gist ID or URL" style="font-family: var(--font-mono); font-size: 11.5px" />
+            <button id="btn-gist-load" class="btn-primary btn-mini" type="button" title="Load public or shared design from GitHub Gist ID or URL">Load Gist</button>
+          </div>
+          <div id="gist-load-status" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; display: none"></div>
+
+          <!-- Connected User Header (shown when authenticated) -->
+          <div id="gist-user-bar" class="bind-row" style="margin: 0 0 8px 0; border: none; padding: 0; display: none">
+            <span style="font-size: 11.5px; color: var(--text-secondary)">Connected as <strong id="gist-user-login" style="color: var(--accent)"></strong></span>
+            <div class="toolbar">
+              <button id="btn-gist-refresh" class="btn-mini" type="button" title="Refresh Gists from GitHub">Refresh</button>
+              <button id="btn-gist-disconnect" class="btn-mini" type="button" title="Disconnect and remove saved token" style="color: var(--status-err)">Disconnect</button>
+            </div>
+          </div>
+
+          <!-- Save to Gist Row (shown when authenticated) -->
+          <div id="gist-save-container" style="display: none; margin-bottom: 8px">
+            <div class="slot-save-row" style="margin-bottom: 6px">
+              <input id="gist-design-name" type="text" placeholder="Cloud design name (e.g. Scimitar 600mm V1)" aria-label="Cloud design name" />
+              <button id="btn-save-gist" class="btn-primary btn-mini" type="button" title="Save current workbench snapshot as a GitHub Gist">Save to Gist</button>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted)">
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer">
+                <input id="gist-is-public" type="checkbox" style="margin: 0; accent-color: var(--accent)" />
+                <span>Public Gist (anyone can view)</span>
+              </label>
+              <span id="gist-status" class="section-meta">Cloud ready</span>
+            </div>
+          </div>
+
+          <!-- Cloud Gists List -->
+          <div id="gist-designs-list" class="saved-slots-list" role="list">
+            <div class="slot-empty">Connect your GitHub token to view and save cloud designs</div>
+          </div>
+        </div>
+
+        <!-- Sub-panel 2: Browser Slots & Files (Offline) -->
+        <div id="drawer-local-panel" style="display: none">
+          <div class="slot-save-row">
+            <input id="slot-name-input" type="text" placeholder="Project slot name (e.g. S833 600mm Contour)" aria-label="Project slot name" />
+            <button id="btn-save-slot" class="btn-primary btn-mini" type="button" title="Save current workbench snapshot into a named browser slot">Save Slot</button>
+          </div>
+          <div class="toolbar" style="margin-bottom: 8px; justify-content: space-between;">
+            <div class="toolbar">
+              <button id="btn-drawer-load-json" class="btn-mini" type="button" title="Load a Workbench Snapshot or Blade Design JSON file">Load JSON</button>
+              <button id="btn-drawer-save-json" class="btn-mini" type="button" title="Download full Workbench Snapshot JSON (Design + Fabrication + Settings)">Export JSON</button>
+            </div>
+            <span class="projects-drawer-meta">Snapshot or Design JSON</span>
+          </div>
+          <div id="saved-slots-list" class="saved-slots-list" role="list">
+            <div class="slot-empty">No named slots saved yet</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Section Jump Tabs -->
+      <nav class="section-nav" id="panel-section-nav" aria-label="CAD Section Navigation">
+        <button type="button" class="active" aria-current="true" data-scroll-target="layer1-rotor">Rotor</button>
+        <button type="button" data-scroll-target="layer1-distributions">Curve</button>
+        <button type="button" data-scroll-target="layer2-planform">Planform</button>
+        <button type="button" data-scroll-target="layer2-sections">Sections</button>
+        <button type="button" data-scroll-target="layer-fabrication">Fab</button>
+        <button type="button" data-scroll-target="layer3-stations">Stations</button>
+      </nav>
+
+      <div class="panel-scroll" id="panel-scroll-container">
+        <!-- Global Rotor Parameters -->
+        <section id="layer1-rotor">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L1</span>
+              <span>Rotor Geometry</span>
+            </button>
+            <span id="rotor-summary" class="section-meta">R 600  L 540  B 3</span>
+          </div>
+
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Wind &amp; Competition Blade Presets</span>
+          </div>
+          <div class="toolbar" style="margin-bottom: 6px; flex-wrap: wrap">
+            <button id="btn-preset-low-wind" class="btn-mini" type="button" title="Low-Speed Wind Tunnel (3.5 m/s · High Starting Torque · S833+SG6043 · Geared 3:1)">Low Wind (3.5 m/s)</button>
+            <button id="btn-preset-kidwind" class="btn-mini" type="button" title="KidWind Competition All-Rounder (4.5 m/s · Geared 3:1 · S833+SG6043)">KidWind (4.5 m/s)</button>
+            <button id="btn-preset-scimitar" class="btn-mini" type="button" title="Scimitar Elliptical Belly (45→76→22 mm · High Mid-Span Torque · S833+SG6043 + 5 mm CF Spar)">Scimitar Belly (45→76→22)</button>
+            <button id="btn-preset-high-wind" class="btn-mini" type="button" title="High-Speed Wind (8.0 m/s · Fast TSR Direct-Drive · S833+SD7062+E387)">High Speed (8 m/s)</button>
+            <button id="btn-preset-ref" class="btn-mini active" type="button" title="600 mm Reference Rotor (8.0 m/s · NACA 4412 · 1:1 Direct Drive)">600 mm Ref</button>
+          </div>
+          <div id="blade-preset-desc" class="zone-ranges" style="margin-bottom: 10px">
+            Select a preset to configure Root/Mid/Tip airfoils, cosine planform, wind speed &amp; drivetrain.
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="rotor-radius" class="scrub-label" data-scrub-for="rotor-radius" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Tip Radius R (mm)</label>
+              <input id="rotor-radius" type="number" min="100" max="2500" step="10" value="600" />
+            </div>
+            <div class="field">
+              <label for="rotor-hub-radius" class="scrub-label" data-scrub-for="rotor-hub-radius" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Hub Radius r₀ (mm)</label>
+              <input id="rotor-hub-radius" type="number" min="10" max="1000" step="5" value="60" />
+            </div>
+            <div class="field">
+              <label for="rotor-blades" class="scrub-label" data-scrub-for="rotor-blades" title="Drag horizontally to scrub">Blades B</label>
+              <input id="rotor-blades" type="number" min="1" max="12" step="1" value="3" />
+            </div>
+            <div class="field">
+              <label for="rotor-tsr" class="scrub-label" data-scrub-for="rotor-tsr" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Design TSR λ</label>
+              <input id="rotor-tsr" type="number" min="0.5" max="15" step="0.25" value="4.5" />
+            </div>
+            <div class="field">
+              <label for="rotor-wind" class="scrub-label" data-scrub-for="rotor-wind" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Wind Speed (m/s)</label>
+              <input id="rotor-wind" type="number" min="1" max="50" step="0.5" value="8.0" />
+            </div>
+            <div class="field">
+              <label for="rotor-stations" class="scrub-label" data-scrub-for="rotor-stations" title="Drag horizontally to scrub">Stations N</label>
+              <input id="rotor-stations" type="number" min="3" max="41" step="1" value="11" />
+            </div>
+            <div class="field">
+              <label for="rotor-blade-length" class="scrub-label" data-scrub-for="rotor-blade-length" title="Blade span L = R − r₀ (mm)">Blade Length L (mm)</label>
+              <input id="rotor-blade-length" type="number" min="50" max="2400" step="10" value="540" />
+            </div>
+            <div class="field">
+              <label for="rotor-pitch-axis" class="scrub-label" data-scrub-for="rotor-pitch-axis" title="Chordwise pitch-axis pivot fraction (0=LE, 0.25=quarter-chord, 1=TE)">Pitch Axis x/c</label>
+              <input id="rotor-pitch-axis" type="number" min="0" max="1" step="0.05" value="0.25" />
+            </div>
+          </div>
+          <div class="row" style="margin-top: 12px">
+            <label for="rotor-length-slider">Blade Length L <span id="blade-length-val">540 mm</span></label>
+            <input id="rotor-length-slider" type="range" min="100" max="1800" step="10" value="540" />
+          </div>
+          <div class="row">
+            <label for="chord-offset-x">Move Chord X-Offset <span id="chord-offset-x-val">0 mm</span></label>
+            <input id="chord-offset-x" type="range" min="-120" max="120" step="1" value="0" />
+          </div>
+          <div class="row">
+            <label for="chord-offset-y">Move Chord Y-Offset <span id="chord-offset-y-val">0 mm</span></label>
+            <input id="chord-offset-y" type="range" min="-60" max="60" step="1" value="0" />
+          </div>
+          <div class="row">
+            <label for="global-light-intensity">Global Light Illumination <span id="global-light-val">1.35×</span></label>
+            <input id="global-light-intensity" type="range" min="0.3" max="3.0" step="0.05" value="1.35" />
+          </div>
+
+          <!-- Collective Blade Pitch & Feathering Simulator -->
+          <div class="bind-row" style="margin-top: 12px; padding-top: 8px">
+            <span style="font-weight: 500; color: var(--text-primary)">Collective Pitch &amp; Feathering</span>
+            <span id="rotor-collective-pitch-val" class="section-meta">0.0°</span>
+          </div>
+          <div class="row" style="margin-top: 6px">
+            <label for="rotor-collective-pitch">Pitch Angle θp <span id="collective-pitch-badge">0.0°</span></label>
+            <input id="rotor-collective-pitch" type="range" min="-10" max="35" step="0.5" value="0" />
+          </div>
+          <div class="toolbar" style="margin-top: 4px; margin-bottom: 8px">
+            <button id="btn-pitch-run" class="btn-mini active" type="button" title="0° Nominal Run — Peak aerodynamic efficiency">0° Run</button>
+            <button id="btn-pitch-start" class="btn-mini" type="button" title="+4° Quick-Start — High starting torque in light breeze">+4° Start</button>
+            <button id="btn-pitch-feather-panel" class="btn-mini" type="button" title="+30° Feather / Aerodynamic Brake — Shed storm gust loads">+30° Feather</button>
+            <button id="btn-flip-blade-panel" class="btn-mini active" type="button" aria-pressed="true" title="Flip blade orientation 180° around pitch axis">Flip 180°</button>
+          </div>
+
+          <!-- Parametric Winglet / Up-Turned Tip Device -->
+          <div class="bind-row" style="margin-top: 10px; padding-top: 8px">
+            <span style="font-weight: 500; color: var(--text-primary)">Winglet &amp; Up-Turned Tip</span>
+            <label class="toggle-label" style="margin: 0; font-size: 12px; cursor: pointer">
+              <input id="winglet-enabled" type="checkbox" style="margin-right: 4px" />
+              <span>Enable Winglet</span>
+            </label>
+          </div>
+          <div id="winglet-controls-subbox" style="margin-top: 6px; display: none">
+            <div class="grid-2">
+              <div class="field">
+                <label for="winglet-cant" class="scrub-label" data-scrub-for="winglet-cant" title="Out-of-plane dihedral bend angle (15° flat .. 75° upright)">Cant Angle (°)</label>
+                <input id="winglet-cant" type="number" min="15" max="75" step="1" value="50" />
+              </div>
+              <div class="field">
+                <label for="winglet-height" class="scrub-label" data-scrub-for="winglet-height" title="Upward tip extension height (mm)">Height (mm)</label>
+                <input id="winglet-height" type="number" min="5" max="50" step="1" value="22" />
+              </div>
+              <div class="field">
+                <label for="winglet-sweep" class="scrub-label" data-scrub-for="winglet-sweep" title="Backward aerodynamic tip sweep angle (°)">Sweep Angle (°)</label>
+                <input id="winglet-sweep" type="number" min="0" max="25" step="1" value="10" />
+              </div>
+              <div class="field">
+                <label for="winglet-radius" class="scrub-label" data-scrub-for="winglet-radius" title="Smooth transition bend radius from span (mm)">Blend Radius (mm)</label>
+                <input id="winglet-radius" type="number" min="5" max="40" step="1" value="15" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Spanwise Distribution Mode & Airfoil Profile -->
+        <section id="layer1-distributions">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L2</span>
+              <span>Chord, Twist &amp; Airfoil</span>
+            </button>
+          </div>
+          <div class="mode-tabs" role="tablist" aria-label="Spanwise Distribution Mode">
+            <button id="mode-linear" class="active" type="button" role="tab" aria-selected="true">Linear</button>
+            <button id="mode-schmitz" type="button" role="tab" aria-selected="false">Schmitz</button>
+            <button id="mode-bezier" type="button" role="tab" aria-selected="false">Bézier</button>
+            <button id="mode-formula" type="button" role="tab" aria-selected="false">Formula</button>
+          </div>
+
+          <div class="bind-row">
+            <label for="bind-taper">
+              <input id="bind-taper" type="checkbox" />
+              Bind Tip = Root × Taper
+            </label>
+            <input id="taper-ratio" type="number" min="0.1" max="2.0" step="0.05" value="0.5" aria-label="Tip-to-root chord taper ratio" title="Tip-to-root chord taper ratio" />
+          </div>
+
+          <div class="bind-row">
+            <span>All Chords Width</span>
+            <div class="toolbar">
+              <button id="btn-chord-minus" class="btn-mini" type="button" title="Subtract 5 mm from all chords">−5 mm</button>
+              <button id="btn-chord-plus" class="btn-mini" type="button" title="Add 5 mm to all chords">+5 mm</button>
+              <button id="btn-chord-narrow" class="btn-mini" type="button" title="Scale all chords by 0.9×">×0.9</button>
+              <button id="btn-chord-widen" class="btn-mini" type="button" title="Scale all chords by 1.1×">×1.1</button>
+            </div>
+          </div>
+
+          <div id="controls-linear">
+            <div class="grid-2">
+              <div class="field">
+                <label for="root-chord" class="scrub-label" data-scrub-for="root-chord" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Root Chord (mm)</label>
+                <input id="root-chord" type="number" min="5" max="300" step="1" value="70" />
+              </div>
+              <div class="field">
+                <label for="root-twist" class="scrub-label" data-scrub-for="root-twist" title="Drag horizontally to scrub (Shift=10×, Alt=0.1×)">Root Twist (°)</label>
+                <input id="root-twist" type="number" min="-45" max="70" step="0.5" value="20" />
+              </div>
+            </div>
+            <div class="row">
+              <label for="twist">Tip Twist <span id="twist-val">3°</span></label>
+              <input id="twist" type="range" min="0" max="25" step="0.5" value="3" />
+            </div>
+            <div class="row">
+              <label for="chord">Tip Chord <span id="chord-val">35 mm</span></label>
+              <input id="chord" type="range" min="10" max="120" step="1" value="35" />
+            </div>
+          </div>
+
+          <div id="controls-schmitz" style="display: none">
+            <div class="grid-2">
+              <div class="field">
+                <label for="schmitz-cl" class="scrub-label" data-scrub-for="schmitz-cl">Design C_l</label>
+                <input id="schmitz-cl" type="number" min="0.2" max="2.5" step="0.05" value="1.0" />
+              </div>
+              <div class="field">
+                <label for="schmitz-alpha" class="scrub-label" data-scrub-for="schmitz-alpha">Design α (°)</label>
+                <input id="schmitz-alpha" type="number" min="-15" max="25" step="0.5" value="6.0" />
+              </div>
+            </div>
+          </div>
+
+          <div id="controls-bezier" style="display: none">
+            <div class="mode-tabs" role="tablist" aria-label="Bézier Curve Target">
+              <button id="bezier-target-chord" class="active" type="button" role="tab" aria-selected="true">Chord (mm)</button>
+              <button id="bezier-target-twist" type="button" role="tab" aria-selected="false">Twist (°)</button>
+            </div>
+            <svg id="bezier-svg" viewBox="0 0 320 150" role="img" aria-label="Interactive Bezier curve editor"></svg>
+            <table class="station-table">
+              <thead>
+                <tr>
+                  <th>Pt</th>
+                  <th>s (0..1)</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody id="bezier-points-body"></tbody>
+            </table>
+          </div>
+
+          <div id="controls-formula" style="display: none">
+            <div class="field" style="margin-bottom: 8px">
+              <label for="formula-chord">Chord Formula (mm, x=r/R, s=0..1)</label>
+              <input id="formula-chord" type="text" value="70 - 35 * s" />
+            </div>
+            <div class="field">
+              <label for="formula-twist">Twist Formula (°, x=r/R, s=0..1)</label>
+              <input id="formula-twist" type="text" value="20 - 17 * s" />
+            </div>
+          </div>
+
+          <div class="aero-subbox">
+            <div class="field" style="margin-bottom: 8px">
+              <label for="airfoil-family">Airfoil Profile Family</label>
+              <select id="airfoil-family">
+                <option value="naca4">NACA 4-Digit (Parametric)</option>
+                <option value="SG6043">SG6043 (Selig High-Lift Low-Re)</option>
+                <option value="SD7062">SD7062 (Selig Thick Low-Re)</option>
+                <option value="E387">E387 (Eppler Classic Low-Re)</option>
+                <option value="S833">S833 (NREL Thick Root, 18%)</option>
+              </select>
+            </div>
+            <div id="naca4-controls" class="grid-2">
+              <div class="field">
+                <label for="airfoil-thickness" class="scrub-label" data-scrub-for="airfoil-thickness">Thickness t/c (%)</label>
+                <input id="airfoil-thickness" type="number" min="4" max="30" step="0.5" value="12" />
+              </div>
+              <div class="field">
+                <label for="airfoil-camber" class="scrub-label" data-scrub-for="airfoil-camber">Max Camber m (%)</label>
+                <input id="airfoil-camber" type="number" min="0" max="9.5" step="0.5" value="4" />
+              </div>
+            </div>
+            <svg id="airfoil-preview-svg" viewBox="0 0 320 92" role="img" aria-label="2D Airfoil Cross-Section Preview"></svg>
+          </div>
+        </section>
+
+        <!-- Planform & Span Transitions -->
+        <section id="layer2-planform">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L2</span>
+              <span>Planform &amp; Span Transitions</span>
+            </button>
+            <span class="planform-badge" id="planform-badge">Linear</span>
+          </div>
+          <div class="planform-card">
+            <div class="planform-label" id="planform-curve-label">Spanwise Planform Curve</div>
+            <div class="mode-tabs" role="tablist" aria-labelledby="planform-curve-label">
+              <button id="planform-linear" class="active" type="button" role="tab" aria-selected="true">Linear Taper</button>
+              <button id="planform-cosine" type="button" role="tab" aria-selected="false">Smooth Cosine</button>
+            </div>
+            <div class="row">
+              <label for="planform-center">Mid-Span Center <span id="planform-center-val">45% of span</span></label>
+              <input id="planform-center" type="range" min="15" max="85" step="1" value="45" />
+            </div>
+            <div class="row">
+              <label for="planform-width">Mid-Span Plateau Width <span id="planform-width-val">25% (100 mm)</span></label>
+              <input id="planform-width" type="range" min="5" max="60" step="1" value="25" />
+            </div>
+            <div class="zone-bar" id="planform-zone-bar" role="img" aria-label="Root, mid and tip planform zones">
+              <span class="zone zone-root" id="zone-root"><i></i>Root</span>
+              <span class="zone zone-mid" id="zone-mid"><i></i>Mid</span>
+              <span class="zone zone-tip" id="zone-tip"><i></i>Tip</span>
+            </div>
+            <div class="zone-ranges" id="planform-zone-ranges">Root 0 – 0.13 m | Mid 0.13 – 0.23 m | Tip 0.23 – 0.40 m</div>
+            <div class="planform-pin" id="planform-pin" hidden>
+              <span id="planform-pin-text"></span>
+              <button id="btn-planform-unpin" class="btn-mini" type="button">Clear Overrides</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Blade Sections: Root / Mid-span / Tip -->
+        <section id="layer2-sections">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L2</span>
+              <span>Blade Sections (Root / Mid / Tip)</span>
+            </button>
+            <span id="sections-summary" class="section-meta">3 Zones</span>
+          </div>
+          <div class="planform-card">
+            <div class="sec-tabs" role="tablist" aria-label="Blade section">
+              <button id="sec-tab-root" class="sec-tab active" type="button" role="tab" aria-selected="true" data-sec="root">
+                <span class="sec-name"><i class="dot dot-root"></i>Root</span>
+                <span class="sec-sum" id="sec-sum-root">70 mm / 20°</span>
+              </button>
+              <button id="sec-tab-mid" class="sec-tab" type="button" role="tab" aria-selected="false" data-sec="mid">
+                <span class="sec-name"><i class="dot dot-mid"></i>Mid</span>
+                <span class="sec-sum" id="sec-sum-mid">52 mm / 11°</span>
+              </button>
+              <button id="sec-tab-tip" class="sec-tab" type="button" role="tab" aria-selected="false" data-sec="tip">
+                <span class="sec-name"><i class="dot dot-tip"></i>Tip</span>
+                <span class="sec-sum" id="sec-sum-tip">35 mm / 3°</span>
+              </button>
+            </div>
+            <div class="planform-label" id="sec-role">Structural and hub attachment</div>
+
+            <div class="field">
+              <label for="sec-airfoil">Airfoil Family</label>
+              <select id="sec-airfoil">
+                <option value="naca4">NACA 4-Digit (Parametric)</option>
+                <option value="SG6043">SG6043 (High Lift, Low Re)</option>
+                <option value="SD7062">SD7062 (Thick, Low Re)</option>
+                <option value="E387">E387 (Eppler, Low Re)</option>
+                <option value="S833">S833 (NREL Thick Root, 18%)</option>
+              </select>
+            </div>
+            <div class="row">
+              <label for="sec-chord"><span class="scrub-label" data-scrub-for="sec-chord-num" title="Drag horizontally to scrub section chord">Chord Width</span> <span><input id="sec-chord-num" class="sec-num" type="number" min="10" max="150" step="1" aria-label="Chord width in millimetres" /> mm</span></label>
+              <input id="sec-chord" type="range" min="10" max="150" step="1" value="50" />
+            </div>
+            <div class="row">
+              <label for="sec-twist"><span class="scrub-label" data-scrub-for="sec-twist-num" title="Drag horizontally to scrub section twist">Twist Angle</span> <span><input id="sec-twist-num" class="sec-num" type="number" min="-10" max="45" step="0.5" aria-label="Twist angle in degrees" /> °</span></label>
+              <input id="sec-twist" type="range" min="-10" max="45" step="0.5" value="10" />
+            </div>
+            <div class="row">
+              <label for="sec-thick"><span class="scrub-label" data-scrub-for="sec-thick-num" title="Drag horizontally to scrub section thickness ratio">Thickness Ratio t/c</span> <span><input id="sec-thick-num" class="sec-num" type="number" min="6" max="30" step="0.5" aria-label="Thickness ratio in percent" /> %</span></label>
+              <input id="sec-thick" type="range" min="6" max="30" step="0.5" value="12" />
+            </div>
+            <div class="zone-ranges" id="sec-note"></div>
+
+            <svg id="sec-stack" viewBox="0 0 320 150" role="img" aria-label="Root, mid and tip sections overlaid to scale with twist"></svg>
+            <div class="zone-ranges">Drawn to scale, aligned on the pitch axis, rotated by twist.</div>
+          </div>
+        </section>
+
+        <!-- Fabrication: Carbon Fiber Tube Hole & Split Model -->
+        <section id="layer-fabrication">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">FAB</span>
+              <span>Carbon Tube &amp; Split Joints</span>
+            </button>
+            <span id="fab-summary" class="section-meta">Solid / 1 Part</span>
+          </div>
+
+          <div>
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <label for="spar-hole-enabled" style="font-weight: 500; color: var(--text-primary)">
+                <input id="spar-hole-enabled" type="checkbox" />
+                Base Hole (Carbon Tube)
+              </label>
+              <label for="spar-show-rod" title="Show 3D carbon-fiber tube preview rod">
+                <input id="spar-show-rod" type="checkbox" checked />
+                3D Tube Preview
+              </label>
+            </div>
+
+            <div class="bind-row">
+              <span>CF Tube Presets</span>
+              <div class="toolbar">
+                <button id="btn-cf-4" class="btn-mini" type="button" title="4.0 mm carbon tube hole">Ø4 mm</button>
+                <button id="btn-cf-5" class="btn-mini" type="button" title="5.0 mm carbon tube hole">Ø5 mm</button>
+                <button id="btn-cf-6" class="btn-mini" type="button" title="6.0 mm carbon tube hole">Ø6 mm</button>
+                <button id="btn-cf-8" class="btn-mini" type="button" title="8.0 mm carbon tube hole">Ø8 mm</button>
+                <button id="btn-spar-full-span" class="btn-mini" type="button" title="Extend hole through 85% of blade span">85% Span</button>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="spar-hole-diameter" class="scrub-label" data-scrub-for="spar-hole-diameter">Tube Hole Ø (mm)</label>
+                <input id="spar-hole-diameter" type="number" min="1.0" max="25.0" step="0.2" value="5.0" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-depth" class="scrub-label" data-scrub-for="spar-hole-depth">Hole Depth (mm)</label>
+                <input id="spar-hole-depth" type="number" min="10" max="2400" step="10" value="240" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-offset-x" class="scrub-label" data-scrub-for="spar-hole-offset-x">Hole Offset X (mm)</label>
+                <input id="spar-hole-offset-x" type="number" min="-15" max="15" step="0.2" value="0.0" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-offset-y" class="scrub-label" data-scrub-for="spar-hole-offset-y">Hole Offset Y (mm)</label>
+                <input id="spar-hole-offset-y" type="number" min="-10" max="10" step="0.2" value="0.0" />
+              </div>
+              <div class="field">
+                <label for="spar-hole-tolerance" class="scrub-label" data-scrub-for="spar-hole-tolerance" title="Added to the bore diameter so the carbon tube slides in">Tube Fit Tolerance (+mm Ø)</label>
+                <input id="spar-hole-tolerance" type="number" min="0" max="1.5" step="0.05" value="0.20" />
+              </div>
+            </div>
+
+            <div class="row" style="margin-top: 8px">
+              <label for="spar-hole-depth-slider">Hole Depth <span id="spar-hole-depth-val">240 mm</span></label>
+              <input id="spar-hole-depth-slider" type="range" min="15" max="1200" step="5" value="240" />
+            </div>
+            <div id="spar-hole-status" class="fit-badge">Base hole off — enable to bore root for carbon tube</div>
+          </div>
+
+          <div class="aero-subbox">
+            <div class="grid-2">
+              <div class="field">
+                <label for="split-parts">Split Blade Into</label>
+                <select id="split-parts">
+                  <option value="1">1 Part (Unsplit Full Blade)</option>
+                  <option value="2">2 Parts (Root + Tip)</option>
+                  <option value="3">3 Parts (Root + Mid + Tip)</option>
+                  <option value="4">4 Printable Segments</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="split-active-part">View / Export Segment</label>
+                <select id="split-active-part">
+                  <option value="all">All Segments</option>
+                  <option value="0">Part 1 (Root Base)</option>
+                  <option value="1">Part 2</option>
+                  <option value="2">Part 3</option>
+                  <option value="3">Part 4 (Tip)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top: 8px">
+              <label for="split-ratio-slider">Primary Split Position <span id="split-ratio-val">50% (r=330 mm)</span></label>
+              <input id="split-ratio-slider" type="range" min="15" max="85" step="1" value="50" />
+            </div>
+
+            <div class="row">
+              <label for="split-explode-gap">Exploded Preview Gap <span id="split-explode-val">24 mm</span></label>
+              <input id="split-explode-gap" type="range" min="0" max="80" step="2" value="24" />
+            </div>
+
+            <div class="bind-row" style="margin-top: 8px">
+              <span style="font-weight: 500; color: var(--text-primary)">Interlocking Joints on Split Faces</span>
+            </div>
+            <div class="bind-row" style="border-top: none; padding-top: 0">
+              <span>Joint Presets</span>
+              <div class="toolbar">
+                <button id="btn-joint-contour" class="btn-mini" type="button" title="2-part split with full-contour airfoil offset stepped lip &amp; recessed socket">Contour Lip</button>
+                <button id="btn-joint-dovetail" class="btn-mini" type="button" title="2-part split with Butterfly / Double-Dovetail interlocking keys">Dovetail</button>
+                <button id="btn-joint-cruciform" class="btn-mini" type="button" title="2-part split with Cruciform (+) orthogonal cross-rib interlock">Cruciform +</button>
+                <button id="btn-joint-snaplock" class="btn-mini" type="button" title="2-part split with 3D barbed axial snap-lock / retention pocket">3D Snap-Lock</button>
+                <button id="btn-joint-tapered" class="btn-mini" type="button" title="2-part split with 3D self-centering tapered wedge interlock">Taper Wedge</button>
+                <button id="btn-joint-round" class="btn-mini" type="button" title="2-part split with round dowel pins">Dowel Pins</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="align-shape">Joint / Alignment Type</label>
+                <select id="align-shape">
+                  <option value="none">None (Flat Split Face)</option>
+                  <option value="contour">Airfoil Contour Lip (Stepped Sleeve)</option>
+                  <option value="dovetail">Interlocking Dovetail (Butterfly)</option>
+                  <option value="cruciform">Interlocking Cruciform (+ Cross)</option>
+                  <option value="snaplock">Interlocking 3D Snap-Lock (Barb)</option>
+                  <option value="tapered">Interlocking Tapered Wedge (3D)</option>
+                  <option value="round">Dowel Pins (Round)</option>
+                  <option value="key">Straight Keys (Rectangular)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="align-count">Features per Split Face</label>
+                <select id="align-count">
+                  <option value="2">2 (fore + aft of tube)</option>
+                  <option value="1">1</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="align-size" class="scrub-label" data-scrub-for="align-size">Pin Ø / Key Width (mm)</label>
+                <input id="align-size" type="number" min="1" max="12" step="0.2" value="3.0" />
+              </div>
+              <div class="field">
+                <label for="align-key-length" class="scrub-label" data-scrub-for="align-key-length">Key Length (mm)</label>
+                <input id="align-key-length" type="number" min="2" max="30" step="0.5" value="6.0" />
+              </div>
+              <div class="field">
+                <label for="align-height" class="scrub-label" data-scrub-for="align-height">Pin Height (mm)</label>
+                <input id="align-height" type="number" min="1" max="30" step="0.5" value="6.0" />
+              </div>
+              <div class="field">
+                <label for="align-spacing" class="scrub-label" data-scrub-for="align-spacing" title="Distance from the tube / core center along the chord. 0 = automatic">Spacing from Core (mm, 0=auto)</label>
+                <input id="align-spacing" type="number" min="0" max="60" step="0.5" value="0" />
+              </div>
+              <div class="field">
+                <label for="align-clearance" class="scrub-label" data-scrub-for="align-clearance" title="Per-side gap between pin and socket">Socket Clearance / side (mm)</label>
+                <input id="align-clearance" type="number" min="0" max="1.5" step="0.05" value="0.20" />
+              </div>
+              <div class="field">
+                <label for="align-depth-clearance" class="scrub-label" data-scrub-for="align-depth-clearance" title="Extra socket depth beyond the pin height">Socket Extra Depth (mm)</label>
+                <input id="align-depth-clearance" type="number" min="0" max="3" step="0.1" value="0.5" />
+              </div>
+              <div class="field">
+                <label for="align-min-wall" class="scrub-label" data-scrub-for="align-min-wall" title="Smallest wall kept between sockets and the airfoil skin">Min Skin Wall (mm)</label>
+                <input id="align-min-wall" type="number" min="0" max="3" step="0.1" value="0.8" />
+              </div>
+            </div>
+            <div class="bind-row">
+              <span>Fit Preset</span>
+              <div class="toolbar">
+                <button id="btn-fit-tight" class="btn-mini" type="button" title="Tight press fit: 0.10 mm clearance, 0.10 mm tube tolerance">Tight</button>
+                <button id="btn-fit-standard" class="btn-mini" type="button" title="Standard FDM sliding fit: 0.20 mm">Standard</button>
+                <button id="btn-fit-loose" class="btn-mini" type="button" title="Loose / easy assembly: 0.35 mm clearance, 0.40 mm tube tolerance">Loose</button>
+              </div>
+            </div>
+            <div id="align-status" class="fit-badge">Alignment off</div>
+
+            <div class="toolbar" style="margin-top: 8px; gap: 8px; display: flex">
+              <button id="btn-export-split-all" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STL)</button>
+              <button id="btn-export-split-all-step" class="btn-primary" type="button" style="flex: 1">Export All Split Parts (.STEP)</button>
+            </div>
+          </div>
+
+          <div class="aero-subbox">
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span style="font-weight: 500; color: var(--text-primary)">3D Printer Build-Volume Fit Check</span>
+              <button id="btn-auto-fit-printer" class="btn-mini" type="button" title="Automatically set split count so every segment + interlocking lip fits your printer Z height">Auto-Fit Split</button>
+            </div>
+            <div class="grid-2" style="margin-top: 6px">
+              <div class="field">
+                <label for="printer-preset">Printer Profile</label>
+                <select id="printer-preset">
+                  <option value="bambu_256" selected>Bambu X1/P1/A1 (256³ mm)</option>
+                  <option value="prusa_mk4">Prusa MK4 / Core One (220Z)</option>
+                  <option value="ender3">Ender 3 / 220 Class (250Z)</option>
+                  <option value="voron_350">Voron 2.4 / Large (350³ mm)</option>
+                  <option value="custom">Custom Max Z Height</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="printer-max-z" class="scrub-label" data-scrub-for="printer-max-z">Max Print Z (mm)</label>
+                <input id="printer-max-z" type="number" min="60" max="1000" step="5" value="256" />
+              </div>
+            </div>
+            <div id="printer-fit-status" class="fit-badge">Checking segment print heights...</div>
+          </div>
+        </section>
+
+        <!-- Per-Station Override Table -->
+        <section id="layer3-stations">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">L3</span>
+              <span>Spanwise Station Overrides</span>
+            </button>
+            <button id="btn-clear-overrides" class="btn-mini" type="button">Clear Overrides</button>
+          </div>
+          <div class="table-wrap">
+            <table class="station-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>r/R</th>
+                  <th>r (mm)</th>
+                  <th>Chord (mm)</th>
+                  <th>Twist (°)</th>
+                  <th title="Lock station against Layer 1/2 edits">Lock</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="station-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div id="error-banner" role="alert"></div>
+
+      <div id="stats">
+        <span>mesh: <span id="ms" class="ok">–</span></span>
+        <span><span id="tris">–</span> tris</span>
+        <span><span id="vol">–</span> mm³</span>
+      </div>
+    </aside>
+
+    <!-- Right Aerodynamics, Telemetry & Test Data Dock -->
+    <aside id="aero-dock" aria-label="BEM Aerodynamics and Telemetry Dock">
+      <div class="panel-header">
+        <div class="brand-title">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <h2>BEM Telemetry</h2>
+          <span class="brand-sub">Wind-Tunnel Bench</span>
+        </div>
+        <span id="aero-summary" class="section-meta">Cp –  P – W</span>
+      </div>
+
+      <!-- Quick Section Jump Tabs for Right Telemetry Dock -->
+      <nav class="section-nav" id="aero-section-nav" aria-label="Telemetry Section Navigation">
+        <button type="button" class="active" aria-current="true" data-scroll-target="layer-aero">BEM</button>
+        <button type="button" data-scroll-target="layer-aero-aep">Power &amp; AEP</button>
+        <button type="button" data-scroll-target="layer-aero-struct">Structural</button>
+        <button type="button" data-scroll-target="layer-aero-cloud">Lab &amp; Cloud</button>
+      </nav>
+
+      <div class="panel-scroll" id="aero-scroll-container">
+        <!-- Section 1: BEM Cp-TSR Curve, A/B Comparison & Blade Optimizer -->
+        <section id="layer-aero">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">BEM</span>
+              <span>Cp–TSR &amp; Blade Optimizer</span>
+            </button>
+            <span id="bem-sec-meta" class="section-meta">Betz 0.593</span>
+          </div>
+
+          <div>
+            <div class="telemetry-deck">
+              <div class="telemetry-lead">
+                <div class="telemetry-lead-top">
+                  <span class="kpi-label">Design Cp</span>
+                  <span id="kpi-cp" class="telemetry-lead-val">–</span>
+                </div>
+                <div class="betz-meter">
+                  <div class="betz-meter-meta">
+                    <span>Betz 0.593</span>
+                    <span id="kpi-betz-pct">–% Betz</span>
+                  </div>
+                  <div class="betz-meter-track">
+                    <div id="kpi-betz-bar" class="betz-meter-fill"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="telemetry-strip">
+                <div class="telemetry-row">
+                  <span class="kpi-label">Peak Cp</span>
+                  <span id="kpi-peak-cp" class="kpi-val">–</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="kpi-label">Mech Power</span>
+                  <span id="kpi-power" class="kpi-val">–</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="kpi-label">Gen Output</span>
+                  <span id="kpi-gen-elec" class="kpi-val">–</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="aero-legend">
+              <span><i class="swatch" style="background: #38bdf8"></i>Design B</span>
+              <span><i class="swatch" style="background: #7a8296"></i>Baseline A</span>
+              <span><i class="swatch" style="background: #f59e0b"></i>Exp Data</span>
+              <span><i class="swatch" style="background: #e5484d"></i>Betz 0.593</span>
+            </div>
+            <svg id="cp-tsr-svg" viewBox="0 0 320 155" role="img" aria-label="Cp vs Tip-Speed Ratio Chart"></svg>
+            <div id="cp-tsr-hover-readout" class="chart-hover-readout">Hover curve to inspect λ, Cp &amp; RPM</div>
+
+            <div class="bind-row">
+              <div class="toolbar">
+                <button id="btn-snapshot-a" class="btn-mini" type="button">Snapshot Baseline A</button>
+                <button id="btn-clear-a" class="btn-mini" type="button" disabled>Clear A</button>
+              </div>
+              <span id="ab-delta-summary" class="section-meta">No Baseline A</span>
+            </div>
+
+            <div class="bind-row" style="margin-top: 8px; padding-top: 12px">
+              <span style="font-weight: 500; color: var(--text-primary)">Blade Optimizer</span>
+              <select id="opt-objective" aria-label="Optimization objective" title="Optimization objective">
+                <option value="design_tsr" selected>Max Cp at Design TSR</option>
+                <option value="broadband_tsr">Broadband TSR (±20%)</option>
+              </select>
+            </div>
+            <div class="toolbar" style="margin-top: 8px">
+              <button id="btn-auto-optimize" class="btn-primary" type="button" style="flex: 1" title="Run Glauert-Schmitz + Coordinate Search optimizer respecting locked stations and manufacturing limits">
+                Auto-Optimize Blade (Max Cp)
+              </button>
+            </div>
+            <div id="opt-status" class="fit-badge">Optimizer ready (respects locked stations)</div>
+          </div>
+        </section>
+
+        <!-- Section 2: Power Curve (2–18 m/s), Cut-In, Weibull AEP & Generator Matching -->
+        <section id="layer-aero-aep">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">AEP</span>
+              <span>Power Curve &amp; Generator</span>
+            </button>
+            <span id="aep-cutin-badge" class="section-meta">Cut-in – m/s</span>
+          </div>
+
+          <div>
+            <div class="grid-2" style="margin-bottom: 6px">
+              <div class="field">
+                <label for="site-avg-wind" class="scrub-label" data-scrub-for="site-avg-wind">Site Avg Wind (m/s)</label>
+                <input id="site-avg-wind" type="number" min="2.5" max="12.0" step="0.5" value="5.5" />
+              </div>
+              <div class="struct-kpi-cell" style="justify-content: center">
+                <span class="kpi-label">Annual Energy (Weibull)</span>
+                <span id="kpi-aep-kwh" class="kpi-val">– kWh/yr</span>
+              </div>
+            </div>
+            <div class="aero-legend" style="margin-top: 4px">
+              <span><i class="swatch" style="background: #38bdf8"></i>Mech Power</span>
+              <span><i class="swatch" style="background: #4cc38a"></i>Elec Output</span>
+              <span><i class="swatch" style="background: #f59e0b"></i>Cut-In</span>
+            </div>
+            <svg id="wind-power-svg" viewBox="0 0 320 148" role="img" aria-label="Power vs Wind Speed Curve"></svg>
+            <div id="wind-power-hover-readout" class="chart-hover-readout">Hover curve to inspect V, Watts &amp; RPM</div>
+            <div id="aep-summary" class="fit-badge">AEP: –</div>
+
+            <div class="aero-subbox">
+              <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+                <span style="font-weight: 500; color: var(--text-primary)">Generator Spec &amp; Gear Ratio</span>
+              </div>
+              <div class="field" style="margin-bottom: 8px">
+                <label for="gen-preset">Generator Preset</label>
+                <select id="gen-preset">
+                  <option value="kidwind_red">KidWind Red Generator (Kv 240 · R_int 6.2 Ω)</option>
+                  <option value="kidwind_gen2">KidWind GEN2 / High-RPM DC (Kv 320 · R_int 4.8 Ω)</option>
+                  <option value="outrunner_bldc">Gimbal / Outrunner BLDC (Kv 100 · R_int 1.4 Ω)</option>
+                  <option value="low_rpm_pmg" selected>Low-RPM Direct-Drive PMG (Kv 35 · R_int 0.8 Ω)</option>
+                  <option value="custom">Custom Generator Spec</option>
+                </select>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv" title="Generator speed constant in RPM per Volt">Gen Kv (RPM/V)</label>
+                  <input id="gen-kv" type="number" min="1" max="1000" step="1" value="35" />
+                </div>
+                <div class="field">
+                  <label for="gen-r-int" class="scrub-label" data-scrub-for="gen-r-int" title="Generator internal winding resistance in Ohms">R_int (Ω)</label>
+                  <input id="gen-r-int" type="number" min="0.05" max="80" step="0.05" value="0.8" />
+                </div>
+                <div class="field">
+                  <label for="gen-gear-ratio" class="scrub-label" data-scrub-for="gen-gear-ratio" title="Step-up gear ratio G = RPM_gen / RPM_rotor (1.0 = direct drive)">Gear Ratio G (:1)</label>
+                  <input id="gen-gear-ratio" type="number" min="0.25" max="16" step="0.25" value="1.0" />
+                </div>
+                <div class="field">
+                  <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load" title="External load resistor connected across generator terminals">Load R_load (Ω)</label>
+                  <input id="gen-r-load" type="number" min="0.1" max="200" step="0.25" value="5.0" />
+                </div>
+              </div>
+              <div class="bind-row" style="margin-top: 6px">
+                <span>Quick Gear Ratio</span>
+                <div class="toolbar">
+                  <button id="btn-gear-1" class="btn-mini active" type="button" title="1:1 Direct Drive">1:1</button>
+                  <button id="btn-gear-2" class="btn-mini" type="button" title="2:1 Step-Up Gear Ratio">2:1</button>
+                  <button id="btn-gear-3" class="btn-mini" type="button" title="3:1 Step-Up Gear Ratio (KidWind Standard)">3:1</button>
+                  <button id="btn-gear-4" class="btn-mini" type="button" title="4:1 Step-Up Gear Ratio">4:1</button>
+                </div>
+              </div>
+              <div id="gen-summary" class="fit-badge">Gen: –</div>
+
+              <div class="bind-row" style="margin-top: 8px">
+                <span style="font-weight: 500; color: var(--text-primary)">How to Max Out Power (Gear &amp; Load)</span>
+                <span id="gen-opt-target" class="section-meta">Opt –</span>
+              </div>
+              <div id="gen-regime-badge" class="fit-badge" style="margin-top: 4px">Evaluating drivetrain torque balance...</div>
+              <div class="toolbar" style="margin-top: 6px">
+                <button id="btn-max-out-drivetrain" class="btn-primary btn-mini" type="button" style="flex: 1" title="Automatically set optimal Gear Ratio G:1, Load Resistor R_load (Ω), and Rotor Design TSR for maximum electrical Watts">
+                  Max Out Gear &amp; Load
+                </button>
+                <button id="btn-match-load-only" class="btn-mini" type="button" title="Set optimal Load Resistor R_load (Ω) while keeping your current Gear Ratio fixed">
+                  Match Load Only
+                </button>
+              </div>
+              <div id="gen-maxout-guide" class="zone-ranges" style="margin-top: 8px; line-height: 1.45; white-space: pre-line"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 3: Structural & Root-Bending Mechanics + CF Spar Safety Factor -->
+        <section id="layer-aero-struct">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">STR</span>
+              <span>Structural &amp; CF Spar Mechanics</span>
+            </button>
+            <span id="struct-sec-meta" class="section-meta">SF –</span>
+          </div>
+
+          <div>
+            <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+              <span>3D Printed Shell Material</span>
+              <select id="struct-material" class="compact-select" aria-label="3D Print Shell Material" title="3D Printed Blade Shell Material">
+                <option value="petg" selected>PETG Shell</option>
+                <option value="pla">PLA Shell</option>
+                <option value="asa">ASA Shell</option>
+                <option value="pacf">PA-CF (Carbon Nylon)</option>
+              </select>
+            </div>
+            <div class="struct-kpi-grid">
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Root Bending / Split</span>
+                <span id="struct-root-moment" class="kpi-val">– N·m</span>
+              </div>
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Tip Deflection</span>
+                <span id="struct-tip-defl" class="kpi-val">– mm</span>
+              </div>
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Safety Factor (Root / Joint)</span>
+                <span id="struct-sf" class="kpi-val">–</span>
+              </div>
+              <div class="struct-kpi-cell">
+                <span class="kpi-label">Blade Mass &amp; CF Pull</span>
+                <span id="struct-mass-pull" class="kpi-val">– g / – N</span>
+              </div>
+            </div>
+            <div id="struct-status" class="fit-badge">Evaluating structural loads...</div>
+          </div>
+        </section>
+
+        <!-- Section 4: Experimental Test Data Log & Team Cloud Workspace -->
+        <section id="layer-aero-cloud">
+          <div class="section-title">
+            <button type="button" class="section-toggle-btn" data-collapse-section aria-expanded="true">
+              <svg class="section-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              <span class="layer-tag">LAB</span>
+              <span>Test Log &amp; Cloud Workspace</span>
+            </button>
+            <span id="exp-sec-meta" class="section-meta">0 pts</span>
+          </div>
+
+          <div>
+            <div class="field">
+              <label for="exp-data-input">Experimental Data Log (tsr, cp or rpm=.., power_w=..)</label>
+              <textarea
+                id="exp-data-input"
+                rows="3"
+                placeholder="3.5, 0.34&#10;4.5, 0.42&#10;rpm=570, power_w=150"
+              ></textarea>
+            </div>
+            <div id="exp-fit-summary" class="fit-badge">Exp log: 0 pts</div>
+
+            <div class="aero-subbox">
+              <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+                <span style="font-weight: 500; color: var(--text-primary)">GitHub Gist Cloud Sync</span>
+                <button id="btn-cloud-open-drawer" class="btn-mini" type="button" title="Open GitHub Gists Projects Manager">Open Gists</button>
+              </div>
+              <div class="grid-2" style="margin-top: 8px">
+                <div class="field">
+                  <label for="cloud-design-name">Cloud Design Name</label>
+                  <input id="cloud-design-name" type="text" value="Rotor-R600-B3" />
+                </div>
+                <div class="field" style="justify-content: flex-end">
+                  <button id="btn-cloud-save" type="button" class="btn-primary">Save to Gist</button>
+                </div>
+              </div>
+              <div id="cloud-status" class="fit-badge">GitHub Cloud ready</div>
+              <div id="cloud-designs-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Floating Gearbox Prototype Settings Inspector Dock (Active in Gearbox Studio) -->
+    <aside id="gearbox-inspector" aria-label="Gearbox Settings Inspector" class="open">
+      <div class="panel-header">
+        <div class="brand-title">
+          <span class="brand-dot" style="background: #38bdf8" aria-hidden="true"></span>
+          <h2>Gearbox Inspector</h2>
+          <span id="gearbox-summary" class="section-meta">3.00:1 · m 1.25</span>
+        </div>
+        <div class="toolbar">
+          <span id="gear-inspector-active-badge" class="section-meta" style="color: #38bdf8; font-weight: 500">All Gears</span>
+          <button id="btn-close-gearbox-inspector" class="btn-mini" type="button" title="Close Settings Inspector (Esc)" aria-label="Close Settings Inspector">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Gear Jump Pills inside Inspector -->
+      <nav class="section-nav" id="gearbox-quick-nav" aria-label="Gear Selection Navigation" style="padding: 6px 12px; border-bottom: 1px solid var(--border-hairline)">
+        <button id="btn-select-gear-train" type="button" class="active" title="Train-Wide Ratio &amp; Tooth Profile">Train</button>
+        <button id="btn-select-gear-g1" type="button" title="Gear 1: Rotor Spoked Bull Gear">G1 Bull</button>
+        <button id="btn-select-gear-g2" type="button" title="Gear 2: Compound Wheel &amp; Pinion">G2 Idler</button>
+        <button id="btn-select-gear-g3" type="button" title="Gear 3: Generator Motor Pinion">G3 Pinion</button>
+      </nav>
+
+      <div class="panel-scroll" id="gearbox-scroll-container">
+        <div class="toolbar" style="margin-bottom: 8px; flex-wrap: wrap">
+          <button id="btn-gearbox-3d-view" class="btn-primary btn-mini" type="button" style="flex: 1.3" title="Switch main 3D viewport to inspect &amp; animate the 3D Gearbox Prototype">
+            Show Gearbox in 3D Viewport
+          </button>
+          <button id="btn-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference CAD Layout (all 3 gears separated cleanly)">
+            Side-by-Side
+          </button>
+          <button id="btn-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout (exact center-to-center shaft distances)">
+            Meshed
+          </button>
+        </div>
+
+        <div id="gear-train-card" class="aero-subbox">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Train Architecture &amp; Tooth Profile</span>
+            <span id="gear-tooth-badge" class="section-meta">Helical 15°</span>
+          </div>
+          <div class="field" style="margin-top: 6px; margin-bottom: 6px">
+            <label for="gear-stage-mode">Gear Train Architecture</label>
+            <select id="gear-stage-mode">
+              <option value="compound_2stage" selected>2-Stage Compound Step-Up (G1 Bull → G2 Pinion / G2 Wheel → G3)</option>
+              <option value="idler_reference">Ref 3-Gear Inline (G1 Bull → G2 Wheel → G3 Pinion)</option>
+              <option value="direct_1stage">1-Stage 2-Gear Direct (G1 Bull → G3 Pinion)</option>
+            </select>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="gear-module" class="scrub-label" data-scrub-for="gear-module" title="Metric gear tooth size Module m (mm) — Pitch Ø = m × Z">Module m (mm)</label>
+              <input id="gear-module" type="number" min="0.5" max="4.0" step="0.05" value="1.25" />
+            </div>
+            <div class="field">
+              <label for="gear-helix" class="scrub-label" data-scrub-for="gear-helix" title="Helix angle β (0° = straight Spur teeth, 15° = smooth Helical teeth with auto L/R hand)">Helix Angle β (°)</label>
+              <input id="gear-helix" type="number" min="0" max="35" step="1" value="15" />
+            </div>
+            <div class="field">
+              <label for="gear-pressure" class="scrub-label" data-scrub-for="gear-pressure">Pressure Angle α (°)</label>
+              <input id="gear-pressure" type="number" min="14.5" max="25" step="0.5" value="20" />
+            </div>
+            <div class="field">
+              <label for="gear-backlash" class="scrub-label" data-scrub-for="gear-backlash" title="3D printer tooth clearance so printed teeth mesh without binding">FDM Backlash (mm)</label>
+              <input id="gear-backlash" type="number" min="0" max="0.6" step="0.02" value="0.15" />
+            </div>
+          </div>
+
+          <div class="toolbar" style="margin-top: 6px">
+            <button id="btn-gear-solve-ratio" class="btn-mini" type="button" style="flex: 1" title="Automatically solve integer tooth counts (Z1, Z2, Z3) to match the BEM Aero Gear Ratio">
+              Solve Teeth for Aero G:1
+            </button>
+            <button id="btn-gear-sync-aero" class="btn-mini" type="button" style="flex: 1" title="Send this gearbox's exact tooth ratio into the BEM Generator &amp; AEP solver">
+              Sync Ratio → Aero Solver
+            </button>
+          </div>
+        </div>
+
+        <!-- Web Cutout Geometry Settings (Shared across Spoked Gears 1 & 2) -->
+        <div id="gear-cutouts-card" class="aero-subbox" style="margin-top: 8px; border-left: 3px solid #38bdf8">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Web Cutout Settings (Gear 1 &amp; Gear 2)</span>
+            <span id="gear-cutout-badge" class="section-meta">26% Spoke · 74% Window</span>
+          </div>
+          <div class="grid-3" style="margin-top: 6px">
+            <div class="field">
+              <label for="gear-spoke-width" class="scrub-label" data-scrub-for="gear-spoke-width" title="Percentage of each angular sector occupied by the solid spoke arm (lower = wider window cutouts)">Spoke Width (%)</label>
+              <input id="gear-spoke-width" type="number" min="10" max="65" step="1" value="26" />
+            </div>
+            <div class="field">
+              <label for="gear-rim-wall" class="scrub-label" data-scrub-for="gear-rim-wall" title="Solid radial wall thickness inside the tooth root circle before window cutouts begin">Outer Rim (mm)</label>
+              <input id="gear-rim-wall" type="number" min="1.5" max="12" step="0.25" value="3.5" />
+            </div>
+            <div class="field">
+              <label for="gear-hub-ring" class="scrub-label" data-scrub-for="gear-hub-ring" title="Solid radial collar margin outside the hub boss (Gear 1) or coaxial pinion (Gear 2)">Hub Margin (mm)</label>
+              <input id="gear-hub-ring" type="number" min="1.0" max="12" step="0.25" value="2.5" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Gear 1: Mint-Green 4-Spoked Bull Gear + Orange Stepped Hub Boss -->
+        <div id="gear1-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #8fd9b6">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Gear 1 · Rotor Spoked Gear + Hub Boss</span>
+            <span id="g1-dia-badge" class="section-meta">Øp 75.0 mm</span>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="g1-teeth" class="scrub-label" data-scrub-for="g1-teeth">Teeth Z1</label>
+              <input id="g1-teeth" type="number" min="12" max="120" step="1" value="60" />
+            </div>
+            <div class="field">
+              <label for="g1-face" class="scrub-label" data-scrub-for="g1-face">Rim Face (mm)</label>
+              <input id="g1-face" type="number" min="2" max="30" step="0.5" value="5.0" />
+            </div>
+            <div class="field">
+              <label for="g1-spokes">Web Cutouts</label>
+              <select id="g1-spokes">
+                <option value="3">3 Spokes</option>
+                <option value="4" selected>4 Spokes (Ref CAD)</option>
+                <option value="5">5 Spokes</option>
+                <option value="6">6 Spokes</option>
+                <option value="8">8 Spokes</option>
+                <option value="0">Solid Disk (0)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="g1-bore" class="scrub-label" data-scrub-for="g1-bore">Shaft Bore Ø (mm)</label>
+              <input id="g1-bore" type="number" min="2" max="20" step="0.2" value="6.0" />
+            </div>
+            <div class="field">
+              <label for="g1-dflat" class="scrub-label" data-scrub-for="g1-dflat" title="D-shaft flat depth (0 = round bore)">D-Flat Depth (mm)</label>
+              <input id="g1-dflat" type="number" min="0" max="3" step="0.1" value="0.5" />
+            </div>
+            <div class="field">
+              <label for="g1-hub-dia" class="scrub-label" data-scrub-for="g1-hub-dia">Orange Hub Ø (mm)</label>
+              <input id="g1-hub-dia" type="number" min="8" max="50" step="1" value="24.0" />
+            </div>
+            <div class="field">
+              <label for="g1-hub-h" class="scrub-label" data-scrub-for="g1-hub-h">Orange Hub H (mm)</label>
+              <input id="g1-hub-h" type="number" min="0" max="40" step="1" value="18.0" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Gear 2: Compound Idler (Purple Wheel + Lime Coaxial Pinion) -->
+        <div id="gear2-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #b84ba1">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Gear 2 · Compound Wheel + Coaxial Pinion</span>
+            <span id="g2-dia-badge" class="section-meta">Øp 70.0 / 18.8 mm</span>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="g2-wheel-teeth" class="scrub-label" data-scrub-for="g2-wheel-teeth">Purple Wheel Z2w</label>
+              <input id="g2-wheel-teeth" type="number" min="12" max="120" step="1" value="56" />
+            </div>
+            <div class="field">
+              <label for="g2-wheel-face" class="scrub-label" data-scrub-for="g2-wheel-face">Wheel Face (mm)</label>
+              <input id="g2-wheel-face" type="number" min="2" max="25" step="0.5" value="5.0" />
+            </div>
+            <div class="field">
+              <label for="g2-spokes">Web Cutouts (Purple)</label>
+              <select id="g2-spokes">
+                <option value="3">3 Spokes</option>
+                <option value="4" selected>4 Spokes (Cutouts)</option>
+                <option value="5">5 Spokes</option>
+                <option value="6">6 Spokes</option>
+                <option value="8">8 Spokes</option>
+                <option value="0">Solid Disk (Ref CAD)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="g2-pinion-teeth" class="scrub-label" data-scrub-for="g2-pinion-teeth">Lime Pinion Z2p</label>
+              <input id="g2-pinion-teeth" type="number" min="8" max="60" step="1" value="15" />
+            </div>
+            <div class="field">
+              <label for="g2-pinion-face" class="scrub-label" data-scrub-for="g2-pinion-face">Pinion Face (mm)</label>
+              <input id="g2-pinion-face" type="number" min="3" max="30" step="0.5" value="14.0" />
+            </div>
+            <div class="field">
+              <label for="g2-bore" class="scrub-label" data-scrub-for="g2-bore">Idler Bore Ø (mm)</label>
+              <input id="g2-bore" type="number" min="1.5" max="16" step="0.2" value="5.0" />
+            </div>
+            <div class="field">
+              <label for="g2-dflat" class="scrub-label" data-scrub-for="g2-dflat">D-Flat Depth (mm)</label>
+              <input id="g2-dflat" type="number" min="0" max="2.5" step="0.1" value="0.0" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Gear 3: Generator Output Pinion (Slate-Grey) -->
+        <div id="gear3-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #6d8388">
+          <div class="bind-row" style="margin-top: 0; border-top: none; padding-top: 0">
+            <span style="font-weight: 500; color: var(--text-primary)">Gear 3 · Generator Motor Pinion</span>
+            <span id="g3-dia-badge" class="section-meta">Øp 25.0 mm</span>
+          </div>
+          <div class="grid-2" style="margin-top: 6px">
+            <div class="field">
+              <label for="g3-teeth" class="scrub-label" data-scrub-for="g3-teeth">Pinion Teeth Z3</label>
+              <input id="g3-teeth" type="number" min="8" max="60" step="1" value="20" />
+            </div>
+            <div class="field">
+              <label for="g3-face" class="scrub-label" data-scrub-for="g3-face">Pinion Face (mm)</label>
+              <input id="g3-face" type="number" min="3" max="30" step="0.5" value="14.0" />
+            </div>
+            <div class="field">
+              <label for="g3-bore" class="scrub-label" data-scrub-for="g3-bore" title="Generator motor shaft diameter (e.g. 2.0 mm KidWind DC, 3.0/3.17 mm BLDC)">Motor Bore Ø (mm)</label>
+              <input id="g3-bore" type="number" min="1.5" max="12" step="0.1" value="3.0" />
+            </div>
+            <div class="field">
+              <label for="g3-dflat" class="scrub-label" data-scrub-for="g3-dflat">D-Flat Depth (mm)</label>
+              <input id="g3-dflat" type="number" min="0" max="2.0" step="0.1" value="0.4" />
+            </div>
+            <div class="field">
+              <label for="g3-boss-h" class="scrub-label" data-scrub-for="g3-boss-h">Top Collar H (mm)</label>
+              <input id="g3-boss-h" type="number" min="0" max="15" step="0.5" value="4.5" />
+            </div>
+            <div class="field">
+              <label for="g3-helix-hand" title="Helical tooth slant direction for Gear 3 (flip to match or invert mating direction)">Helical Hand</label>
+              <select id="g3-helix-hand">
+                <option value="1" selected>Right Hand (RH +β) — Flipped</option>
+                <option value="-1">Left Hand (LH -β) — Inverted</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="gearbox-metrics-readout" class="fit-badge ok" style="margin-top: 8px; line-height: 1.45">
+          Total Ratio G = 3.00:1 · Shaft Center Distances: a₁₂ = 72.50 mm · a₂₃ = 47.50 mm
+        </div>
+
+        <div class="toolbar" style="margin-top: 8px; flex-wrap: wrap">
+          <button id="btn-export-gears-all" class="btn-primary btn-mini" type="button" style="flex: 1.5" title="Download all 3 gears arranged flat on the build plate as a binary STL">
+            Export All 3 Gears (.STL)
+          </button>
+          <button id="btn-export-gear1" class="btn-mini" type="button" title="Export Gear 1 (Rotor Spoked Gear + Stepped Hub Boss) binary STL">
+            G1 STL
+          </button>
+          <button id="btn-export-gear2" class="btn-mini" type="button" title="Export Gear 2 (Compound Wheel + Coaxial Pinion) binary STL">
+            G2 STL
+          </button>
+          <button id="btn-export-gear3" class="btn-mini" type="button" title="Export Gear 3 (Generator Pinion) binary STL">
+            G3 STL
+          </button>
+        </div>
+      </div>
+    </aside>
+    <nav id="mobile-workspace-nav" aria-label="Workspace Switcher">
+      <button id="btn-mob-cad" type="button" class="active" aria-pressed="true" data-mobile-target="cad">
+        <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+        <span>CAD &amp; Joint</span>
+      </button>
+      <button id="btn-mob-canvas" type="button" aria-pressed="false" data-mobile-target="canvas">
+        <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+        <span>3D Viewport</span>
+      </button>
+      <button id="btn-mob-aero" type="button" aria-pressed="false" data-mobile-target="aero">
+        <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2 12 6 7 9.5 9.5 14 4"/></svg>
+        <span>BEM &amp; Cloud</span>
+      </button>
+    </nav>
+
+  </body>
+</html>
