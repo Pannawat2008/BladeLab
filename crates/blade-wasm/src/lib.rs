@@ -3,8 +3,8 @@
 //!
 //! This crate is the `[wasm]` half of the architecture (§2): the web app calls
 //! [`build_mesh`] with the design JSON (plus optional live overrides) and
-//! receives indexed triangle data to feed straight into Three.js. It never
-//! exports STEP — that stays on the native server (§2, D-geom1-007).
+//! receives indexed triangle data to feed straight into Three.js, with fast
+//! in-browser STL, 3MF, and STEP B-rep solid export via truck.
 //!
 //! The pipeline itself (`Design → resolve → build_sections → loft →
 //! tessellate`) lives in [`mesh`] so it can be unit-tested on the host.
@@ -21,8 +21,9 @@ use wasm_bindgen::prelude::*;
 pub mod mesh;
 
 use mesh::{
-    build_mesh as run_pipeline, export_3mf, export_3mf_with_overrides, export_stl,
-    export_stl_with_overrides, MeshOutput, Overrides,
+    build_mesh as run_pipeline, export_3mf, export_3mf_with_overrides, export_part_3mf,
+    export_part_stl, export_step as run_export_step, export_stl, export_stl_with_overrides,
+    MeshOutput, Overrides,
 };
 
 /// Live-edit overrides deserialised from the web UI (all fields optional).
@@ -384,6 +385,26 @@ pub fn export_fabricated_3mf_bytes(
 ) -> Result<Vec<u8>, JsValue> {
     let overrides = parse_overrides_json(overrides_json)?;
     export_3mf_with_overrides(design_json, &overrides).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports the design as an ISO 10303-21 STEP B-rep string (`.step` in browser).
+///
+/// Supported `part` values: `"blade"`, `"hub"`, or `"assembly"`.
+#[wasm_bindgen]
+pub fn export_step(design_json: &str, part: &str) -> Result<String, JsValue> {
+    run_export_step(design_json, part).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports a specific part (`"blade"`, `"hub"`, or `"assembly"`) as binary STL bytes.
+#[wasm_bindgen]
+pub fn export_part_stl_bytes(design_json: &str, part: &str) -> Result<Vec<u8>, JsValue> {
+    export_part_stl(design_json, part).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports a specific part (`"blade"`, `"hub"`, or `"assembly"`) as a 3MF archive.
+#[wasm_bindgen]
+pub fn export_part_3mf_bytes(design_json: &str, part: &str) -> Result<Vec<u8>, JsValue> {
+    export_part_3mf(design_json, part).map_err(|e| JsValue::from_str(&e))
 }
 
 #[cfg(test)]

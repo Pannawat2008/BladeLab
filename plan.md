@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 95**
-> **LAST_UPDATED: 2026-11-09 21:50 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 96**
+> **LAST_UPDATED: 2026-11-09 22:37 (UTC+7) by geom-1**
 
 ---
 
@@ -540,6 +540,10 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
   Resolved "design validation failed with 1 issue(s) when i make length below 520": (1) root-caused to station overrides preserving fixed radial fractions $span\_ratio = r / R$; when reducing blade length $L$ (or radius $R$), $hub\_ratio = hub\_radius / R$ increases, causing any override at or near the blade root to drop below the hub ($span\_ratio < hub\_ratio - \epsilon$), violating `check_overrides` ("must be within the blade span [hub_radius/R, 1]"); (2) implemented `adaptOverridesToRotor` and `remapSpanRatio` in `web/src/state.ts` that dynamically re-scale station overrides along relative blade span $s \in [0, 1]$ and strictly clamp them to $[hub\_ratio_{new}, 1.0]$, preserving root and mid-span stations without ever dropping below the hub; (3) integrated into `updateBladeLengthMm`, `updateRotorField`, `preserveLockedStations`, and snapshot loading/creation; (4) added regression unit tests in `web/scripts/types.test.mjs` verifying that blade length reduction down to 450 mm and below with active root overrides maintains valid span ratios and builds watertight WASM meshes without throwing validation errors.
   refs: web/src/state.ts, web/src/main.ts, web/scripts/types.test.mjs | supersedes: -
 
+- **F-geom1-066** | 2026-11-09 22:36 | geom-1 | T-105
+  Resolved "Export failed: Error: HTTP 405: 405 Not Allowed" on STEP export: (1) root-caused to static hosting (GitHub Pages) rejecting `POST /api/v1/export`; (2) compiled `blade-cad` with `truck` CAD kernel directly into WebAssembly (`wasm32-unknown-unknown`) inside `crates/blade-wasm`, adding `export_step(design_json, part)` (ISO 10303-21 B-rep text generation), `export_part_stl_bytes(design_json, part)`, and `export_part_3mf_bytes(design_json, part)` for blade, hub, and assembly solids; (3) wired in-browser `export_step` into `handleExport` in `web/src/main.ts`, downloading `.step` files instantly in-browser with zero server dependency; (4) added in-browser fallback and sanitized error display for static hosting environments; (5) verified with FreeCAD/truck STEP validation tests in `blade-wasm` and 18/18 Node tests passing.
+  refs: crates/blade-wasm/Cargo.toml, crates/blade-wasm/src/lib.rs, crates/blade-wasm/src/mesh.rs, web/src/main.ts, web/src/vite-env.d.ts, web/scripts/types.test.mjs | supersedes: -
+
 ### 9.3 Decisions (D)
 
 Statuses: `Proposed` | `Accepted` | `Superseded`
@@ -983,3 +987,4 @@ note="user reported 'design validation failed with 1 issue(s) when i make length
 [END] 2026-11-09T21:50:00+07:00 agent=geom-1 mem=v95 note="Fixed blade length validation error when length < 520 mm: added adaptOverridesToRotor and remapSpanRatio to scale and clamp station overrides to [hub_ratio, 1.0] across length/radius edits; 18/18 Node tests + tsc + vite build clean; F-geom1-065 recorded"
 [ACK] 2026-11-09T22:21:30+07:00 agent=geom-1 mem=v95 last_entry=F-geom1-065 task=T-105
 note="user reported: 'when i click the export step its said Export failed: Error: HTTP 405: 405 Not Allowed'; investigating STEP export endpoint on static GitHub Pages deployment"
+[END] 2026-11-09T22:37:00+07:00 agent=geom-1 mem=v96 note="Fixed STEP export 405 error on static hosting: compiled blade-cad into blade-wasm, exposing in-browser export_step, export_part_stl_bytes, and export_part_3mf_bytes; wired into web/src/main.ts handleExport; all 18 Node tests + wasm tests + vite build pass; F-geom1-066 recorded"

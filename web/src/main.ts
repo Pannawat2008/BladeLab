@@ -16,6 +16,9 @@ import init, {
   export_3mf_bytes,
   export_fabricated_3mf_bytes,
   export_fabricated_stl_bytes,
+  export_part_3mf_bytes,
+  export_part_stl_bytes,
+  export_step,
   export_stl_bytes,
   fabrication_report,
   optimize_blade_wasm,
@@ -2850,7 +2853,20 @@ async function handleExport(format: "stl" | "3mf" | "step") {
 
   try {
     const fabJson = buildFabricationOverridesJson();
-    // Fast in-browser wasm export for blade STL and 3MF (including carbon tube hole & split parts)
+
+    // 1. Fast in-browser wasm STEP export (ISO 10303-21 B-rep via truck CAD kernel)
+    if (format === "step") {
+      try {
+        const stepText = export_step(JSON.stringify(workingDesign), part);
+        triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
+        exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
+        return;
+      } catch (wasmErr) {
+        console.warn("In-browser STEP export failed, attempting server fallback:", wasmErr);
+      }
+    }
+
+    // 2. Fast in-browser wasm export for blade STL and 3MF (including carbon tube hole & split parts)
     if (part === "blade" && format === "stl") {
       const winglet = readCurrentWingletConfig();
       let bytes: Uint8Array;
@@ -2883,7 +2899,35 @@ async function handleExport(format: "stl" | "3mf" | "step") {
       return;
     }
 
-    // Server-side export for STEP or unified blade+hub assembly/hub parts
+    // 3. Fast in-browser wasm export for hub and assembly STL and 3MF
+    if (part === "hub" || part === "assembly") {
+      if (format === "stl") {
+        try {
+          const bytes = export_part_stl_bytes(JSON.stringify(workingDesign), part);
+          triggerBlobDownload(bytes, `${baseName}.stl`, "model/stl");
+          exportStatus.textContent = `Saved ${baseName}.stl (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+          return;
+        } catch (wasmErr) {
+          console.warn("In-browser part STL export failed, attempting server fallback:", wasmErr);
+        }
+      }
+      if (format === "3mf") {
+        try {
+          const bytes = export_part_3mf_bytes(JSON.stringify(workingDesign), part);
+          triggerBlobDownload(
+            bytes,
+            `${baseName}.3mf`,
+            "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+          );
+          exportStatus.textContent = `Saved ${baseName}.3mf (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+          return;
+        } catch (wasmErr) {
+          console.warn("In-browser part 3MF export failed, attempting server fallback:", wasmErr);
+        }
+      }
+    }
+
+    // 4. Server-side export fallback (for local backend development)
     const resp = await fetch(`/api/v1/export?format=${format}&part=${part}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2904,24 +2948,49 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     exportStatus.textContent = `Saved ${baseName}.${format} (${(buf.byteLength / 1024).toFixed(1)} kB)`;
   } catch (err) {
     const fabJson = buildFabricationOverridesJson();
-    // Fallback to in-browser blade STL/3MF if server is offline
+    // Safety fallback to in-browser CAD/mesh export if server returns 405 or fails
+    if (format === "step") {
+      try {
+        const stepText = export_step(JSON.stringify(workingDesign), part);
+        triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
+        exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
+        return;
+      } catch {
+        // continue to clean error reporting
+      }
+    }
     if (format === "stl") {
-      const bytes = export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
-      triggerBlobDownload(bytes, `${baseName}-blade.stl`, "model/stl");
-      exportStatus.textContent = `Saved blade STL (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
-      return;
+      try {
+        const bytes =
+          part === "hub" || part === "assembly"
+            ? export_part_stl_bytes(JSON.stringify(workingDesign), part)
+            : export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
+        triggerBlobDownload(bytes, `${baseName}.stl`, "model/stl");
+        exportStatus.textContent = `Saved ${baseName}.stl (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+        return;
+      } catch {
+        // continue to clean error reporting
+      }
     }
     if (format === "3mf") {
-      const bytes = export_fabricated_3mf_bytes(JSON.stringify(workingDesign), fabJson);
-      triggerBlobDownload(
-        bytes,
-        `${baseName}-blade.3mf`,
-        "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
-      );
-      exportStatus.textContent = `Saved blade 3MF (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
-      return;
+      try {
+        const bytes =
+          part === "hub" || part === "assembly"
+            ? export_part_3mf_bytes(JSON.stringify(workingDesign), part)
+            : export_fabricated_3mf_bytes(JSON.stringify(workingDesign), fabJson);
+        triggerBlobDownload(
+          bytes,
+          `${baseName}.3mf`,
+          "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+        );
+        exportStatus.textContent = `Saved ${baseName}.3mf (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+        return;
+      } catch {
+        // continue to clean error reporting
+      }
     }
-    exportStatus.textContent = `Export failed: ${String(err)}`;
+    const cleanErr = String(err).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    exportStatus.textContent = `Export failed: ${cleanErr}`;
   }
 }
 

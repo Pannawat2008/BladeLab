@@ -4,6 +4,7 @@
 //! can be unit-tested on the host and stays independent of JS tooling. The
 //! thin wasm bindings live in `lib.rs`.
 
+use blade_cad::{assembly_mesh, hub_mesh, CadKernel, TruckKernel};
 use blade_geom::{build_sections, loft};
 use blade_mesh::{
     alignment_report, check_mesh, spar_tube_axis_points, tessellate_fabricated, write_3mf,
@@ -239,6 +240,106 @@ pub fn export_3mf_with_overrides(
     Ok(write_3mf(&mesh))
 }
 
+/// Exports the design as an ISO 10303-21 STEP B-rep string (`.step`).
+///
+/// Supported `part` options: `"blade"` (default), `"hub"`, or `"assembly"`.
+pub fn export_step(design_json: &str, part: &str) -> Result<String, String> {
+    let design = Design::from_json(design_json).map_err(as_string)?;
+    let resolved = resolve(&design).map_err(as_string)?;
+    let kernel = TruckKernel::new();
+    let part_norm = part.trim().to_ascii_lowercase();
+    let bodies = match part_norm.as_str() {
+        "" | "blade" => {
+            let sections = build_sections(&resolved).map_err(as_string)?;
+            let surface = loft(&sections).map_err(as_string)?;
+            vec![kernel.blade_solid(&surface).map_err(as_string)?]
+        }
+        "hub" => vec![kernel.hub_solid(&resolved.hub).map_err(as_string)?],
+        "assembly" => {
+            let sections = build_sections(&resolved).map_err(as_string)?;
+            let surface = loft(&sections).map_err(as_string)?;
+            vec![
+                kernel.blade_solid(&surface).map_err(as_string)?,
+                kernel.hub_solid(&resolved.hub).map_err(as_string)?,
+            ]
+        }
+        other => {
+            return Err(format!(
+                "unsupported part `{other}` for STEP export (expected 'blade', 'hub', or 'assembly')"
+            ))
+        }
+    };
+    kernel.write_step(&bodies).map_err(as_string)
+}
+
+/// Exports a specific part (`"blade"`, `"hub"`, or `"assembly"`) as binary STL bytes.
+pub fn export_part_stl(design_json: &str, part: &str) -> Result<Vec<u8>, String> {
+    let design = Design::from_json(design_json).map_err(as_string)?;
+    let resolved = resolve(&design).map_err(as_string)?;
+    let part_norm = part.trim().to_ascii_lowercase();
+    let mesh = match part_norm.as_str() {
+        "" | "blade" => build_validated_blade_mesh(design_json)?,
+        "hub" => {
+            let m = hub_mesh(&resolved.hub).map_err(as_string)?;
+            let report = check_mesh(&m);
+            if !report.is_valid_solid() {
+                return Err("generated hub mesh is not a valid watertight solid".into());
+            }
+            m
+        }
+        "assembly" => {
+            let sections = build_sections(&resolved).map_err(as_string)?;
+            let surface = loft(&sections).map_err(as_string)?;
+            let m = assembly_mesh(&surface, &resolved.hub).map_err(as_string)?;
+            let report = check_mesh(&m);
+            if !report.is_valid_solid() {
+                return Err("generated assembly mesh is not a valid watertight solid".into());
+            }
+            m
+        }
+        other => {
+            return Err(format!(
+                "unsupported part `{other}` for STL export (expected 'blade', 'hub', or 'assembly')"
+            ))
+        }
+    };
+    Ok(write_stl(&mesh))
+}
+
+/// Exports a specific part (`"blade"`, `"hub"`, or `"assembly"`) as a 3MF archive.
+pub fn export_part_3mf(design_json: &str, part: &str) -> Result<Vec<u8>, String> {
+    let design = Design::from_json(design_json).map_err(as_string)?;
+    let resolved = resolve(&design).map_err(as_string)?;
+    let part_norm = part.trim().to_ascii_lowercase();
+    let mesh = match part_norm.as_str() {
+        "" | "blade" => build_validated_blade_mesh(design_json)?,
+        "hub" => {
+            let m = hub_mesh(&resolved.hub).map_err(as_string)?;
+            let report = check_mesh(&m);
+            if !report.is_valid_solid() {
+                return Err("generated hub mesh is not a valid watertight solid".into());
+            }
+            m
+        }
+        "assembly" => {
+            let sections = build_sections(&resolved).map_err(as_string)?;
+            let surface = loft(&sections).map_err(as_string)?;
+            let m = assembly_mesh(&surface, &resolved.hub).map_err(as_string)?;
+            let report = check_mesh(&m);
+            if !report.is_valid_solid() {
+                return Err("generated assembly mesh is not a valid watertight solid".into());
+            }
+            m
+        }
+        other => {
+            return Err(format!(
+                "unsupported part `{other}` for 3MF export (expected 'blade', 'hub', or 'assembly')"
+            ))
+        }
+    };
+    Ok(write_3mf(&mesh))
+}
+
 fn output(mesh: &Mesh) -> MeshOutput {
     let mut positions = Vec::with_capacity(mesh.vertices.len() * 3);
     let mut span_min_mm = f64::INFINITY;
@@ -357,5 +458,28 @@ mod tests {
     fn bad_json_is_a_message_not_a_panic() {
         let error = build_mesh("{nope", &Overrides::default()).expect_err("invalid JSON fails");
         assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn step_export_blade_hub_and_assembly() {
+        let step_blade = export_step(FIXTURE, "blade").expect("blade step export succeeds");
+        assert!(step_blade.contains("MANIFOLD_SOLID_BREP"));
+        assert!(step_blade.contains("SI_UNIT(.MILLI.,.METRE.)"));
+
+        let step_hub = export_step(FIXTURE, "hub").expect("hub step export succeeds");
+        assert!(step_hub.contains("MANIFOLD_SOLID_BREP"));
+
+        let step_assembly =
+            export_step(FIXTURE, "assembly").expect("assembly step export succeeds");
+        assert!(step_assembly.contains("MANIFOLD_SOLID_BREP"));
+    }
+
+    #[test]
+    fn part_stl_and_3mf_export() {
+        let stl_asm = export_part_stl(FIXTURE, "assembly").expect("assembly stl export");
+        assert!(stl_asm.len() > 84);
+
+        let threemf_asm = export_part_3mf(FIXTURE, "assembly").expect("assembly 3mf export");
+        assert!(threemf_asm.starts_with(b"PK"));
     }
 }

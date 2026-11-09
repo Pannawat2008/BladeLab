@@ -538,6 +538,22 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
     `expected WASM optimizer to improve Cp: ${optRes.initial_cp} -> ${optRes.optimized_cp}`,
   );
   assert.ok(optRes.optimized_design.overrides.length >= 10);
+
+  // Verify in-browser STEP export and assembly STL/3MF export
+  const { export_step, export_part_stl_bytes, export_part_3mf_bytes } = require(gluePath);
+  const stepBlade = export_step(JSON.stringify(initialDesign), "blade");
+  assert.ok(stepBlade.includes("MANIFOLD_SOLID_BREP"), "blade STEP has solid B-rep");
+  assert.ok(stepBlade.includes("SI_UNIT(.MILLI.,.METRE.)"), "blade STEP has mm units");
+
+  const stepAsm = export_step(JSON.stringify(initialDesign), "assembly");
+  assert.ok(stepAsm.includes("MANIFOLD_SOLID_BREP"), "assembly STEP has solid B-rep");
+
+  const asmStlBytes = export_part_stl_bytes(JSON.stringify(initialDesign), "assembly");
+  assert.ok(asmStlBytes.byteLength > 100000, "assembly STL has valid length");
+
+  const asm3mfBytes = export_part_3mf_bytes(JSON.stringify(initialDesign), "assembly");
+  assert.equal(asm3mfBytes[0], 0x50, "assembly 3MF is valid zip");
+  assert.equal(asm3mfBytes[1], 0x4b, "assembly 3MF is valid zip");
 });
 
 test("smooth cosine planform: root, plateau and tip values", () => {
