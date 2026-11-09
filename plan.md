@@ -995,3 +995,5 @@ note="user reported: 'when i click the export step its said Export failed: Error
 [ACK] 2026-11-09T22:45:00+07:00 agent=geom-1 mem=v96 last_entry=F-geom1-066 task=T-105
 note="user reported: 'load gist was fail and when not fail the model was messy'; investigating gist loading (auth/CORS/parsing) and state restoration / 3D model rendering"
 [END] 2026-11-09T23:15:00+07:00 agent=geom-1 mem=v97 note="Fixed Gist loading failures and messy 3D model: extractGistId, anonymous retry, raw_url fallback, direct drawer Gist input, snapSpanRatioToGrid to eliminate duplicate micro-loft stations from float truncation, clean snapshot apply order; 18/18 Node tests + tsc + vite build + workspace cargo tests clean; F-geom1-067 recorded"
+[ACK] 2026-11-10T00:07:30+07:00 agent=geom-1 mem=v97 last_entry=F-geom1-067 task=T-105
+note="user requested: 'also export all split as step'; investigating in-browser / kernel STEP export for split blade parts (segments 0..N-1, spar bore, alignment keys/lips)"
