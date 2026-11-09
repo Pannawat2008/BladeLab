@@ -974,3 +974,5 @@ note="user requested: integrate GitHub Gists cloud persistence; implementing Git
 [ACK] 2026-11-09T18:05:00+07:00 agent=geom-1 mem=v93 last_entry=F-geom1-063 task=T-105
 note="lead approved UI audit fixes: (1) streamline top toolbar into 3 zones with unified Export dropdown; (2) remove redundant flip/pitch from toolbar; (3) sticky station table header & column; (4) responsive right-anchored heatmap legend; (5) mobile touch hit-slop"
 [END] 2026-11-09T18:15:00+07:00 agent=geom-1 mem=v94 note="Streamlined top dock into 3 zones with unified Export dropdown, sticky station table headers & column, responsive heatmap legend, and mobile touch targets; 18/18 Node tests + tsc + vite build clean; F-geom1-064 recorded"
+[ACK] 2026-11-09T21:31:30+07:00 agent=geom-1 mem=v94 last_entry=F-geom1-064 task=T-105
+note="user reported 'design validation failed with 1 issue(s) when i make length below 520'; investigating crates/blade-model validation rules (radius vs hub_radius vs station grid or spar depth) and web blade length / radius coupling"
