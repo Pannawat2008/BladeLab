@@ -14,7 +14,9 @@ import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
 import init, {
   build_mesh,
   export_3mf_bytes,
+  export_all_split_step,
   export_fabricated_3mf_bytes,
+  export_fabricated_step,
   export_fabricated_stl_bytes,
   export_part_3mf_bytes,
   export_part_stl_bytes,
@@ -213,6 +215,7 @@ const selectExportPart = document.getElementById("export-part") as HTMLSelectEle
 const btnExportStl = document.getElementById("btn-export-stl") as HTMLButtonElement;
 const btnExport3mf = document.getElementById("btn-export-3mf") as HTMLButtonElement;
 const btnExportStep = document.getElementById("btn-export-step") as HTMLButtonElement;
+const btnExportSplitStep = document.getElementById("btn-export-split-step") as HTMLButtonElement | null;
 const btnExportJson = document.getElementById("btn-export-json") as HTMLButtonElement;
 const btnLoadJson = document.getElementById("btn-load-json") as HTMLButtonElement;
 const inputLoadJsonFile = document.getElementById("input-load-json-file") as HTMLInputElement;
@@ -358,6 +361,7 @@ const splitRatioVal = document.getElementById("split-ratio-val")!;
 const sliderSplitExplodeGap = document.getElementById("split-explode-gap") as HTMLInputElement;
 const splitExplodeVal = document.getElementById("split-explode-val")!;
 const btnExportSplitAll = document.getElementById("btn-export-split-all") as HTMLButtonElement;
+const btnExportSplitAllStep = document.getElementById("btn-export-split-all-step") as HTMLButtonElement | null;
 const inputSparHoleTolerance = document.getElementById("spar-hole-tolerance") as HTMLInputElement;
 const selectAlignShape = document.getElementById("align-shape") as HTMLSelectElement;
 const selectAlignCount = document.getElementById("align-count") as HTMLSelectElement;
@@ -2890,7 +2894,10 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     // 1. Fast in-browser wasm STEP export (ISO 10303-21 B-rep via truck CAD kernel)
     if (format === "step") {
       try {
-        const stepText = export_step(JSON.stringify(workingDesign), part);
+        const stepText =
+          fabJson === "{}"
+            ? export_step(JSON.stringify(workingDesign), part)
+            : export_fabricated_step(JSON.stringify(workingDesign), fabJson);
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
         exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
         return;
@@ -2984,7 +2991,10 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     // Safety fallback to in-browser CAD/mesh export if server returns 405 or fails
     if (format === "step") {
       try {
-        const stepText = export_step(JSON.stringify(workingDesign), part);
+        const stepText =
+          fabJson === "{}"
+            ? export_step(JSON.stringify(workingDesign), part)
+            : export_fabricated_step(JSON.stringify(workingDesign), fabJson);
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
         exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
         return;
@@ -3144,6 +3154,26 @@ btnExportSplitAll.addEventListener("click", () => {
   }
   exportStatus.textContent = `Saved ${splitParts} split STL part(s)`;
 });
+
+function handleExportSplitAllStep() {
+  const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
+  const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
+  exportStatus.textContent = `Exporting ${splitParts} split STEP part(s)...`;
+  try {
+    for (let p = 0; p < splitParts; p++) {
+      const fabJson = buildFabricationOverridesJson(p);
+      const stepText = export_fabricated_step(JSON.stringify(workingDesign), fabJson);
+      const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}.step`;
+      triggerBlobDownload(stepText, fname, "application/step");
+    }
+    exportStatus.textContent = `Saved ${splitParts} split STEP part(s)`;
+  } catch (err) {
+    exportStatus.textContent = `STEP export failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+btnExportSplitAllStep?.addEventListener("click", handleExportSplitAllStep);
+btnExportSplitStep?.addEventListener("click", handleExportSplitAllStep);
 
 btnExportStl.addEventListener("click", () => {
   void handleExport("stl");

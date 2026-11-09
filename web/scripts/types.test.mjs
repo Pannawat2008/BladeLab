@@ -542,13 +542,32 @@ test("2D airfoil cross-section SVG preview and in-browser STL/3MF export wasm by
   assert.ok(optRes.optimized_design.overrides.length >= 10);
 
   // Verify in-browser STEP export and assembly STL/3MF export
-  const { export_step, export_part_stl_bytes, export_part_3mf_bytes } = require(gluePath);
+  const {
+    export_step,
+    export_fabricated_step,
+    export_all_split_step,
+    export_part_stl_bytes,
+    export_part_3mf_bytes,
+  } = require(gluePath);
   const stepBlade = export_step(JSON.stringify(initialDesign), "blade");
   assert.ok(stepBlade.includes("MANIFOLD_SOLID_BREP"), "blade STEP has solid B-rep");
   assert.ok(stepBlade.includes("SI_UNIT(.MILLI.,.METRE.)"), "blade STEP has mm units");
 
   const stepAsm = export_step(JSON.stringify(initialDesign), "assembly");
   assert.ok(stepAsm.includes("MANIFOLD_SOLID_BREP"), "assembly STEP has solid B-rep");
+
+  // Verify split STEP exports
+  const splitFabJson = JSON.stringify({ split_parts: 3, split_ratio: 0.35, explode_gap_mm: 10.0 });
+  const stepAllSplit = export_all_split_step(JSON.stringify(initialDesign), splitFabJson);
+  assert.ok(stepAllSplit.includes("MANIFOLD_SOLID_BREP"), "all-split STEP has solid B-rep");
+  assert.equal((stepAllSplit.match(/MANIFOLD_SOLID_BREP/g) || []).length, 3, "3 split B-rep solids");
+
+  const stepPart0 = export_fabricated_step(
+    JSON.stringify(initialDesign),
+    JSON.stringify({ split_parts: 3, active_part: 0 }),
+  );
+  assert.ok(stepPart0.includes("MANIFOLD_SOLID_BREP"), "split part 0 STEP has solid B-rep");
+  assert.equal((stepPart0.match(/MANIFOLD_SOLID_BREP/g) || []).length, 1, "1 split B-rep solid for part 0");
 
   const asmStlBytes = export_part_stl_bytes(JSON.stringify(initialDesign), "assembly");
   assert.ok(asmStlBytes.byteLength > 100000, "assembly STL has valid length");

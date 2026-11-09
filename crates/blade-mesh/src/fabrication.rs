@@ -514,14 +514,13 @@ fn outline_with_clearance(
     };
 
     match shape {
-        AlignmentShape::Round | AlignmentShape::SnapLock | AlignmentShape::AirfoilLip => {
-            (0..PIN_CIRCLE_SEGMENTS)
-                .map(|k| {
-                    let a = 2.0 * PI * (k as f64) / (PIN_CIRCLE_SEGMENTS as f64);
-                    [center[0] + half_w * a.cos(), center[1] + half_w * a.sin()]
-                })
-                .collect()
-        }
+        AlignmentShape::Round | AlignmentShape::SnapLock | AlignmentShape::AirfoilLip => (0
+            ..PIN_CIRCLE_SEGMENTS)
+            .map(|k| {
+                let a = 2.0 * PI * (k as f64) / (PIN_CIRCLE_SEGMENTS as f64);
+                [center[0] + half_w * a.cos(), center[1] + half_w * a.sin()]
+            })
+            .collect(),
         AlignmentShape::Key | AlignmentShape::Tapered => vec![
             pt(half_l, -half_w),
             pt(half_l, half_w),
@@ -715,10 +714,7 @@ fn build_lip_ring_for_section(
     let le = sec[sec.len() / 2];
     let dist_to_le = (mid_le[0] - le.x).hypot(mid_le[1] - le.y);
     let bow = (dist_to_le - delta - 0.15).clamp(0.05, (0.42 * w_le).max(0.08));
-    ring.push([
-        mid_le[0] - bow * u_chord[0],
-        mid_le[1] - bow * u_chord[1],
-    ]);
+    ring.push([mid_le[0] - bow * u_chord[0], mid_le[1] - bow * u_chord[1]]);
 
     for &d in d_list {
         let (_, lo_pt, _) = eval_lip_station(sec, norms, u_chord, tc, d, delta);
@@ -761,9 +757,18 @@ fn build_airfoil_lip_feature(
         let delta_pin = wall + clearance;
 
         let valid_d = |d: usize| -> bool {
-            let (_, _, w0) = eval_lip_station(sec_base, &norms_base, u_base, tube_base, d, delta_pin);
-            let (_, _, w1) = eval_lip_station(sec_pin_top, &norms_pin, u_pin, tube_pin_top, d, delta_pin);
-            let (_, _, w2) = eval_lip_station(sec_sock_top, &norms_sock, u_sock, tube_sock_top, d, delta_sock);
+            let (_, _, w0) =
+                eval_lip_station(sec_base, &norms_base, u_base, tube_base, d, delta_pin);
+            let (_, _, w1) =
+                eval_lip_station(sec_pin_top, &norms_pin, u_pin, tube_pin_top, d, delta_pin);
+            let (_, _, w2) = eval_lip_station(
+                sec_sock_top,
+                &norms_sock,
+                u_sock,
+                tube_sock_top,
+                d,
+                delta_sock,
+            );
             w0 >= 0.85 && w1 >= 0.85 && w2 >= 0.85 + 2.0 * clearance
         };
 
@@ -797,10 +802,38 @@ fn build_airfoil_lip_feature(
             d_list.push(d_te);
         }
 
-        let pin_r0 = build_lip_ring_for_section(sec_base, &norms_base, u_base, tube_base, &d_list, delta_pin);
-        let pin_r1 = build_lip_ring_for_section(sec_pin_top, &norms_pin, u_pin, tube_pin_top, &d_list, delta_pin);
-        let sock_r0 = build_lip_ring_for_section(sec_base, &norms_base, u_base, tube_base, &d_list, delta_sock);
-        let sock_r1 = build_lip_ring_for_section(sec_sock_top, &norms_sock, u_sock, tube_sock_top, &d_list, delta_sock);
+        let pin_r0 = build_lip_ring_for_section(
+            sec_base,
+            &norms_base,
+            u_base,
+            tube_base,
+            &d_list,
+            delta_pin,
+        );
+        let pin_r1 = build_lip_ring_for_section(
+            sec_pin_top,
+            &norms_pin,
+            u_pin,
+            tube_pin_top,
+            &d_list,
+            delta_pin,
+        );
+        let sock_r0 = build_lip_ring_for_section(
+            sec_base,
+            &norms_base,
+            u_base,
+            tube_base,
+            &d_list,
+            delta_sock,
+        );
+        let sock_r1 = build_lip_ring_for_section(
+            sec_sock_top,
+            &norms_sock,
+            u_sock,
+            tube_sock_top,
+            &d_list,
+            delta_sock,
+        );
 
         return Some(Feature {
             pin_rings: vec![(0.0, pin_r0), (1.0, pin_r1)],
@@ -2003,8 +2036,14 @@ mod tests {
         let p1_tube = volume_of(&surface, &two_part(Some(align), Some(1)));
         let base0_tube = volume_of(&surface, &two_part(None, Some(0)));
         let base1_tube = volume_of(&surface, &two_part(None, Some(1)));
-        assert!(p0_tube > base0_tube + 50.0, "lower part gains airfoil lip volume");
-        assert!(p1_tube < base1_tube - 50.0, "upper part loses airfoil socket volume");
+        assert!(
+            p0_tube > base0_tube + 50.0,
+            "lower part gains airfoil lip volume"
+        );
+        assert!(
+            p1_tube < base1_tube - 50.0,
+            "upper part loses airfoil socket volume"
+        );
 
         // 2. Without carbon-fiber spar hole (solid airfoil lip spigot + pocket)
         let mut no_tube = with_tube_all;

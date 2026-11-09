@@ -35,3 +35,4 @@ pub use assembly::{assembly_mesh, hub_mesh, HUB_CIRCUMFERENCE_SEGMENTS};
 pub use error::CadError;
 pub use kernel::{CadKernel, TruckKernel};
 pub use occt::{apply_root_fillet, OcctKernel};
+pub use truck_modeling::Solid;

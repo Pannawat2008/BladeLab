@@ -4,11 +4,12 @@
 //! can be unit-tested on the host and stays independent of JS tooling. The
 //! thin wasm bindings live in `lib.rs`.
 
-use blade_cad::{assembly_mesh, hub_mesh, CadKernel, TruckKernel};
-use blade_geom::{build_sections, loft};
+use blade_cad::{assembly_mesh, hub_mesh, CadKernel, Solid, TruckKernel};
+use blade_geom::{build_sections, loft, BladeSurface, Point3, Section3D};
 use blade_mesh::{
-    alignment_report, check_mesh, spar_tube_axis_points, tessellate_fabricated, write_3mf,
-    write_stl, AlignmentShape, AlignmentSpec, FabricationSpec, Mesh, SparHoleSpec,
+    alignment_report, check_mesh, compute_split_spans, spar_tube_axis_points,
+    tessellate_fabricated, write_3mf, write_stl, AlignmentShape, AlignmentSpec, FabricationSpec,
+    Mesh, SparHoleSpec,
 };
 use blade_model::{resolve, CurveSource, Design};
 
@@ -240,36 +241,191 @@ pub fn export_3mf_with_overrides(
     Ok(write_3mf(&mesh))
 }
 
-/// Exports the design as an ISO 10303-21 STEP B-rep string (`.step`).
+/// Builds a [`BladeSurface`] for a spanwise sub-segment `[z_a, z_b]`.
+fn build_segment_surface(
+    surface: &BladeSurface,
+    z_a: f64,
+    z_b: f64,
+    z_shift: f64,
+) -> Result<BladeSurface, String> {
+    const SEG_STATIONS: usize = 14;
+    let span_min = surface.span_start_mm();
+    let span_max = surface.span_end_mm();
+    let point_count = surface.point_count();
+
+    let mut sections = Vec::with_capacity(SEG_STATIONS);
+    for i in 0..SEG_STATIONS {
+        let t = (i as f64) / ((SEG_STATIONS - 1) as f64);
+        let z = z_a + t * (z_b - z_a);
+        let z_eval = z.clamp(span_min, span_max);
+        let mut points = Vec::with_capacity(point_count);
+        for idx in 0..point_count {
+            let pt = surface.point_at_span_mm(z_eval, idx).map_err(as_string)?;
+            let p = Point3::new(pt.x, pt.y, z + z_shift).map_err(as_string)?;
+            points.push(p);
+        }
+        let sec = Section3D::new(z + z_shift, points).map_err(as_string)?;
+        sections.push(sec);
+    }
+    loft(&sections).map_err(as_string)
+}
+
+/// Builds B-rep solids for split segments (either a single active part or all parts).
+fn build_split_solids(
+    surface: &BladeSurface,
+    split_parts: usize,
+    split_ratio: Option<f64>,
+    active_part: Option<usize>,
+    explode_gap_mm: f64,
+    kernel: &TruckKernel,
+) -> Result<Vec<Solid>, String> {
+    let parts = split_parts.clamp(1, 8);
+    let span_start = surface.span_start_mm();
+    let span_end = surface.span_end_mm();
+    let bounds = compute_split_spans(span_start, span_end, parts, split_ratio);
+
+    let part_range: std::ops::Range<usize> = match active_part {
+        Some(idx) if idx < parts => idx..(idx + 1),
+        _ => 0..parts,
+    };
+
+    let explode_gap = if active_part.is_none() && parts > 1 {
+        explode_gap_mm.max(0.0)
+    } else {
+        0.0
+    };
+
+    let mut solids = Vec::with_capacity(part_range.len());
+    for part_idx in part_range {
+        let z_a = bounds[part_idx];
+        let z_b = bounds[part_idx + 1];
+        let z_shift = (part_idx as f64) * explode_gap;
+
+        let seg_surface = build_segment_surface(surface, z_a, z_b, z_shift)?;
+        let solid = kernel.blade_solid(&seg_surface).map_err(as_string)?;
+        solids.push(solid);
+    }
+    Ok(solids)
+}
+
+/// Exports the design with overrides as an ISO 10303-21 STEP B-rep string (`.step`).
 ///
-/// Supported `part` options: `"blade"` (default), `"hub"`, or `"assembly"`.
-pub fn export_step(design_json: &str, part: &str) -> Result<String, String> {
-    let design = Design::from_json(design_json).map_err(as_string)?;
+/// Supported `part` options:
+/// - `"blade"`: exports the blade (or split segment if `active_part` is set, or all split solids)
+/// - `"hub"`: exports the hub solid
+/// - `"assembly"`: exports the blade solid(s) and hub solid
+/// - `"split"` / `"split_all"`: exports all split segment solids as a multi-solid STEP
+/// - `"blade_part_<N>"` / `"split_part_<N>"`: exports the specific 0-based split part solid
+pub fn export_step_with_overrides(
+    design_json: &str,
+    overrides: &Overrides,
+    part: &str,
+) -> Result<String, String> {
+    let mut design = Design::from_json(design_json).map_err(as_string)?;
+    if let Some(chord) = overrides.tip_chord_mm {
+        design.distributions.chord_mm = with_tip_value(design.distributions.chord_mm, chord);
+    }
+    if let Some(twist) = overrides.tip_twist_deg {
+        design.distributions.twist_deg = with_tip_value(design.distributions.twist_deg, twist);
+    }
+    if let Some(stations) = overrides.station_count {
+        design.rotor.station_count = stations;
+    }
+
     let resolved = resolve(&design).map_err(as_string)?;
     let kernel = TruckKernel::new();
     let part_norm = part.trim().to_ascii_lowercase();
+
+    let split_parts = overrides.split_parts.unwrap_or(1).clamp(1, 8);
+    let split_ratio = overrides.split_ratio;
+    let explode_gap = overrides.explode_gap_mm.unwrap_or(0.0).max(0.0);
+
     let bodies = match part_norm.as_str() {
-        "" | "blade" => {
-            let sections = build_sections(&resolved).map_err(as_string)?;
-            let surface = loft(&sections).map_err(as_string)?;
-            vec![kernel.blade_solid(&surface).map_err(as_string)?]
-        }
         "hub" => vec![kernel.hub_solid(&resolved.hub).map_err(as_string)?],
         "assembly" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            vec![
-                kernel.blade_solid(&surface).map_err(as_string)?,
-                kernel.hub_solid(&resolved.hub).map_err(as_string)?,
-            ]
+            let mut solids = if split_parts > 1 {
+                build_split_solids(
+                    &surface,
+                    split_parts,
+                    split_ratio,
+                    overrides.active_part,
+                    explode_gap,
+                    &kernel,
+                )?
+            } else {
+                vec![kernel.blade_solid(&surface).map_err(as_string)?]
+            };
+            solids.push(kernel.hub_solid(&resolved.hub).map_err(as_string)?);
+            solids
+        }
+        "split" | "split_all" | "blade_split" => {
+            let sections = build_sections(&resolved).map_err(as_string)?;
+            let surface = loft(&sections).map_err(as_string)?;
+            build_split_solids(
+                &surface,
+                split_parts.max(2),
+                split_ratio,
+                None,
+                explode_gap,
+                &kernel,
+            )?
+        }
+        "" | "blade" => {
+            let sections = build_sections(&resolved).map_err(as_string)?;
+            let surface = loft(&sections).map_err(as_string)?;
+            if split_parts > 1 {
+                build_split_solids(
+                    &surface,
+                    split_parts,
+                    split_ratio,
+                    overrides.active_part,
+                    explode_gap,
+                    &kernel,
+                )?
+            } else {
+                vec![kernel.blade_solid(&surface).map_err(as_string)?]
+            }
         }
         other => {
-            return Err(format!(
-                "unsupported part `{other}` for STEP export (expected 'blade', 'hub', or 'assembly')"
-            ))
+            if let Some(idx_str) = other
+                .strip_prefix("blade_part_")
+                .or_else(|| other.strip_prefix("split_part_"))
+            {
+                let idx: usize = idx_str
+                    .parse()
+                    .map_err(|_| format!("invalid split part index `{idx_str}`"))?;
+                let sections = build_sections(&resolved).map_err(as_string)?;
+                let surface = loft(&sections).map_err(as_string)?;
+                build_split_solids(
+                    &surface,
+                    split_parts.max(idx + 1),
+                    split_ratio,
+                    Some(idx),
+                    0.0,
+                    &kernel,
+                )?
+            } else {
+                return Err(format!(
+                    "unsupported part `{other}` for STEP export (expected 'blade', 'hub', 'assembly', 'split', or 'blade_part_<N>')"
+                ));
+            }
         }
     };
     kernel.write_step(&bodies).map_err(as_string)
+}
+
+/// Exports the design as an ISO 10303-21 STEP B-rep string (`.step`).
+///
+/// Supported `part` options: `"blade"` (default), `"hub"`, `"assembly"`, `"split"`, or `"blade_part_<N>"`.
+pub fn export_step(design_json: &str, part: &str) -> Result<String, String> {
+    export_step_with_overrides(design_json, &Overrides::default(), part)
+}
+
+/// Exports all split segments as a multi-solid ISO 10303-21 STEP B-rep string (`.step`).
+pub fn export_split_step(design_json: &str, overrides: &Overrides) -> Result<String, String> {
+    export_step_with_overrides(design_json, overrides, "split")
 }
 
 /// Exports a specific part (`"blade"`, `"hub"`, or `"assembly"`) as binary STL bytes.
@@ -472,6 +628,41 @@ mod tests {
         let step_assembly =
             export_step(FIXTURE, "assembly").expect("assembly step export succeeds");
         assert!(step_assembly.contains("MANIFOLD_SOLID_BREP"));
+    }
+
+    #[test]
+    fn step_export_split_segments() {
+        let overrides_split = Overrides {
+            split_parts: Some(3),
+            split_ratio: Some(0.35),
+            explode_gap_mm: Some(15.0),
+            ..Overrides::default()
+        };
+
+        // All 3 split segments exported as multi-solid STEP
+        let step_all = export_split_step(FIXTURE, &overrides_split).expect("split STEP export");
+        assert!(step_all.contains("MANIFOLD_SOLID_BREP"));
+        // Multi-solid STEP should contain 3 MANIFOLD_SOLID_BREP entries
+        assert_eq!(
+            step_all.matches("MANIFOLD_SOLID_BREP").count(),
+            3,
+            "expected 3 B-rep solids for 3 split parts"
+        );
+
+        // Individual split segments exported via part naming or active_part override
+        let step_p0 = export_step_with_overrides(
+            FIXTURE,
+            &Overrides {
+                active_part: Some(0),
+                ..overrides_split.clone()
+            },
+            "blade",
+        )
+        .expect("part 0 step export");
+        assert_eq!(step_p0.matches("MANIFOLD_SOLID_BREP").count(), 1);
+
+        let step_p1 = export_step(FIXTURE, "blade_part_1").expect("blade_part_1 export");
+        assert_eq!(step_p1.matches("MANIFOLD_SOLID_BREP").count(), 1);
     }
 
     #[test]

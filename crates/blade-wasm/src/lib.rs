@@ -22,8 +22,8 @@ pub mod mesh;
 
 use mesh::{
     build_mesh as run_pipeline, export_3mf, export_3mf_with_overrides, export_part_3mf,
-    export_part_stl, export_step as run_export_step, export_stl, export_stl_with_overrides,
-    MeshOutput, Overrides,
+    export_part_stl, export_split_step as run_export_split_step, export_step as run_export_step,
+    export_step_with_overrides, export_stl, export_stl_with_overrides, MeshOutput, Overrides,
 };
 
 /// Live-edit overrides deserialised from the web UI (all fields optional).
@@ -295,7 +295,8 @@ pub fn run_aero_simulation(design_json: &str, options_json: &str) -> Result<Stri
         opts.generator_r_load,
     ) {
         (Some(kv), Some(r_int), Some(r_load)) => {
-            let mut spec = GeneratorSpec::new(kv, r_int, opts.generator_i0.unwrap_or(0.08).max(0.0));
+            let mut spec =
+                GeneratorSpec::new(kv, r_int, opts.generator_i0.unwrap_or(0.08).max(0.0));
             spec.gear_ratio = opts.generator_gear_ratio.unwrap_or(1.0).max(0.05);
             Some(
                 match_generator(&blade, &polars, wind, pitch, &spec, r_load)
@@ -389,10 +390,37 @@ pub fn export_fabricated_3mf_bytes(
 
 /// Exports the design as an ISO 10303-21 STEP B-rep string (`.step` in browser).
 ///
-/// Supported `part` values: `"blade"`, `"hub"`, or `"assembly"`.
+/// Supported `part` values: `"blade"`, `"hub"`, `"assembly"`, `"split"`, or `"blade_part_<N>"`.
 #[wasm_bindgen]
 pub fn export_step(design_json: &str, part: &str) -> Result<String, JsValue> {
     run_export_step(design_json, part).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports the blade design with fabrication overrides (split segments or isolated
+/// active part) as an ISO 10303-21 STEP B-rep solid string (`.step` in browser).
+#[wasm_bindgen]
+pub fn export_fabricated_step(design_json: &str, overrides_json: &str) -> Result<String, JsValue> {
+    let overrides = parse_overrides_json(overrides_json)?;
+    export_step_with_overrides(design_json, &overrides, "blade").map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports all split segments as a multi-solid ISO 10303-21 STEP B-rep string (`.step`).
+#[wasm_bindgen]
+pub fn export_all_split_step(design_json: &str, overrides_json: &str) -> Result<String, JsValue> {
+    let overrides = parse_overrides_json(overrides_json)?;
+    run_export_split_step(design_json, &overrides).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Exports a specific part (`"blade"`, `"hub"`, `"assembly"`, `"split"`, or `"blade_part_<N>"`)
+/// with fabrication overrides as an ISO 10303-21 STEP B-rep string (`.step`).
+#[wasm_bindgen]
+pub fn export_part_step(
+    design_json: &str,
+    overrides_json: &str,
+    part: &str,
+) -> Result<String, JsValue> {
+    let overrides = parse_overrides_json(overrides_json)?;
+    export_step_with_overrides(design_json, &overrides, part).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Exports a specific part (`"blade"`, `"hub"`, or `"assembly"`) as binary STL bytes.

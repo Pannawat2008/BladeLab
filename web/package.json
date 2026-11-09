@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test scripts/types.test.mjs",
     "wasm:build": "cargo build -p blade-wasm --release --target wasm32-unknown-unknown",
-    "wasm:gen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/blade_wasm.wasm --out-dir pkg --target web --no-typescript",
+    "wasm:gen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/blade_wasm.wasm --out-dir pkg --target web --no-typescript && wasm-bindgen ../target/wasm32-unknown-unknown/release/blade_wasm.wasm --out-dir ../target/glue-node --target nodejs",
     "wasm": "npm run wasm:build && npm run wasm:gen",
     "bench": "node scripts/bench.cjs"
   },

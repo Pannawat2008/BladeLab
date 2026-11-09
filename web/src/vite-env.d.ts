@@ -20,6 +20,9 @@ declare module "*blade_wasm.js" {
   export function export_3mf_bytes(design_json: string): Uint8Array;
   export function export_fabricated_3mf_bytes(design_json: string, overrides_json: string): Uint8Array;
   export function export_step(design_json: string, part: string): string;
+  export function export_fabricated_step(design_json: string, overrides_json: string): string;
+  export function export_all_split_step(design_json: string, overrides_json: string): string;
+  export function export_part_step(design_json: string, overrides_json: string, part: string): string;
   export function export_part_stl_bytes(design_json: string, part: string): Uint8Array;
   export function export_part_3mf_bytes(design_json: string, part: string): Uint8Array;
   export function fabrication_report(design_json: string, overrides_json: string): string;
