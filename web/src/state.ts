@@ -48,6 +48,117 @@ export function evalBezierPoints(points: BezierControlPoint[], s: number): numbe
   return deCasteljau("y", 0.5 * (lo + hi));
 }
 
+type FormulaToken =
+  | { kind: "num"; value: number }
+  | { kind: "id"; name: string }
+  | { kind: "op"; value: string }
+  | { kind: "lparen" }
+  | { kind: "rparen" }
+  | { kind: "comma" };
+
+function tokenizeFormula(input: string): FormulaToken[] | null {
+  const tokens: FormulaToken[] = [];
+  let i = 0;
+  const n = input.length;
+  while (i < n) {
+    const ch = input[i]!;
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+      i++;
+      continue;
+    }
+    if ((ch >= "0" && ch <= "9") || (ch === "." && i + 1 < n && input[i + 1]! >= "0" && input[i + 1]! <= "9")) {
+      const start = i;
+      let hasDot = false;
+      while (i < n) {
+        const c = input[i]!;
+        if (c >= "0" && c <= "9") {
+          i++;
+        } else if (c === "." && !hasDot) {
+          hasDot = true;
+          i++;
+        } else {
+          break;
+        }
+      }
+      if (i < n && (input[i] === "e" || input[i] === "E")) {
+        i++;
+        if (i < n && (input[i] === "+" || input[i] === "-")) i++;
+        const expStart = i;
+        while (i < n && input[i]! >= "0" && input[i]! <= "9") i++;
+        if (i === expStart) return null;
+      }
+      const value = Number(input.slice(start, i));
+      if (!Number.isFinite(value)) return null;
+      tokens.push({ kind: "num", value });
+      continue;
+    }
+    if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch === "_") {
+      const start = i;
+      while (i < n) {
+        const c = input[i]!;
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c === "_") {
+          i++;
+        } else {
+          break;
+        }
+      }
+      tokens.push({ kind: "id", name: input.slice(start, i) });
+      continue;
+    }
+    if (ch === "*" && i + 1 < n && input[i + 1] === "*") {
+      tokens.push({ kind: "op", value: "^" });
+      i += 2;
+      continue;
+    }
+    if (ch === "+" || ch === "-" || ch === "*" || ch === "/" || ch === "%" || ch === "^") {
+      tokens.push({ kind: "op", value: ch });
+      i++;
+      continue;
+    }
+    if (ch === "(") {
+      tokens.push({ kind: "lparen" });
+      i++;
+      continue;
+    }
+    if (ch === ")") {
+      tokens.push({ kind: "rparen" });
+      i++;
+      continue;
+    }
+    if (ch === ",") {
+      tokens.push({ kind: "comma" });
+      i++;
+      continue;
+    }
+    // Reject any unrecognized syntax (assignment, semicolons, quotes, brackets, etc.)
+    return null;
+  }
+  return tokens;
+}
+
+const FORMULA_FUNCTIONS: Record<string, { minArgs: number; maxArgs: number; fn: (...args: number[]) => number }> = {
+  sin: { minArgs: 1, maxArgs: 1, fn: (a) => Math.sin(a) },
+  cos: { minArgs: 1, maxArgs: 1, fn: (a) => Math.cos(a) },
+  tan: { minArgs: 1, maxArgs: 1, fn: (a) => Math.tan(a) },
+  asin: { minArgs: 1, maxArgs: 1, fn: (a) => Math.asin(a) },
+  acos: { minArgs: 1, maxArgs: 1, fn: (a) => Math.acos(a) },
+  atan: { minArgs: 1, maxArgs: 1, fn: (a) => Math.atan(a) },
+  atan2: { minArgs: 2, maxArgs: 2, fn: (y, x) => Math.atan2(y, x) },
+  sqrt: { minArgs: 1, maxArgs: 1, fn: (a) => Math.sqrt(a) },
+  abs: { minArgs: 1, maxArgs: 1, fn: (a) => Math.abs(a) },
+  exp: { minArgs: 1, maxArgs: 1, fn: (a) => Math.exp(a) },
+  ln: { minArgs: 1, maxArgs: 1, fn: (a) => Math.log(a) },
+  log: { minArgs: 1, maxArgs: 1, fn: (a) => Math.log(a) },
+  pow: { minArgs: 2, maxArgs: 2, fn: (a, b) => Math.pow(a, b) },
+  deg: { minArgs: 1, maxArgs: 1, fn: (r) => (r * 180) / Math.PI },
+  rad: { minArgs: 1, maxArgs: 1, fn: (d) => (d * Math.PI) / 180 },
+  min: { minArgs: 1, maxArgs: 8, fn: (...args) => Math.min(...args) },
+  max: { minArgs: 1, maxArgs: 8, fn: (...args) => Math.max(...args) },
+  floor: { minArgs: 1, maxArgs: 1, fn: (a) => Math.floor(a) },
+  ceil: { minArgs: 1, maxArgs: 1, fn: (a) => Math.ceil(a) },
+  round: { minArgs: 1, maxArgs: 1, fn: (a) => Math.round(a) },
+};
+
 export function evalFormulaPreview(
   expr: string,
   rotor: Rotor,
@@ -55,63 +166,146 @@ export function evalFormulaPreview(
   s: number,
 ): number {
   const trimmed = expr.trim();
-  if (!trimmed) return 0;
-  try {
-    const fn = new Function(
-      "x",
-      "s",
-      "r",
-      "R",
-      "r_hub",
-      "B",
-      "tsr",
-      "pi",
-      "sin",
-      "cos",
-      "tan",
-      "asin",
-      "acos",
-      "atan",
-      "atan2",
-      "sqrt",
-      "abs",
-      "exp",
-      "ln",
-      "pow",
-      "deg",
-      "rad",
-      `"use strict"; return Number(${trimmed.replace(/\^/g, "**")});`,
-    );
-    const val = Number(
-      fn(
-        spanRatio,
-        s,
-        spanRatio * rotor.radius_mm,
-        rotor.radius_mm,
-        rotor.hub_radius_mm,
-        rotor.blade_count,
-        rotor.design_tsr,
-        Math.PI,
-        Math.sin,
-        Math.cos,
-        Math.tan,
-        Math.asin,
-        Math.acos,
-        Math.atan,
-        Math.atan2,
-        Math.sqrt,
-        Math.abs,
-        Math.exp,
-        Math.log,
-        Math.pow,
-        (rad: number) => (rad * 180) / Math.PI,
-        (deg: number) => (deg * Math.PI) / 180,
-      ),
-    );
-    return Number.isFinite(val) ? val : 0;
-  } catch {
+  if (!trimmed || trimmed.length > 512) return 0;
+
+  const tokens = tokenizeFormula(trimmed);
+  if (!tokens || tokens.length === 0) return 0;
+
+  const vars: Record<string, number> = {
+    x: spanRatio,
+    s,
+    r: spanRatio * rotor.radius_mm,
+    R: rotor.radius_mm,
+    r_hub: rotor.hub_radius_mm,
+    B: rotor.blade_count,
+    tsr: rotor.design_tsr,
+    pi: Math.PI,
+  };
+
+  let pos = 0;
+  let failed = false;
+
+  const peek = (): FormulaToken | undefined => tokens[pos];
+  const consume = (): FormulaToken | undefined => tokens[pos++];
+
+  const parseAddSub = (): number => {
+    let left = parseMulDiv();
+    while (!failed) {
+      const tok = peek();
+      if (tok?.kind === "op" && (tok.value === "+" || tok.value === "-")) {
+        consume();
+        const right = parseMulDiv();
+        left = tok.value === "+" ? left + right : left - right;
+      } else {
+        break;
+      }
+    }
+    return left;
+  };
+
+  const parseMulDiv = (): number => {
+    let left = parseUnary();
+    while (!failed) {
+      const tok = peek();
+      if (tok?.kind === "op" && (tok.value === "*" || tok.value === "/" || tok.value === "%")) {
+        consume();
+        const right = parseUnary();
+        if (tok.value === "*") left *= right;
+        else if (tok.value === "/") left /= right;
+        else left %= right;
+      } else {
+        break;
+      }
+    }
+    return left;
+  };
+
+  const parseUnary = (): number => {
+    const tok = peek();
+    if (tok?.kind === "op" && (tok.value === "+" || tok.value === "-")) {
+      consume();
+      const val = parseUnary();
+      return tok.value === "-" ? -val : val;
+    }
+    return parsePower();
+  };
+
+  const parsePower = (): number => {
+    const base = parseAtom();
+    const tok = peek();
+    if (!failed && tok?.kind === "op" && tok.value === "^") {
+      consume();
+      const exp = parseUnary();
+      return Math.pow(base, exp);
+    }
+    return base;
+  };
+
+  const parseAtom = (): number => {
+    const tok = consume();
+    if (!tok) {
+      failed = true;
+      return 0;
+    }
+    if (tok.kind === "num") {
+      return tok.value;
+    }
+    if (tok.kind === "id") {
+      if (peek()?.kind === "lparen") {
+        const fnSpec = Object.prototype.hasOwnProperty.call(FORMULA_FUNCTIONS, tok.name)
+          ? FORMULA_FUNCTIONS[tok.name]
+          : undefined;
+        if (!fnSpec) {
+          failed = true;
+          return 0;
+        }
+        consume(); // '('
+        const args: number[] = [];
+        if (peek()?.kind !== "rparen") {
+          while (!failed) {
+            args.push(parseAddSub());
+            if (peek()?.kind === "comma") {
+              consume();
+            } else {
+              break;
+            }
+          }
+        }
+        if (peek()?.kind !== "rparen") {
+          failed = true;
+          return 0;
+        }
+        consume(); // ')'
+        if (args.length < fnSpec.minArgs || args.length > fnSpec.maxArgs) {
+          failed = true;
+          return 0;
+        }
+        return fnSpec.fn(...args);
+      }
+      if (Object.prototype.hasOwnProperty.call(vars, tok.name)) {
+        return vars[tok.name]!;
+      }
+      failed = true;
+      return 0;
+    }
+    if (tok.kind === "lparen") {
+      const inner = parseAddSub();
+      if (peek()?.kind !== "rparen") {
+        failed = true;
+        return 0;
+      }
+      consume(); // ')'
+      return inner;
+    }
+    failed = true;
+    return 0;
+  };
+
+  const result = parseAddSub();
+  if (failed || pos !== tokens.length || !Number.isFinite(result)) {
     return 0;
   }
+  return result;
 }
 
 export interface ResolvedStationRow {
@@ -1479,6 +1673,15 @@ export interface AirfoilPreviewHoleOptions {
   jointLengthMm?: number;
 }
 
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
  * Generates an SVG cross-section diagram of the blade's primary airfoil
  * showing the upper/lower contour, mean camber line, chord line, the
@@ -1664,7 +1867,7 @@ export function renderAirfoilSectionSvgMarkup(
 
   elements.push(
     `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="3.8" fill="#f59e0b" stroke="#07080d" stroke-width="1.4" />`,
-    `<text x="${padX}" y="14" fill="#7a8296" font-size="10" font-family="'IBM Plex Mono', ui-monospace, monospace">${label}  [x/c ${design.rotor.pitch_axis_ratio.toFixed(2)}]</text>`,
+    `<text x="${padX}" y="14" fill="#7a8296" font-size="10" font-family="'IBM Plex Mono', ui-monospace, monospace">${escapeHtml(label)}  [x/c ${design.rotor.pitch_axis_ratio.toFixed(2)}]</text>`,
   );
 
   return elements.join("\n");
@@ -1868,12 +2071,21 @@ export function createWorkbenchSnapshot(
     ...defaultFabricationSnapshot(),
     ...fabrication,
   };
+  const defWb = defaultWorkbenchUiSnapshot();
   const wb: WorkbenchUiSnapshot = {
-    ...defaultWorkbenchUiSnapshot(),
+    ...defWb,
     ...workbench,
     locked_span_ratios: Array.isArray(workbench.locked_span_ratios)
       ? [...workbench.locked_span_ratios]
       : [],
+    winglet: {
+      ...defWb.winglet!,
+      ...(workbench.winglet && typeof workbench.winglet === "object" ? workbench.winglet : {}),
+    },
+    gearbox: {
+      ...defWb.gearbox!,
+      ...(workbench.gearbox && typeof workbench.gearbox === "object" ? workbench.gearbox : {}),
+    },
   };
 
   // Auto-infer planform cosine parameters when chord_mm uses a cosine plateau formula
@@ -1908,12 +2120,25 @@ function isValidDesignObject(obj: unknown): obj is Design {
   const rotor = rec.rotor as Record<string, unknown> | undefined;
   const dist = rec.distributions as Record<string, unknown> | undefined;
   const airfoils = rec.airfoils;
+  const overrides = rec.overrides;
+  const hub = rec.hub;
+  const manufacturing = rec.manufacturing;
   if (!rotor || typeof rotor !== "object") return false;
-  if (typeof rotor.radius_mm !== "number" || !Number.isFinite(rotor.radius_mm)) return false;
-  if (typeof rotor.hub_radius_mm !== "number" || !Number.isFinite(rotor.hub_radius_mm)) return false;
-  if (typeof rotor.blade_count !== "number" || !Number.isFinite(rotor.blade_count)) return false;
-  if (!dist || typeof dist !== "object" || !dist.chord_mm || !dist.twist_deg) return false;
+  if (typeof rotor.radius_mm !== "number" || !Number.isFinite(rotor.radius_mm) || rotor.radius_mm <= 0) return false;
+  if (typeof rotor.hub_radius_mm !== "number" || !Number.isFinite(rotor.hub_radius_mm) || rotor.hub_radius_mm < 0) return false;
+  if (rotor.radius_mm <= rotor.hub_radius_mm) return false;
+  if (typeof rotor.blade_count !== "number" || !Number.isFinite(rotor.blade_count) || rotor.blade_count < 1) return false;
+  if (typeof rotor.station_count !== "number" || !Number.isFinite(rotor.station_count) || rotor.station_count < 2) return false;
+  if (typeof rotor.pitch_axis_ratio !== "number" || !Number.isFinite(rotor.pitch_axis_ratio)) return false;
+  if (!dist || typeof dist !== "object") return false;
+  const chord = dist.chord_mm as Record<string, unknown> | undefined;
+  const twist = dist.twist_deg as Record<string, unknown> | undefined;
+  if (!chord || typeof chord !== "object" || typeof chord.type !== "string") return false;
+  if (!twist || typeof twist !== "object" || typeof twist.type !== "string") return false;
   if (!Array.isArray(airfoils) || airfoils.length === 0) return false;
+  if (!Array.isArray(overrides)) return false;
+  if (!hub || typeof hub !== "object") return false;
+  if (!manufacturing || typeof manufacturing !== "object") return false;
   return true;
 }
 
@@ -2513,11 +2738,12 @@ export function computeVertexHeatmapColors(
     maxLabel = `${maxLd.toFixed(0)} Peak L/D`;
     gradientCss = "linear-gradient(90deg, #38529e 0%, #33bdf5 45%, #4cd18a 82%, #f5b82e 100%)";
 
+    const rMinRatio = r0 / rTip;
     for (let i = 0; i < vCount; i++) {
       const z = Number(positions[i * 3 + 2]) || r0;
-      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
-      const cl = interpolateStationField(stations, s, "cl");
-      const cd = Math.max(1e-4, interpolateStationField(stations, s, "cd"));
+      const spanRatio = Math.max(rMinRatio, Math.min(1, z / rTip));
+      const cl = interpolateStationField(stations, spanRatio, "cl");
+      const cd = Math.max(1e-4, interpolateStationField(stations, spanRatio, "cd"));
       const ld = Math.max(0, cl / cd);
       const [r, g, b] = sampleEfficiencyRamp(ld / Math.max(10, maxLd));
       colors[i * 3] = r;
@@ -2538,10 +2764,11 @@ export function computeVertexHeatmapColors(
     maxLabel = `${maxTq.toFixed(2)} N·m/m`;
     gradientCss = "linear-gradient(90deg, #38529e 0%, #33bdf5 45%, #4cd18a 82%, #f5b82e 100%)";
 
+    const rMinRatio = r0 / rTip;
     for (let i = 0; i < vCount; i++) {
       const z = Number(positions[i * 3 + 2]) || r0;
-      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
-      const tq = Math.max(0, interpolateStationField(stations, s, "torque_per_m_nm"));
+      const spanRatio = Math.max(rMinRatio, Math.min(1, z / rTip));
+      const tq = Math.max(0, interpolateStationField(stations, spanRatio, "torque_per_m_nm"));
       const [r, g, b] = sampleEfficiencyRamp(tq / maxTq);
       colors[i * 3] = r;
       colors[i * 3 + 1] = g;
@@ -2558,20 +2785,34 @@ export function computeVertexHeatmapColors(
     midLabel = `${(0.5 * maxStress).toFixed(1)} MPa`;
     maxLabel = `${maxStress.toFixed(1)} MPa`;
 
+    const rMinRatio = r0 / rTip;
     for (let i = 0; i < vCount; i++) {
       const y = Number(positions[i * 3 + 1]) || 0;
       const z = Number(positions[i * 3 + 2]) || r0;
-      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
-      // Interpolate station bending stress, modulated by outer-fiber distance |y|
+      const spanRatio = Math.max(rMinRatio, Math.min(1, z / rTip));
+      // Interpolate station bending stress by radial span_ratio, modulated by outer-fiber distance |y|
       let stStress = 0;
       let stThick = 6;
-      if (structRows.length > 0) {
-        const idx = Math.min(
-          structRows.length - 1,
-          Math.max(0, Math.round(s * (structRows.length - 1))),
-        );
-        stStress = structRows[idx]!.shell_stress_mpa;
-        stThick = Math.max(1.5, structRows[idx]!.thickness_mm);
+      if (structRows.length === 1 || (structRows.length > 1 && spanRatio <= structRows[0]!.span_ratio)) {
+        stStress = structRows[0]!.shell_stress_mpa;
+        stThick = Math.max(1.5, structRows[0]!.thickness_mm);
+      } else if (structRows.length > 1) {
+        const last = structRows[structRows.length - 1]!;
+        if (spanRatio >= last.span_ratio) {
+          stStress = last.shell_stress_mpa;
+          stThick = Math.max(1.5, last.thickness_mm);
+        } else {
+          for (let j = 0; j < structRows.length - 1; j++) {
+            const a = structRows[j]!;
+            const b = structRows[j + 1]!;
+            if (spanRatio >= a.span_ratio && spanRatio <= b.span_ratio) {
+              const u = (spanRatio - a.span_ratio) / Math.max(1e-9, b.span_ratio - a.span_ratio);
+              stStress = a.shell_stress_mpa + u * (b.shell_stress_mpa - a.shell_stress_mpa);
+              stThick = Math.max(1.5, a.thickness_mm + u * (b.thickness_mm - a.thickness_mm));
+              break;
+            }
+          }
+        }
       }
       const fiberRatio = Math.min(1.15, Math.abs(y) / (0.45 * stThick));
       const localStress = stStress * (0.35 + 0.65 * fiberRatio);
@@ -2600,10 +2841,11 @@ export function computeVertexHeatmapColors(
     gradientCss = "linear-gradient(90deg, #1e3a8a 0%, #06b6d4 30%, #10b981 50%, #f59e0b 75%, #ef4444 100%)";
 
     const hasNormals = Boolean(normals && normals.length >= vCount * 3);
+    const rMinRatio = r0 / rTip;
     for (let i = 0; i < vCount; i++) {
       const z = Number(positions[i * 3 + 2]) || r0;
       const rM = Math.max(0.01, z / 1000);
-      const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
+      const spanRatio = Math.max(rMinRatio, Math.min(1, z / rTip));
 
       const vAxial = vWind * 0.75;
       const vTangential = omega * rM * 1.01;
@@ -2611,7 +2853,7 @@ export function computeVertexHeatmapColors(
       const qLocal = 0.5 * rho * wSpeed * wSpeed;
       const phi = Math.atan2(vAxial, Math.max(0.1, vTangential));
 
-      const twistDeg = stations.length > 0 ? interpolateStationField(stations, s, "alpha_deg") : 6.0;
+      const twistDeg = stations.length > 0 ? interpolateStationField(stations, spanRatio, "twist_deg") : 6.0;
       const effTheta = (twistDeg + collectivePitchDeg) * (Math.PI / 180);
       const alpha = phi - effTheta;
 
@@ -2624,7 +2866,7 @@ export function computeVertexHeatmapColors(
         ny = Number(positions[i * 3 + 1]) <= 0 ? -1 : 1;
       }
 
-      // Relative flow aerodynamic exposure:
+      // Relative flow aerodynamic exposure scaled by local dynamic pressure qLocal:
       // -nx * cos(alpha) > 0: Leading edge facing oncoming chordwise flow (crimson stagnation line)
       // ny < 0: Windward pressure side (lower face) facing oncoming axial wind flow (warm amber/red)
       // ny > 0: Leeward suction side (upper curved face) generating aerodynamic lift depression (cool cyan/blue)
@@ -2634,10 +2876,12 @@ export function computeVertexHeatmapColors(
 
       let pNorm = 0;
       if (ny <= 0 || leImpact > 0.25) {
-        pNorm = posExposure;
+        const qFactor = Math.min(1.35, 0.42 + 0.58 * (qLocal / pMaxImpact));
+        pNorm = Math.min(1.0, posExposure * qFactor);
       } else {
-        const cl = stations.length > 0 ? Math.max(0.25, interpolateStationField(stations, s, "cl")) : 0.85;
-        const suctionIntensity = Math.min(1.0, ny * (cl / 1.35));
+        const cl = stations.length > 0 ? Math.max(0.25, interpolateStationField(stations, spanRatio, "cl")) : 0.85;
+        const qFactor = Math.min(1.35, 0.42 + 0.58 * (qLocal / pMaxSuction));
+        const suctionIntensity = Math.min(1.0, ny * (cl / 1.35) * qFactor);
         pNorm = -suctionIntensity;
       }
 
@@ -2650,10 +2894,11 @@ export function computeVertexHeatmapColors(
   }
 
   // Default heatmap: "alpha" (Angle of Attack & Stall Margin)
+  const rMinRatio = r0 / rTip;
   for (let i = 0; i < vCount; i++) {
     const z = Number(positions[i * 3 + 2]) || r0;
-    const s = Math.max(0, Math.min(1, (z - r0) / spanLen));
-    const alpha = stations.length > 0 ? interpolateStationField(stations, s, "alpha_deg") : 6.0;
+    const spanRatio = Math.max(rMinRatio, Math.min(1, z / rTip));
+    const alpha = stations.length > 0 ? interpolateStationField(stations, spanRatio, "alpha_deg") : 6.0;
     // Map alpha in [-2..15 deg] -> [0..1] where 6 deg -> ~0.42 (optimal green), 13+ deg -> red
     const t01 = (alpha + 1.0) / 15.0;
     const [r, g, b] = sampleThermalRamp(t01);
@@ -2676,14 +2921,20 @@ export function applyWingletToBladeGeometry(
 ): void {
   if (!winglet.enabled) return;
   const rTip = design.rotor.radius_mm;
-  const blendR = Math.max(5, Math.min(80, winglet.blend_radius_mm || 15));
+  const rawBlend = Number.isFinite(winglet.blend_radius_mm) ? winglet.blend_radius_mm : 15;
+  const blendR = Math.max(5, Math.min(80, rawBlend));
   const zStart = rTip - blendR;
   const len = rTip - zStart;
   if (len <= 0) return;
 
-  const cantRad = ((winglet.cant_angle_deg || 50) * Math.PI) / 180;
-  const sweepRad = ((winglet.sweep_angle_deg || 10) * Math.PI) / 180;
-  const height = Math.max(2, Math.min(100, winglet.height_mm || 20));
+  const rawCant = Number.isFinite(winglet.cant_angle_deg) ? winglet.cant_angle_deg : 50;
+  const rawSweep = Number.isFinite(winglet.sweep_angle_deg) ? winglet.sweep_angle_deg : 10;
+  const rawHeight = Number.isFinite(winglet.height_mm) ? winglet.height_mm : 20;
+
+  const cantRad = (Math.max(-85, Math.min(85, rawCant)) * Math.PI) / 180;
+  const sweepRad = (Math.max(-60, Math.min(60, rawSweep)) * Math.PI) / 180;
+  const height = Math.max(2, Math.min(100, rawHeight));
+  const absCant = Math.abs(cantRad);
 
   const vCount = Math.floor(positions.length / 3);
   for (let i = 0; i < vCount; i++) {
@@ -2699,8 +2950,10 @@ export function applyWingletToBladeGeometry(
       const dy = f * height * Math.sin(cantRad);
       // Backward chordwise sweep (+X)
       const dx = f * height * Math.tan(sweepRad);
-      // Spanwise curve
-      const zNew = zStart + (z - zStart) * Math.cos(cantRad * f);
+      // Monotonic circular-arc spanwise projection: integral_0^u cos(|cantRad| * t) dt = sin(|cantRad| * u) / |cantRad|
+      // Guarantees dz/du = cos(|cantRad| * u) > 0 for all |cant| < 90 deg (never folds backward)
+      const arcSpanFrac = absCant > 1e-6 ? Math.sin(absCant * u) / absCant : u;
+      const zNew = zStart + len * arcSpanFrac;
 
       positions[i * 3] = x + dx;
       positions[i * 3 + 1] = y + dy;
@@ -3083,10 +3336,11 @@ export function evaluatePrinterBuildFit(
   const bladeSpanMm = Math.max(10, rTip - r0);
   const splitParts = Math.max(1, Math.min(4, fabrication.split_parts || 1));
   const splitRatio = Math.max(0.12, Math.min(0.88, (fabrication.split_ratio_pct || 50) / 100));
-  const jointPinHeightMm =
-    splitParts > 1 && fabrication.align_shape !== "none"
-      ? Math.max(0, fabrication.align_height_mm || 6.0)
+  const splitJointPinHeightMm =
+    fabrication.align_shape !== "none"
+      ? Math.max(0, Number.isFinite(fabrication.align_height_mm) ? fabrication.align_height_mm : 6.0)
       : 0;
+  const jointPinHeightMm = splitParts > 1 ? splitJointPinHeightMm : 0;
 
   // Compute split plane fractions [0, ..., 1]
   const fractions: number[] = [0];
@@ -3128,11 +3382,19 @@ export function evaluatePrinterBuildFit(
     });
   }
 
-  const allFit = segments.every((s) => s.fits_z && s.fits_xy);
+  const allFitZ = segments.every((s) => s.fits_z);
+  const allFitXy = segments.every((s) => s.fits_xy);
+  const allFit = allFitZ && allFitXy;
 
-  // Calculate minimum split parts (1..4) so that every part + pin protrusion fits maxZMm
-  const usableZPerPart = Math.max(30, maxZMm - jointPinHeightMm - 2);
-  const recommendedParts = Math.min(4, Math.max(1, Math.ceil(bladeSpanMm / usableZPerPart)));
+  // Calculate minimum split parts (1..4) so that every part + split joint protrusion fits maxZMm in 1 step
+  let recommendedParts = 4;
+  for (let k = 1; k <= 4; k++) {
+    const partZ = bladeSpanMm / k + (k > 1 ? splitJointPinHeightMm : 0);
+    if (partZ <= maxZMm + 1e-6) {
+      recommendedParts = k;
+      break;
+    }
+  }
   const recommendedRatioPct = 50;
 
   const tallestSeg = segments.reduce(
@@ -3140,9 +3402,14 @@ export function evaluatePrinterBuildFit(
     segments[0]!,
   );
 
-  const summary = allFit
-    ? `All ${splitParts} part(s) fit ${maxZMm} mm Z limit (tallest: Part ${tallestSeg.part_index + 1} at ${tallestSeg.total_print_z_mm.toFixed(1)} mm)`
-    : `Part ${tallestSeg.part_index + 1} is ${tallestSeg.total_print_z_mm.toFixed(1)} mm tall (exceeds ${maxZMm} mm Z limit by ${(tallestSeg.total_print_z_mm - maxZMm).toFixed(1)} mm) — split into ${recommendedParts} parts`;
+  let summary: string;
+  if (allFit) {
+    summary = `All ${splitParts} part(s) fit ${maxZMm} mm Z limit (tallest: Part ${tallestSeg.part_index + 1} at ${tallestSeg.total_print_z_mm.toFixed(1)} mm)`;
+  } else if (!allFitZ) {
+    summary = `Part ${tallestSeg.part_index + 1} is ${tallestSeg.total_print_z_mm.toFixed(1)} mm tall (exceeds ${maxZMm} mm Z limit by ${(tallestSeg.total_print_z_mm - maxZMm).toFixed(1)} mm) — split into ${recommendedParts} parts`;
+  } else {
+    summary = `Max chord ${maxChordGlobalMm.toFixed(1)} mm exceeds ${spec.name} XY diagonal limit (${bedDiagMm.toFixed(1)} mm)`;
+  }
 
   return {
     preset,
@@ -4428,18 +4695,16 @@ function buildToothedWheelMesh(opts: {
     mb.stitchRings(outerRings[k]!, outerRings[k + 1]!, n, false);
   }
 
-  const topTwist = opts.helixHand * (opts.faceWidthMm * Math.tan(betaRad)) / Math.max(2, rp);
-
   if (!useSpokes) {
     // Solid gear web from bore out to outer tooth ring
     const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
     const boreTop = mb.addPolarRing(angles, boreRadii, z1, 0);
     // Inner bore wall (normals pointing inward toward shaft axis)
     mb.stitchRings(boreBot, boreTop, n, true);
-    // Bottom cap (z = z0, normal -z)
-    mb.stitchRings(boreBot, outerRings[0]!, n, true);
-    // Top cap (z = z1, normal +z)
-    mb.stitchRings(boreTop, outerRings[zLayers]!, n, false);
+    // Bottom cap (z = z0, normal -z: t_theta x +r = -z -> flipWinding = false)
+    mb.stitchRings(boreBot, outerRings[0]!, n, false);
+    // Top cap (z = z1, normal +z: flipWinding = true)
+    mb.stitchRings(boreTop, outerRings[zLayers]!, n, true);
     return mb;
   }
 
@@ -4450,16 +4715,16 @@ function buildToothedWheelMesh(opts: {
   const hubBot = mb.addPolarRing(angles, hubR, z0, 0);
   const hubTop = mb.addPolarRing(angles, hubR, z1, 0);
   const rimBot = mb.addPolarRing(angles, rimInnerR, z0, 0);
-  const rimTop = mb.addPolarRing(angles, rimInnerR, z1, topTwist);
+  const rimTop = mb.addPolarRing(angles, rimInnerR, z1, 0);
 
   // Inner bore wall
   mb.stitchRings(boreBot, boreTop, n, true);
   // Inner solid hub collar annulus (bore -> hubR)
-  mb.stitchRings(boreBot, hubBot, n, true);
-  mb.stitchRings(boreTop, hubTop, n, false);
+  mb.stitchRings(boreBot, hubBot, n, false);
+  mb.stitchRings(boreTop, hubTop, n, true);
   // Outer solid rim annulus (rimInnerR -> toothRadii)
-  mb.stitchRings(rimBot, outerRings[0]!, n, true);
-  mb.stitchRings(rimTop, outerRings[zLayers]!, n, false);
+  mb.stitchRings(rimBot, outerRings[0]!, n, false);
+  mb.stitchRings(rimTop, outerRings[zLayers]!, n, true);
 
   // Classify each angular sector i into spoke vs window cutout
   const spokeCount = opts.spokes;
@@ -4479,20 +4744,20 @@ function buildToothedWheelMesh(opts: {
     const inSpoke = isSpokeSector[i]!;
 
     if (inSpoke) {
-      // Fill bottom & top spoke faces across [hubR .. rimInnerR]
-      mb.addQuad(hubBot + i, rimBot + i, rimBot + next, hubBot + next);
-      mb.addQuad(hubTop + i, hubTop + next, rimTop + next, rimTop + i);
+      // Fill bottom (-z) & top (+z) spoke faces across [hubR .. rimInnerR]
+      mb.addQuad(hubBot + i, hubBot + next, rimBot + next, rimBot + i);
+      mb.addQuad(hubTop + i, rimTop + i, rimTop + next, hubTop + next);
 
-      // If previous sector was a window, close the leading radial spoke side wall at index i
+      // If previous sector was a window, close the leading radial spoke side wall at index i (normal -theta)
       if (!isSpokeSector[prev]) {
-        mb.addQuad(hubBot + i, hubTop + i, rimTop + i, rimBot + i);
+        mb.addQuad(hubBot + i, rimBot + i, rimTop + i, hubTop + i);
       }
-      // If next sector is a window, close the trailing radial spoke side wall at index next
+      // If next sector is a window, close the trailing radial spoke side wall at index next (normal +theta)
       if (!isSpokeSector[next]) {
-        mb.addQuad(hubBot + next, rimBot + next, rimTop + next, hubTop + next);
+        mb.addQuad(hubBot + next, hubTop + next, rimTop + next, rimBot + next);
       }
     } else {
-      // Window cutout: close inner hub outer wall (at hubR) and outer rim inner wall (at rimInnerR)
+      // Window cutout: close inner hub outer wall (+r at hubR) and outer rim inner wall (-r at rimInnerR)
       mb.addQuad(hubBot + i, hubBot + next, hubTop + next, hubTop + i);
       mb.addQuad(rimBot + i, rimTop + i, rimTop + next, rimBot + next);
     }
@@ -4547,10 +4812,10 @@ function buildSteppedRotorHubBossMesh(opts: {
   const boreTop = mb.addPolarRing(angles, boreRadii, z0 + h, 0);
   // Inner bore wall
   mb.stitchRings(boreBot, boreTop, n, true);
-  // Bottom cap (z = z0)
-  mb.stitchRings(boreBot, extRings[0]!, n, true);
-  // Top cap (z = z0 + h)
-  mb.stitchRings(boreTop, extRings[extRings.length - 1]!, n, false);
+  // Bottom cap (z = z0, normal -z)
+  mb.stitchRings(boreBot, extRings[0]!, n, false);
+  // Top cap (z = z0 + h, normal +z)
+  mb.stitchRings(boreTop, extRings[extRings.length - 1]!, n, true);
 
   return mb;
 }
@@ -4564,10 +4829,30 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
   const metrics = computeGearboxMetrics(cfg);
   const submeshes: GearSubMesh[] = [];
 
+  const z1 = Math.max(10, Math.round(cfg.g1_teeth || 60));
+  const z2w = Math.max(10, Math.round(cfg.g2_wheel_teeth || 56));
+  const z2p = Math.max(8, Math.round(cfg.g2_pinion_teeth || 15));
+  const z3 = Math.max(8, Math.round(cfg.g3_teeth || 20));
+  const exactStage1Ratio =
+    cfg.stage_mode === "direct_1stage"
+      ? z1 / z3
+      : cfg.stage_mode === "compound_2stage"
+        ? z1 / z2p
+        : z1 / z2w;
+  const exactStage2Ratio = cfg.stage_mode === "direct_1stage" ? 1.0 : z2w / z3;
+  const exactTotalRatio = exactStage1Ratio * exactStage2Ratio;
+
   const r1 = 0.5 * metrics.g1_pitch_dia_mm;
   const r2w = 0.5 * metrics.g2_wheel_pitch_dia_mm;
   const r2p = 0.5 * metrics.g2_pinion_pitch_dia_mm;
   const r3 = 0.5 * metrics.g3_pitch_dia_mm;
+  const exactA12 =
+    cfg.stage_mode === "direct_1stage"
+      ? r1 + r3
+      : cfg.stage_mode === "compound_2stage"
+        ? r1 + r2p
+        : r1 + r2w;
+  const exactA23 = r2w + r3;
 
   // Compute (x, y, z) centers for Gear 1, Gear 2, Gear 3
   let x1 = 0;
@@ -4590,24 +4875,24 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
   } else {
     // True meshed center-to-center assembly
     if (cfg.stage_mode === "direct_1stage") {
-      x1 = -0.5 * metrics.center_distance_12_mm;
-      x3 = +0.5 * metrics.center_distance_12_mm;
+      x1 = -0.5 * exactA12;
+      x3 = +0.5 * exactA12;
       z1Base = 0;
       z3Base = 0;
     } else if (cfg.stage_mode === "compound_2stage") {
       // Gear 1 (at z = g2_wheel_face_mm) meshes with Gear 2 Pinion (z = g2_wheel_face_mm .. top)
       // Gear 2 Wheel (at z = 0) meshes with Gear 3 Pinion (at z = 0)
-      x1 = -metrics.center_distance_12_mm;
+      x1 = -exactA12;
       x2 = 0;
-      x3 = +metrics.center_distance_23_mm;
+      x3 = +exactA23;
       z1Base = cfg.g2_wheel_face_mm;
       z2Base = 0;
       z3Base = 0;
     } else {
       // "idler_reference": Gear 1 meshes with Gear 2 Wheel, Gear 2 Wheel/Pinion meshes with Gear 3
-      x1 = -metrics.center_distance_12_mm;
+      x1 = -exactA12;
       x2 = 0;
-      x3 = +metrics.center_distance_23_mm;
+      x3 = +exactA23;
       z1Base = 0;
       z2Base = 0;
       z3Base = 0;
@@ -4679,10 +4964,14 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
   }
 
   // ---- Gear 2: Purple Wheel + Lime-Green Coaxial Helical Pinion ----
+  let g2Phase = 0;
   if (cfg.stage_mode !== "direct_1stage") {
-    const g2SpinRatio = -metrics.stage1_ratio;
-    // Align tooth spaces with Gear 1's teeth at the mesh point with Gear 2 Pinion
-    const g2Phase = Math.PI / Math.max(8, cfg.g2_pinion_teeth);
+    const g2SpinRatio = -exactStage1Ratio;
+    // Gear 1 has a tooth peak at theta = 0 (+x). Gear 2 meets it at world theta = pi (-x).
+    // For even Z, local theta = pi is a tooth peak -> rotate by pi/Z to put a valley at pi.
+    // For odd Z (e.g. 15T), local theta = pi is already a valley -> phase = 0.
+    const zMesh2 = cfg.stage_mode === "compound_2stage" ? z2p : z2w;
+    g2Phase = zMesh2 % 2 === 0 ? Math.PI / zMesh2 : 0;
     // Keep a solid purple hub collar outside the Lime-Green coaxial pinion's outer diameter
     const g2HubOuterR = Math.max(
       cfg.g2_bore_mm * 0.75,
@@ -4778,10 +5067,15 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
 
   // ---- Gear 3: Slate-Grey Generator Pinion + Motor Shaft Collar ----
   const g3SpinRatio =
-    cfg.stage_mode === "direct_1stage" ? -metrics.total_ratio : +metrics.total_ratio;
-  const g3Phase = Math.PI / Math.max(8, cfg.g3_teeth);
+    cfg.stage_mode === "direct_1stage" ? -exactTotalRatio : +exactTotalRatio;
+  const g3BasePhase = z3 % 2 === 0 ? Math.PI / z3 : 0;
+  const g3Phase =
+    cfg.stage_mode === "direct_1stage"
+      ? g3BasePhase
+      : g3BasePhase - (z2w / z3) * g2Phase;
 
-  const g3HelixHand: 1 | -1 = cfg.g3_helix_hand === -1 ? -1 : 1;
+  const g3HelixHand: 1 | -1 =
+    cfg.stage_mode === "direct_1stage" ? -1 : cfg.g3_helix_hand === -1 ? -1 : 1;
   const g3PinionBuilder = buildToothedWheelMesh({
     teeth: cfg.g3_teeth,
     moduleMm: cfg.module_mm,

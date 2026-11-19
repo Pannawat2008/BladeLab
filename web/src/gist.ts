@@ -42,7 +42,11 @@ export function extractGistId(input: string): string {
   // 1. If it's a URL with ?gist= or &gist=
   const matchParam = /[?&]gist=([^&#\s]+)/i.exec(s);
   if (matchParam && matchParam[1]) {
-    s = decodeURIComponent(matchParam[1]).trim();
+    try {
+      s = decodeURIComponent(matchParam[1]).trim();
+    } catch {
+      s = matchParam[1].trim();
+    }
   }
 
   // 2. If it contains gist.githubusercontent.com/<user>/<id>/raw/...
@@ -293,22 +297,39 @@ export async function fetchBladeLabGist(
     id: string;
     description: string | null;
     html_url: string;
-    files: Record<string, { filename: string; content?: string; raw_url: string }>;
+    files: Record<
+      string,
+      { filename: string; content?: string; raw_url: string; truncated?: boolean }
+    >;
+  };
+
+  const resolveFileContent = async (fileObj?: {
+    content?: string;
+    raw_url?: string;
+    truncated?: boolean;
+  }): Promise<string | null> => {
+    if (!fileObj) return null;
+    if (!fileObj.truncated && fileObj.content && fileObj.content.trim().length > 0) {
+      return fileObj.content;
+    }
+    if (fileObj.raw_url) {
+      const rawResp = await fetch(fileObj.raw_url);
+      if (rawResp.ok) {
+        const text = await rawResp.text();
+        if (text.trim().length > 0) return text;
+      }
+    }
+    if (fileObj.content && fileObj.content.trim().length > 0) {
+      return fileObj.content;
+    }
+    return null;
   };
 
   // Find the bladelab json file, or the first valid JSON file in the gist
   let jsonContent: string | null = null;
 
   if (data.files && data.files[BLADELAB_GIST_FILENAME]) {
-    const blFile = data.files[BLADELAB_GIST_FILENAME];
-    if (blFile.content && blFile.content.trim().length > 0) {
-      jsonContent = blFile.content;
-    } else if (blFile.raw_url) {
-      const rawResp = await fetch(blFile.raw_url);
-      if (rawResp.ok) {
-        jsonContent = await rawResp.text();
-      }
-    }
+    jsonContent = await resolveFileContent(data.files[BLADELAB_GIST_FILENAME]);
   }
 
   if (!jsonContent && data.files) {
@@ -316,16 +337,8 @@ export async function fetchBladeLabGist(
       const fileObj = data.files[key];
       if (!fileObj) continue;
       if (key.endsWith(".json") || key.toLowerCase().includes("bladelab")) {
-        if (fileObj.content && fileObj.content.trim().length > 0) {
-          jsonContent = fileObj.content;
-          break;
-        } else if (fileObj.raw_url) {
-          const rawResp = await fetch(fileObj.raw_url);
-          if (rawResp.ok) {
-            jsonContent = await rawResp.text();
-            break;
-          }
-        }
+        jsonContent = await resolveFileContent(fileObj);
+        if (jsonContent) break;
       }
     }
   }
@@ -333,8 +346,9 @@ export async function fetchBladeLabGist(
   // Last-ditch effort: try any file whose content starts with '{'
   if (!jsonContent && data.files) {
     for (const fileObj of Object.values(data.files)) {
-      if (fileObj?.content && fileObj.content.trim().startsWith("{")) {
-        jsonContent = fileObj.content;
+      const candidate = await resolveFileContent(fileObj);
+      if (candidate && candidate.trim().startsWith("{")) {
+        jsonContent = candidate;
         break;
       }
     }

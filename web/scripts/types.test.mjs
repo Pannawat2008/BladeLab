@@ -71,6 +71,7 @@ import {
   GITHUB_TOKEN_STORAGE_KEY,
   buildGistShareUrl,
   extractGistId,
+  fetchBladeLabGist,
 } from "../src/gist.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1005,7 +1006,7 @@ test("Gearbox Studio workspace tab and interactive 3D gear settings inspector (T
   assert.equal(snap.workbench.gearbox_inspector_open, true);
 
   // 2. Verify HTML template layout separation
-  const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   assert.ok(html.includes('id="tab-studio-blade"'), "top dock must have Blade Studio tab");
   assert.ok(html.includes('id="tab-studio-gearbox"'), "top dock must have Gearbox Studio tab");
   assert.ok(html.includes('id="gearbox-toolbar-controls"'), "top dock must have Gearbox toolbar controls");
@@ -1177,7 +1178,7 @@ test("Parametric Winglets, Collective Pitch & Feathering, and Windward Impact He
   assert.equal(customSnap.workbench.winglet?.height_mm, 35);
 
   // 5. HTML Elements Verification
-  const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   assert.ok(html.includes('value="wind_impact"'), "Heatmap dropdown must contain wind_impact option");
   assert.ok(html.includes('id="collective-pitch-toolbar-group"'), "Toolbar must contain collective-pitch-toolbar-group");
   assert.ok(html.includes('id="tb-collective-pitch"'), "Toolbar must contain tb-collective-pitch slider");
@@ -1245,7 +1246,7 @@ test("GitHub Gists Cloud integration: constants, share URLs, and DOM elements (T
   assert.equal(parsed.design.rotor.radius_mm, initialDesign.rotor.radius_mm);
 
   // 5. HTML Elements Verification
-  const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   assert.ok(html.includes('id="tab-drawer-gist"'), "Projects drawer must contain tab-drawer-gist button");
   assert.ok(html.includes('id="tab-drawer-local"'), "Projects drawer must contain tab-drawer-local button");
   assert.ok(html.includes('id="drawer-gist-panel"'), "Projects drawer must contain drawer-gist-panel");
@@ -1260,6 +1261,270 @@ test("GitHub Gists Cloud integration: constants, share URLs, and DOM elements (T
   assert.ok(html.includes('id="gist-designs-list"'), "Projects drawer must contain gist-designs-list");
   assert.ok(html.includes('id="btn-cloud-open-drawer"'), "Aero dock must contain btn-cloud-open-drawer button");
 });
+
+test("Task 5 security: evalFormulaPreview blocks JS execution and evaluates math safely", () => {
+  const rotor = initialDesign.rotor;
+  delete globalThis.__xss_formula_test;
+  const injected = evalFormulaPreview("(globalThis.__xss_formula_test = true, 42)", rotor, 0.5, 0.5);
+  assert.equal(globalThis.__xss_formula_test, undefined, "formula evaluator must NEVER execute arbitrary JS");
+  assert.equal(injected, 0);
+
+  // Standard mathematical formulas including unary minus with exponentiation (-s^2 = -(s^2))
+  assert.ok(Math.abs(evalFormulaPreview("60 - 25 * s", rotor, 0.55, 0.5) - 47.5) < 1e-9);
+  assert.ok(Math.abs(evalFormulaPreview("-s^2 + 70", rotor, 0.55, 0.5) - 69.75) < 1e-9);
+  assert.ok(Math.abs(evalFormulaPreview("2^-3", rotor, 0.55, 0.5) - 0.125) < 1e-9);
+  assert.ok(Math.abs(evalFormulaPreview("2^3^2", rotor, 0.55, 0.5) - 512) < 1e-9);
+  assert.ok(Math.abs(evalFormulaPreview("cos(pi * s)", rotor, 0.55, 1.0) - -1.0) < 1e-9);
+  assert.ok(
+    Math.abs(evalFormulaPreview("deg(atan2(1, tsr * x))", rotor, 0.5, 0.4444) - (Math.atan2(1, rotor.design_tsr * 0.5) * 180) / Math.PI) < 1e-9,
+  );
+  assert.ok(Math.abs(evalFormulaPreview("pow(2, 3) + abs(-4) + sqrt(9)", rotor, 0.5, 0.5) - 15) < 1e-9);
+  assert.ok(Math.abs(evalFormulaPreview("max(10, min(25, r_hub))", rotor, 0.5, 0.5) - 25) < 1e-9);
+});
+
+test("Task 5 security: renderAirfoilSectionSvgMarkup escapes HTML/SVG injection in airfoil name", () => {
+  const malicious = updatePrimaryAirfoil(initialDesign, {
+    type: "named",
+    name: "</text><image href=x onerror=alert(1)><text>",
+  });
+  const svg = renderAirfoilSectionSvgMarkup(malicious);
+  assert.ok(!svg.includes("<image"), "raw <image tag must not appear in SVG output");
+  assert.ok(svg.includes("&lt;image"), "injected markup must be HTML-escaped");
+});
+
+test("Task 5 gearbox: watertight outward normals (0 inconsistent edges, positive volume) & exact meshing", () => {
+  const cfg = defaultGearboxConfig();
+  const bundle = buildGearboxMeshes(cfg);
+
+  for (const sub of bundle.submeshes) {
+    const { positions, indices } = sub;
+    const directedEdges = new Map();
+    let signedVol6 = 0;
+
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+
+      const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+      const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
+      const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
+      signedVol6 +=
+        ax * (by * cz - bz * cy) +
+        ay * (bz * cx - bx * cz) +
+        az * (bx * cy - by * cx);
+
+      for (const [u, v] of [
+        [a, b],
+        [b, c],
+        [c, a],
+      ]) {
+        const key = `${u},${v}`;
+        directedEdges.set(key, (directedEdges.get(key) ?? 0) + 1);
+      }
+    }
+
+    let inconsistent = 0;
+    let boundary = 0;
+    for (const [key, count] of directedEdges.entries()) {
+      if (count > 1) inconsistent += count - 1;
+      const [u, v] = key.split(",");
+      if (!directedEdges.has(`${v},${u}`)) boundary++;
+    }
+
+    assert.equal(inconsistent, 0, `${sub.id}: expected 0 inconsistently wound shared edges, got ${inconsistent}`);
+    assert.equal(boundary, 0, `${sub.id}: expected 0 boundary edges (watertight), got ${boundary}`);
+    assert.ok(signedVol6 > 0, `${sub.id}: expected positive signed volume (outward normals), got ${signedVol6 / 6}`);
+  }
+
+  // Default Gear 2 Pinion has Z=15 (odd), so at world theta=pi it ALREADY has a valley when mesh_phase_rad === 0
+  const g2Pinion = bundle.submeshes.find((s) => s.id === "gear2-pinion");
+  assert.equal(g2Pinion.mesh_phase_rad, 0, "odd-tooth Gear 2 Pinion (15T) must have mesh_phase_rad === 0 so valley sits at pi");
+
+  // Even-tooth Gear 2 Pinion (16T) must have mesh_phase_rad === pi/16, and Gear 3 phase must co-rotate by -(z2w/z3)*g2Phase
+  const evenBundle = buildGearboxMeshes({ ...cfg, g2_pinion_teeth: 16 });
+  const g2Even = evenBundle.submeshes.find((s) => s.id === "gear2-pinion");
+  const g3Even = evenBundle.submeshes.find((s) => s.id === "gear3-pinion");
+  assert.ok(Math.abs(g2Even.mesh_phase_rad - Math.PI / 16) < 1e-9);
+  const expectedG3Even = Math.PI / cfg.g3_teeth - (cfg.g2_wheel_teeth / cfg.g3_teeth) * (Math.PI / 16);
+  assert.ok(Math.abs(g3Even.mesh_phase_rad - expectedG3Even) < 1e-9);
+
+  // Direct 1-stage mode: Gear 3 meshes directly with Gear 1 (+1 RH), so Gear 3 must use opposing -1 LH helix
+  const directBundle = buildGearboxMeshes({ ...cfg, stage_mode: "direct_1stage", g3_helix_hand: 1 });
+  const directG3 = directBundle.submeshes.find((s) => s.id === "gear3-pinion");
+  const compoundG3Lh = buildGearboxMeshes({ ...cfg, stage_mode: "compound_2stage", g3_helix_hand: -1 }).submeshes.find(
+    (s) => s.id === "gear3-pinion",
+  );
+  assert.deepEqual(
+    Array.from(directG3.positions),
+    Array.from(compoundG3Lh.positions),
+    "direct_1stage Gear 3 must oppose Gear 1 (+1 RH) with -1 LH helix",
+  );
+
+  // Exact unrounded spin_ratio (e.g. 60/14 = 4.2857142857..., not 4.286)
+  const exactCfg = { ...cfg, g1_teeth: 60, g2_pinion_teeth: 14, g2_wheel_teeth: 56, g3_teeth: 19 };
+  const exactBundle = buildGearboxMeshes(exactCfg);
+  const g2Exact = exactBundle.submeshes.find((s) => s.id === "gear2-wheel");
+  const g3Exact = exactBundle.submeshes.find((s) => s.id === "gear3-pinion");
+  assert.ok(Math.abs(g2Exact.spin_ratio - -(60 / 14)) < 1e-12, `expected exact -60/14, got ${g2Exact.spin_ratio}`);
+  assert.ok(
+    Math.abs(g3Exact.spin_ratio - (60 / 14) * (56 / 19)) < 1e-12,
+    `expected exact (60/14)*(56/19), got ${g3Exact.spin_ratio}`,
+  );
+});
+
+test("Task 5 heatmaps: radial span_ratio mapping, wind_impact twist_deg + qLocal, and wall_stress lookup", () => {
+  const bigHubDesign = structuredClone(initialDesign);
+  bigHubDesign.rotor.hub_radius_mm = 150;
+  bigHubDesign.rotor.radius_mm = 600;
+  const mockBundle = {
+    design_point: {
+      rpm: 600,
+      cp: 0.42,
+      ct: 0.7,
+      cq: 0.08,
+      power_w: 120,
+      thrust_n: 20,
+      torque_nm: 1.9,
+      stations: [
+        { span_ratio: 0.25, radius_mm: 150, chord_mm: 70, twist_deg: 25, inflow_angle_deg: 35, alpha_deg: 1.0, axial_induction: 0.2, tangential_induction: 0.05, tip_loss_factor: 1, reynolds: 5e4, cl: 0.4, cd: 0.04, cn: 0.4, ct: 0.1, relative_speed_mps: 10, thrust_per_m_n: 10, torque_per_m_nm: 1 },
+        { span_ratio: 0.42, radius_mm: 252, chord_mm: 60, twist_deg: 15, inflow_angle_deg: 22, alpha_deg: 13.0, axial_induction: 0.3, tangential_induction: 0.02, tip_loss_factor: 1, reynolds: 8e4, cl: 1.2, cd: 0.015, cn: 1.2, ct: 0.3, relative_speed_mps: 20, thrust_per_m_n: 30, torque_per_m_nm: 4 },
+        { span_ratio: 1.0, radius_mm: 600, chord_mm: 35, twist_deg: 2, inflow_angle_deg: 8, alpha_deg: 6.0, axial_induction: 0.33, tangential_induction: 0.01, tip_loss_factor: 0.9, reynolds: 1.2e5, cl: 0.9, cd: 0.012, cn: 0.9, ct: 0.2, relative_speed_mps: 45, thrust_per_m_n: 50, torque_per_m_nm: 6 },
+      ],
+    },
+    sweep: [],
+    peak_cp: 0.42,
+    peak_tsr: 4.5,
+    peak_power_w: 120,
+  };
+
+  const positions = new Float32Array([0, 0, 150, 0, 0, 252]);
+  const alphaHm = computeVertexHeatmapColors(positions, bigHubDesign, mockBundle, null, "alpha");
+  const diffAlpha =
+    Math.abs(alphaHm.colors[0] - alphaHm.colors[3]) +
+    Math.abs(alphaHm.colors[1] - alphaHm.colors[4]) +
+    Math.abs(alphaHm.colors[2] - alphaHm.colors[5]);
+  assert.ok(diffAlpha > 0.5, `z=150 (alpha=1°) and z=252 (alpha=13°) must have distinct colors; got diff=${diffAlpha}`);
+
+  const bundleTwistA = structuredClone(mockBundle);
+  const bundleTwistB = structuredClone(mockBundle);
+  for (const st of bundleTwistA.design_point.stations) st.twist_deg = 0;
+  for (const st of bundleTwistB.design_point.stations) st.twist_deg = 22;
+  const impactPos = new Float32Array([0, -2, 300, 0, -2, 580]);
+  const impactNorm = new Float32Array([0, -1, 0, 0, -1, 0]);
+  const hmA = computeVertexHeatmapColors(impactPos, bigHubDesign, bundleTwistA, null, "wind_impact", impactNorm, 0);
+  const hmB = computeVertexHeatmapColors(impactPos, bigHubDesign, bundleTwistB, null, "wind_impact", impactNorm, 0);
+  const twistDelta =
+    Math.abs(hmA.colors[0] - hmB.colors[0]) +
+    Math.abs(hmA.colors[1] - hmB.colors[1]) +
+    Math.abs(hmA.colors[2] - hmB.colors[2]);
+  assert.ok(twistDelta > 0.02, `wind_impact must depend on twist_deg (not alpha_deg); got delta=${twistDelta}`);
+
+  const bundleConstTwist = structuredClone(mockBundle);
+  for (const st of bundleConstTwist.design_point.stations) {
+    st.twist_deg = 5;
+    st.alpha_deg = 6;
+  }
+  const hmRadial = computeVertexHeatmapColors(impactPos, bigHubDesign, bundleConstTwist, null, "wind_impact", impactNorm, 0);
+  const radialDelta =
+    Math.abs(hmRadial.colors[0] - hmRadial.colors[3]) +
+    Math.abs(hmRadial.colors[1] - hmRadial.colors[4]) +
+    Math.abs(hmRadial.colors[2] - hmRadial.colors[5]);
+  assert.ok(radialDelta > 0.02, `wind_impact must reflect radial dynamic pressure qLocal; got delta=${radialDelta}`);
+});
+
+test("Task 5 snapshots, winglet geometry, printer fit, and gist safety", async () => {
+  const incomplete = structuredClone(initialDesign);
+  delete incomplete.overrides;
+  assert.throws(() => parseLoadedProjectJson(JSON.stringify(incomplete)));
+  const noHub = structuredClone(initialDesign);
+  delete noHub.hub;
+  assert.throws(() => parseLoadedProjectJson(JSON.stringify(noHub)));
+
+  const merged = createWorkbenchSnapshot(initialDesign, {}, { winglet: { enabled: true }, gearbox: { g1_teeth: 48 } });
+  assert.equal(merged.workbench.winglet.enabled, true);
+  assert.equal(merged.workbench.winglet.cant_angle_deg, 50.0);
+  assert.equal(merged.workbench.gearbox.g1_teeth, 48);
+  assert.equal(merged.workbench.gearbox.g3_teeth, 20);
+
+  const zeroSweepPts = new Float32Array([0, 0, 585, 0, 0, 600]);
+  applyWingletToBladeGeometry(zeroSweepPts, initialDesign, {
+    enabled: true,
+    cant_angle_deg: 50,
+    height_mm: 30,
+    sweep_angle_deg: 0,
+    blend_radius_mm: 20,
+  });
+  assert.equal(zeroSweepPts[3], 0, "sweep_angle_deg: 0 must produce dx === 0 (not fallback 10°)");
+
+  const highCantPts = new Float32Array([0, 0, 560, 0, 0, 570, 0, 0, 580, 0, 0, 590, 0, 0, 600]);
+  applyWingletToBladeGeometry(highCantPts, initialDesign, {
+    enabled: true,
+    cant_angle_deg: 75,
+    height_mm: 10,
+    sweep_angle_deg: 0,
+    blend_radius_mm: 40,
+  });
+  for (let i = 1; i < 5; i++) {
+    assert.ok(
+      highCantPts[i * 3 + 2] >= highCantPts[(i - 1) * 3 + 2] - 1e-6,
+      `winglet z must remain monotonically non-decreasing (no backward fold): z[${i - 1}]=${highCantPts[(i - 1) * 3 + 2]} > z[${i}]=${highCantPts[i * 3 + 2]}`,
+    );
+  }
+
+  const fitDesign = updateBladeLengthMm(initialDesign, 508);
+  const fab1 = { ...defaultFabricationSnapshot(), split_parts: 1, align_shape: "contour", align_height_mm: 8 };
+  const fit1 = evaluatePrinterBuildFit(fitDesign, fab1, "bambu_256");
+  assert.equal(fit1.all_fit, false);
+  assert.equal(fit1.recommended_split_parts, 3, "508 mm blade with 8 mm split lip needs 3 parts on 256 mm Z bed");
+  const fitAfter = evaluatePrinterBuildFit(fitDesign, { ...fab1, split_parts: fit1.recommended_split_parts }, "bambu_256");
+  assert.equal(fitAfter.all_fit, true, "recommended_split_parts must fit on the first click");
+
+  const wideChordDesign = applyLinearLayer1(clearAllOverrides(updateBladeLengthMm(initialDesign, 200)), 400, 400, 15, 3);
+  const xyFail = evaluatePrinterBuildFit(wideChordDesign, { ...defaultFabricationSnapshot(), split_parts: 1 }, "bambu_256");
+  assert.equal(xyFail.all_fit, false);
+  assert.ok(!xyFail.summary.includes("-"), `XY-only failure must not report negative Z exceedance: ${xyFail.summary}`);
+
+  assert.doesNotThrow(() => extractGistId("?gist=%E0%A4%A"));
+
+  const origFetch = globalThis.fetch;
+  const fullPayload = JSON.stringify(createWorkbenchSnapshot(initialDesign, {}, {}, "Truncated Test"));
+  let rawFetched = false;
+  globalThis.fetch = async (url) => {
+    const s = String(url);
+    if (s.includes("api.github.com/gists/")) {
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          id: "abc1234",
+          description: "[BladeLab] Truncated Test",
+          html_url: "https://gist.github.com/abc1234",
+          files: {
+            [BLADELAB_GIST_FILENAME]: {
+              filename: BLADELAB_GIST_FILENAME,
+              truncated: true,
+              content: fullPayload.slice(0, 40),
+              raw_url: "https://gist.githubusercontent.com/raw/abc1234/bladelab-design.json",
+            },
+          },
+        }),
+      };
+    }
+    rawFetched = true;
+    return { ok: true, status: 200, statusText: "OK", text: async () => fullPayload };
+  };
+  try {
+    const loaded = await fetchBladeLabGist("abc1234");
+    assert.equal(rawFetched, true, "truncated gist file must fetch raw_url");
+    assert.equal(loaded.name, "Truncated Test");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+
 
 
 
