@@ -24,6 +24,7 @@
         --bg-card: #11141c;
         --bg-raised: #1a1e28;
         --bg-raised-hover: #222734;
+        --bg-hover: #222734;
         --border-hairline: rgba(238, 240, 245, 0.08);
         --border-strong: rgba(238, 240, 245, 0.14);
         --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -47,6 +48,7 @@
         --radius-panel: 16px;
         --radius-card: 12px;
         --radius-control: 8px;
+        --radius-sm: 6px;
         --radius-tag: 4px;
 
         /* Single Easing Curve */
@@ -499,6 +501,17 @@
         border-color: #ffffff;
         color: var(--bg-deep);
       }
+      button.btn-secondary {
+        background: var(--bg-raised);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
+        font-weight: 500;
+      }
+      button.btn-secondary:hover:not(:disabled) {
+        background: var(--bg-raised-hover);
+        border-color: var(--accent);
+        color: var(--text-primary);
+      }
       button:disabled {
         opacity: 0.4;
         cursor: not-allowed;
@@ -595,6 +608,11 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8px 12px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px 10px;
       }
 
       /* Asymmetric Wind-Tunnel Telemetry Deck (replaces generic 4-equal-card grid — frontend-design Pass 1) */
@@ -1164,10 +1182,6 @@
       }
 
       /* Station Table (Right-aligned numeric columns, uniform 32px rows) */
-      .table-wrap {
-        width: 100%;
-        overflow-x: auto;
-      }
       .table-wrap {
         width: 100%;
         overflow-x: auto;

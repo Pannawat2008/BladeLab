@@ -533,6 +533,20 @@ export function updateRotorField<K extends keyof Rotor>(
   const next = cloneDesign(design);
   const oldHubRatio = design.rotor.hub_radius_mm / design.rotor.radius_mm;
   next.rotor[field] = value;
+
+  if (field === "hub_radius_mm" && typeof value === "number" && Number.isFinite(value) && value > 0) {
+    next.hub.diameter_mm = Number((2 * value).toFixed(4));
+    if (next.hub.bore_diameter_mm >= next.hub.diameter_mm) {
+      next.hub.bore_diameter_mm = Number((next.hub.diameter_mm * 0.5).toFixed(2));
+      if (
+        typeof next.hub.shaft_flat_radial_mm === "number" &&
+        next.hub.shaft_flat_radial_mm >= next.hub.bore_diameter_mm / 2
+      ) {
+        next.hub.shaft_flat_radial_mm = null;
+      }
+    }
+  }
+
   const newHubRatio = next.rotor.hub_radius_mm / next.rotor.radius_mm;
 
   if (

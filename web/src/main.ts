@@ -14,7 +14,6 @@ import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
 import init, {
   build_mesh,
   export_3mf_bytes,
-  export_all_split_step,
   export_fabricated_3mf_bytes,
   export_fabricated_step,
   export_fabricated_stl_bytes,
@@ -98,6 +97,7 @@ import {
   scaleAllChords,
   setStationOverride,
   shiftAllChordsMm,
+  snapSpanRatioToGrid,
   type StructuralMaterialKey,
   type StructuralMechanicsReport,
   updateBezierControlPoint,
@@ -117,6 +117,7 @@ import {
   getStoredGitHubToken,
   setStoredGitHubToken,
   verifyGitHubUser,
+  GitHubAuthError,
   listBladeLabGists,
   saveBladeLabGist,
   fetchBladeLabGist,
@@ -150,8 +151,12 @@ document.getElementById("app")!.appendChild(renderer.domElement);
 // Global Image-Based Lighting (IBL) via PMREM RoomEnvironment
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
 pmremGenerator.compileEquirectangularShader();
-scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+const roomEnv = new RoomEnvironment();
+const envRenderTarget = pmremGenerator.fromScene(roomEnv, 0.04);
+scene.environment = envRenderTarget.texture;
 scene.environmentIntensity = 0.85;
+roomEnv.dispose();
+pmremGenerator.dispose();
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0, 120);
@@ -552,27 +557,19 @@ function toggleStationLock(spanRatio: number): void {
 }
 
 // ---- Collective Pitch & Winglet Helpers ----
-let latestCleanBladePositions: Float32Array | null = null;
+function parseFiniteInput(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 function readCurrentWingletConfig(): WingletConfig {
   return {
     enabled: Boolean(inputWingletEnabled?.checked),
-    cant_angle_deg: Math.max(
-      15,
-      Math.min(75, Number.parseFloat(inputWingletCant?.value || "50") || 50),
-    ),
-    height_mm: Math.max(
-      5,
-      Math.min(50, Number.parseFloat(inputWingletHeight?.value || "22") || 22),
-    ),
-    sweep_angle_deg: Math.max(
-      0,
-      Math.min(25, Number.parseFloat(inputWingletSweep?.value || "10") || 10),
-    ),
-    blend_radius_mm: Math.max(
-      5,
-      Math.min(40, Number.parseFloat(inputWingletRadius?.value || "15") || 15),
-    ),
+    cant_angle_deg: Math.max(15, Math.min(75, parseFiniteInput(inputWingletCant?.value, 50))),
+    height_mm: Math.max(5, Math.min(50, parseFiniteInput(inputWingletHeight?.value, 22))),
+    sweep_angle_deg: Math.max(0, Math.min(25, parseFiniteInput(inputWingletSweep?.value, 10))),
+    blend_radius_mm: Math.max(5, Math.min(40, parseFiniteInput(inputWingletRadius?.value, 15))),
   };
 }
 
@@ -1238,6 +1235,29 @@ function selectGear(gearIdx: 1 | 2 | 3 | null, openInspector: boolean = true) {
   updateGearboxHud(gearIdx);
 }
 
+function disposeObject3D(root: THREE.Object3D): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((obj) => {
+    const meshOrLine = obj as {
+      geometry?: THREE.BufferGeometry;
+      material?: THREE.Material | THREE.Material[];
+    };
+    if (meshOrLine.geometry instanceof THREE.BufferGeometry) {
+      geometries.add(meshOrLine.geometry);
+    }
+    if (Array.isArray(meshOrLine.material)) {
+      for (const m of meshOrLine.material) {
+        if (m) materials.add(m);
+      }
+    } else if (meshOrLine.material) {
+      materials.add(meshOrLine.material);
+    }
+  });
+  for (const geo of geometries) geo.dispose();
+  for (const mat of materials) mat.dispose();
+}
+
 function rebuild3D(design: Design) {
   try {
     updateFabricationStatus(design);
@@ -1255,6 +1275,7 @@ function rebuild3D(design: Design) {
       viewportHeatmapLegend.setAttribute("aria-hidden", "true");
 
       if (rotorGroup !== null) {
+        disposeObject3D(rotorGroup);
         scene.remove(rotorGroup);
       }
       rotorGroup = new THREE.Group();
@@ -1312,6 +1333,9 @@ function rebuild3D(design: Design) {
         }
       }
 
+      if (wireframeMode) {
+        edgeMat.dispose();
+      }
       scene.add(rotorGroup);
       highlightSelectedGearIn3D(selectedGearIndex);
       updateStats(elapsed, {
@@ -1328,31 +1352,52 @@ function rebuild3D(design: Design) {
     const data = build_mesh(JSON.stringify(design), overridesJson);
     const elapsed = performance.now() - start;
 
+    let posCopy: Float32Array;
+    let idxCopy: Uint32Array;
+    let tubeAxis: Float64Array | null;
+    let meshStats: {
+      triangle_count: number;
+      volume_mm3: number;
+      span_min_mm: number;
+      span_max_mm: number;
+    };
+    try {
+      posCopy = new Float32Array(data.positions as Float32Array);
+      idxCopy = new Uint32Array(data.indices as Uint32Array);
+      const rawAxis = data.tube_axis as Float64Array | undefined;
+      tubeAxis = rawAxis && rawAxis.length >= 7 ? new Float64Array(rawAxis) : null;
+      meshStats = {
+        triangle_count: data.triangle_count,
+        volume_mm3: data.volume_mm3,
+        span_min_mm: data.span_min_mm,
+        span_max_mm: data.span_max_mm,
+      };
+    } finally {
+      data.free();
+    }
+
     errorBanner.style.display = "none";
     errorBanner.textContent = "";
 
     if (rotorGroup !== null) {
+      disposeObject3D(rotorGroup);
       scene.remove(rotorGroup);
     }
     rotorGroup = new THREE.Group();
 
-    const rawPositions = data.positions as Float32Array;
-    const rawIndices = data.indices as Uint32Array;
-    const tubeAxis = data.tube_axis;
-
-    const posCopy = new Float32Array(rawPositions);
     const wingletCfg = readCurrentWingletConfig();
     applyWingletToBladeGeometry(posCopy, design, wingletCfg);
 
-    const bladeGeo = buildCleanBladeGeometry(posCopy, rawIndices, 32);
+    const bladeGeo = buildCleanBladeGeometry(posCopy, idxCopy, 32);
     const posAttr = bladeGeo.getAttribute("position") as THREE.BufferAttribute;
-    latestCleanBladePositions = posAttr.array as Float32Array;
     const edgeGeo = !wireframeMode ? new THREE.EdgesGeometry(bladeGeo, 32) : null;
-    const edgeMat = new THREE.LineBasicMaterial({
-      color: 0x0f172a,
-      transparent: true,
-      opacity: 0.36,
-    });
+    const edgeMat = !wireframeMode
+      ? new THREE.LineBasicMaterial({
+          color: 0x0f172a,
+          transparent: true,
+          opacity: 0.36,
+        })
+      : null;
 
     const holeEnabled = inputSparHoleEnabled.checked;
     const showRod = holeEnabled && inputSparShowRod.checked;
@@ -1418,6 +1463,47 @@ function rebuild3D(design: Design) {
     // Center the blade pitch axis on X = 0 in both Single Blade and Full Rotor modes
     const pivotShift = -pivotX;
 
+    // Hoist shared spar rod geometry & material outside the per-blade loop
+    let sharedRodGeo: THREE.CylinderGeometry | null = null;
+    let sharedRodMat: THREE.MeshStandardMaterial | null = null;
+    let sharedRodMid: THREE.Vector3 | null = null;
+    let sharedRodQuat: THREE.Quaternion | null = null;
+    if (showRod) {
+      const stubOutMm = 18;
+      const startPt =
+        tubeAxis && tubeAxis.length >= 7
+          ? new THREE.Vector3(tubeAxis[0]! + pivotShift, tubeAxis[1]!, tubeAxis[2]!)
+          : new THREE.Vector3(pivotX + holeOx + pivotShift, holeOy, design.rotor.hub_radius_mm);
+      const endPt =
+        tubeAxis && tubeAxis.length >= 7
+          ? new THREE.Vector3(tubeAxis[3]! + pivotShift, tubeAxis[4]!, tubeAxis[5]!)
+          : new THREE.Vector3(
+              pivotX + holeOx + pivotShift,
+              holeOy,
+              design.rotor.hub_radius_mm + holeDepth,
+            );
+      const effRodRadius =
+        tubeAxis && tubeAxis.length >= 7
+          ? Math.max(0.4, tubeAxis[6]! * 0.94)
+          : Math.max(0.5, holeDia * 0.48);
+
+      const dir = new THREE.Vector3().subVectors(endPt, startPt);
+      const dirUnit = dir.length() > 1e-6 ? dir.clone().normalize() : new THREE.Vector3(0, 0, 1);
+      const rodStart = startPt.clone().addScaledVector(dirUnit, -stubOutMm);
+      const totalRodLen = rodStart.distanceTo(endPt);
+      sharedRodMid = new THREE.Vector3().addVectors(rodStart, endPt).multiplyScalar(0.5);
+      sharedRodQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        dirUnit,
+      );
+      sharedRodGeo = new THREE.CylinderGeometry(effRodRadius, effRodRadius, totalRodLen, 28);
+      sharedRodMat = new THREE.MeshStandardMaterial({
+        color: 0x10b981,
+        metalness: 0.65,
+        roughness: 0.25,
+      });
+    }
+
     const count = viewMode === "rotor" ? Math.max(1, design.rotor.blade_count) : 1;
     for (let i = 0; i < count; i++) {
       const branch = new THREE.Group();
@@ -1430,7 +1516,7 @@ function rebuild3D(design: Design) {
       bladeMesh.position.x = pivotShift;
       inner.add(bladeMesh);
 
-      if (edgeGeo) {
+      if (edgeGeo && edgeMat) {
         const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
         edgeLines.position.x = pivotShift;
         inner.add(edgeLines);
@@ -1440,40 +1526,10 @@ function rebuild3D(design: Design) {
       axisLine.position.x = pivotShift;
       inner.add(axisLine);
 
-      if (showRod) {
-        const stubOutMm = 18;
-        const startPt =
-          tubeAxis && tubeAxis.length >= 7
-            ? new THREE.Vector3(tubeAxis[0]! + pivotShift, tubeAxis[1]!, tubeAxis[2]!)
-            : new THREE.Vector3(pivotX + holeOx + pivotShift, holeOy, design.rotor.hub_radius_mm);
-        const endPt =
-          tubeAxis && tubeAxis.length >= 7
-            ? new THREE.Vector3(tubeAxis[3]! + pivotShift, tubeAxis[4]!, tubeAxis[5]!)
-            : new THREE.Vector3(
-                pivotX + holeOx + pivotShift,
-                holeOy,
-                design.rotor.hub_radius_mm + holeDepth,
-              );
-        const effRodRadius =
-          tubeAxis && tubeAxis.length >= 7
-            ? Math.max(0.4, tubeAxis[6]! * 0.94)
-            : Math.max(0.5, holeDia * 0.48);
-
-        const dir = new THREE.Vector3().subVectors(endPt, startPt);
-        const dirUnit = dir.length() > 1e-6 ? dir.clone().normalize() : new THREE.Vector3(0, 0, 1);
-        const rodStart = startPt.clone().addScaledVector(dirUnit, -stubOutMm);
-        const totalRodLen = rodStart.distanceTo(endPt);
-        const rodMid = new THREE.Vector3().addVectors(rodStart, endPt).multiplyScalar(0.5);
-
-        const rodGeo = new THREE.CylinderGeometry(effRodRadius, effRodRadius, totalRodLen, 28);
-        const rodMat = new THREE.MeshStandardMaterial({
-          color: 0x10b981,
-          metalness: 0.65,
-          roughness: 0.25,
-        });
-        const rodMesh = new THREE.Mesh(rodGeo, rodMat);
-        rodMesh.position.copy(rodMid);
-        rodMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirUnit);
+      if (sharedRodGeo && sharedRodMat && sharedRodMid && sharedRodQuat) {
+        const rodMesh = new THREE.Mesh(sharedRodGeo, sharedRodMat);
+        rodMesh.position.copy(sharedRodMid);
+        rodMesh.quaternion.copy(sharedRodQuat);
         inner.add(rodMesh);
       }
 
@@ -1490,8 +1546,8 @@ function rebuild3D(design: Design) {
       const hubOuterR = Math.max(12, design.hub.diameter_mm / 2);
       const hubInnerR = Math.max(2, Math.min(hubOuterR - 2, design.hub.bore_diameter_mm / 2));
       const hubLen = Math.max(10, design.hub.length_mm);
-      const rootCoreY =
-        tubeAxis && tubeAxis.length >= 7 ? tubeAxis[1]! : 0;
+      const rootCoreY = tubeAxis && tubeAxis.length >= 7 ? tubeAxis[1]! : 0;
+      const hubYOffset = bladeFlipped ? -rootCoreY : rootCoreY;
 
       const hubShape = new THREE.Shape();
       hubShape.absarc(0, 0, hubOuterR, 0, Math.PI * 2, false);
@@ -1505,7 +1561,7 @@ function rebuild3D(design: Design) {
         curveSegments: 64,
       });
       hubGeo.rotateX(Math.PI / 2);
-      hubGeo.translate(0, hubLen / 2 + rootCoreY, 0);
+      hubGeo.translate(0, hubLen / 2 + hubYOffset, 0);
 
       const hubMat = new THREE.MeshStandardMaterial({
         color: 0x64748b,
@@ -1518,7 +1574,7 @@ function rebuild3D(design: Design) {
       });
       const hubMesh = new THREE.Mesh(hubGeo, hubMat);
       rotorGroup.add(hubMesh);
-      if (!wireframeMode) {
+      if (edgeMat) {
         const hubEdges = new THREE.LineSegments(
           new THREE.EdgesGeometry(hubGeo, 32),
           edgeMat,
@@ -1530,7 +1586,7 @@ function rebuild3D(design: Design) {
     scene.add(rotorGroup);
     applyMeshChordOffset();
 
-    updateStats(elapsed, data);
+    updateStats(elapsed, meshStats);
   } catch (err) {
     errorBanner.style.display = "block";
     errorBanner.textContent = String(err);
@@ -2043,112 +2099,167 @@ function renderBezierEditor(design: Design) {
   }
   const polyPts = pts.map((p) => `${toSvgX(p.x).toFixed(1)},${toSvgY(p.y).toFixed(1)}`).join(" ");
 
-  bezierSvg.innerHTML = `
-    <polyline points="${polyPts}" fill="none" stroke="#262c3a" stroke-width="1" stroke-dasharray="3 3" />
-    <path d="${samples.join(" ")}" fill="none" stroke="#38bdf8" stroke-width="2" />
-  `;
+  const pathD = samples.join(" ");
+  const existingPoly = bezierSvg.querySelector<SVGPolylineElement>("polyline[data-bezier-poly]");
+  const existingPath = bezierSvg.querySelector<SVGPathElement>("path[data-bezier-curve]");
+  const existingCircles = bezierSvg.querySelectorAll<SVGCircleElement>("circle[data-bezier-pt]");
 
-  pts.forEach((pt, idx) => {
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
-    circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
-    circle.setAttribute("r", "5");
-    circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f59e0b" : "#38bdf8");
-    circle.setAttribute("stroke", "#07080d");
-    circle.setAttribute("stroke-width", "1.5");
-    circle.style.cursor = "grab";
-
-    circle.addEventListener("pointerdown", (ev) => {
-      ev.preventDefault();
-      circle.setPointerCapture(ev.pointerId);
-      const baseSnap = history.current();
-
-      const onMove = (moveEv: PointerEvent) => {
-        const rect = bezierSvg.getBoundingClientRect();
-        const relX = (moveEv.clientX - rect.left) * (w / Math.max(1, rect.width));
-        const relY = (moveEv.clientY - rect.top) * (h / Math.max(1, rect.height));
-        const normX =
-          idx === 0
-            ? 0
-            : idx === pts.length - 1
-              ? 1
-              : Math.min(1, Math.max(0, (relX - padX) / (w - 2 * padX)));
-        const valY =
-          yMin + (1 - (relY - padY) / (h - 2 * padY)) * (yMax - yMin);
-        workingDesign = updateBezierControlPoint(
-          baseSnap,
-          bezierTarget,
-          idx,
-          {
-            x: Number(normX.toFixed(3)),
-            y: Number(Math.min(yMax, Math.max(yMin, valY)).toFixed(2)),
-          },
-          lockedSpanRatios,
-        );
-        renderBezierEditor(workingDesign);
-        renderStationTable(workingDesign);
-        rebuild3D(workingDesign);
-      };
-
-      const onUp = () => {
-        circle.removeEventListener("pointermove", onMove);
-        circle.removeEventListener("pointerup", onUp);
-        circle.removeEventListener("pointercancel", onUp);
-        circle.removeEventListener("lostpointercapture", onUp);
-        commitDesign(workingDesign);
-      };
-
-      circle.addEventListener("pointermove", onMove);
-      circle.addEventListener("pointerup", onUp);
-      circle.addEventListener("pointercancel", onUp);
-      circle.addEventListener("lostpointercapture", onUp);
+  if (existingPoly && existingPath && existingCircles.length === pts.length) {
+    // Update SVG elements in place so pointer capture on dragged <circle> is never destroyed!
+    existingPoly.setAttribute("points", polyPts);
+    existingPath.setAttribute("d", pathD);
+    pts.forEach((pt, idx) => {
+      const circle = existingCircles[idx]!;
+      circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
+      circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
+      circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f59e0b" : "#38bdf8");
     });
+  } else {
+    bezierSvg.innerHTML = "";
+    const svgNs = "http://www.w3.org/2000/svg";
 
-    bezierSvg.appendChild(circle);
-  });
+    const polyline = document.createElementNS(svgNs, "polyline");
+    polyline.setAttribute("data-bezier-poly", "1");
+    polyline.setAttribute("points", polyPts);
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", "#262c3a");
+    polyline.setAttribute("stroke-width", "1");
+    polyline.setAttribute("stroke-dasharray", "3 3");
+    bezierSvg.appendChild(polyline);
 
-  bezierPointsBody.innerHTML = "";
-  pts.forEach((pt, idx) => {
-    const tr = document.createElement("tr");
-    const tdLabel = document.createElement("td");
-    tdLabel.textContent = `P${idx}`;
+    const curvePath = document.createElementNS(svgNs, "path");
+    curvePath.setAttribute("data-bezier-curve", "1");
+    curvePath.setAttribute("d", pathD);
+    curvePath.setAttribute("fill", "none");
+    curvePath.setAttribute("stroke", "#38bdf8");
+    curvePath.setAttribute("stroke-width", "2");
+    bezierSvg.appendChild(curvePath);
 
-    const tdX = document.createElement("td");
-    const inputX = document.createElement("input");
-    inputX.type = "number";
-    inputX.step = "0.05";
-    inputX.min = "0";
-    inputX.max = "1";
-    inputX.value = pt.x.toFixed(3);
-    inputX.disabled = idx === 0 || idx === pts.length - 1;
-    inputX.addEventListener("change", () => {
-      const val = Number.parseFloat(inputX.value);
-      if (Number.isFinite(val)) {
-        commitDesign(
-          updateBezierControlPoint(workingDesign, bezierTarget, idx, { x: val }, lockedSpanRatios),
-        );
+    const ptCount = pts.length;
+    pts.forEach((pt, idx) => {
+      const circle = document.createElementNS(svgNs, "circle");
+      circle.setAttribute("data-bezier-pt", String(idx));
+      circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
+      circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
+      circle.setAttribute("r", "5");
+      circle.setAttribute("fill", idx === 0 || idx === ptCount - 1 ? "#f59e0b" : "#38bdf8");
+      circle.setAttribute("stroke", "#07080d");
+      circle.setAttribute("stroke-width", "1.5");
+      circle.style.cursor = "grab";
+
+      circle.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault();
+        circle.setPointerCapture(ev.pointerId);
+        const baseSnap = history.current();
+        const activeTarget = bezierTarget;
+        const activeYMin = activeTarget === "chord_mm" ? 5 : -20;
+        const activeYMax = activeTarget === "chord_mm" ? 140 : 45;
+
+        const onMove = (moveEv: PointerEvent) => {
+          const rect = bezierSvg.getBoundingClientRect();
+          const relX = (moveEv.clientX - rect.left) * (w / Math.max(1, rect.width));
+          const relY = (moveEv.clientY - rect.top) * (h / Math.max(1, rect.height));
+          const normX =
+            idx === 0
+              ? 0
+              : idx === ptCount - 1
+                ? 1
+                : Math.min(1, Math.max(0, (relX - padX) / (w - 2 * padX)));
+          const valY =
+            activeYMin + (1 - (relY - padY) / (h - 2 * padY)) * (activeYMax - activeYMin);
+          workingDesign = updateBezierControlPoint(
+            baseSnap,
+            activeTarget,
+            idx,
+            {
+              x: Number(normX.toFixed(3)),
+              y: Number(Math.min(activeYMax, Math.max(activeYMin, valY)).toFixed(2)),
+            },
+            lockedSpanRatios,
+          );
+          renderBezierEditor(workingDesign);
+          renderStationTable(workingDesign);
+          rebuild3D(workingDesign);
+        };
+
+        const onUp = () => {
+          circle.removeEventListener("pointermove", onMove);
+          circle.removeEventListener("pointerup", onUp);
+          circle.removeEventListener("pointercancel", onUp);
+          circle.removeEventListener("lostpointercapture", onUp);
+          commitDesign(workingDesign);
+        };
+
+        circle.addEventListener("pointermove", onMove);
+        circle.addEventListener("pointerup", onUp);
+        circle.addEventListener("pointercancel", onUp);
+        circle.addEventListener("lostpointercapture", onUp);
+      });
+
+      bezierSvg.appendChild(circle);
+    });
+  }
+
+  const existingRows = bezierPointsBody.querySelectorAll<HTMLTableRowElement>("tr[data-bezier-row]");
+  if (existingRows.length === pts.length) {
+    pts.forEach((pt, idx) => {
+      const row = existingRows[idx]!;
+      const inputX = row.querySelector<HTMLInputElement>("input[data-axis='x']");
+      const inputY = row.querySelector<HTMLInputElement>("input[data-axis='y']");
+      if (inputX && document.activeElement !== inputX) {
+        inputX.value = pt.x.toFixed(3);
+      }
+      if (inputY && document.activeElement !== inputY) {
+        inputY.value = pt.y.toFixed(2);
       }
     });
-    tdX.appendChild(inputX);
+  } else {
+    bezierPointsBody.innerHTML = "";
+    pts.forEach((pt, idx) => {
+      const tr = document.createElement("tr");
+      tr.setAttribute("data-bezier-row", String(idx));
+      const tdLabel = document.createElement("td");
+      tdLabel.textContent = `P${idx}`;
 
-    const tdY = document.createElement("td");
-    const inputY = document.createElement("input");
-    inputY.type = "number";
-    inputY.step = "0.5";
-    inputY.value = pt.y.toFixed(2);
-    inputY.addEventListener("change", () => {
-      const val = Number.parseFloat(inputY.value);
-      if (Number.isFinite(val)) {
-        commitDesign(
-          updateBezierControlPoint(workingDesign, bezierTarget, idx, { y: val }, lockedSpanRatios),
-        );
-      }
+      const tdX = document.createElement("td");
+      const inputX = document.createElement("input");
+      inputX.setAttribute("data-axis", "x");
+      inputX.type = "number";
+      inputX.step = "0.05";
+      inputX.min = "0";
+      inputX.max = "1";
+      inputX.value = pt.x.toFixed(3);
+      inputX.disabled = idx === 0 || idx === pts.length - 1;
+      inputX.addEventListener("change", () => {
+        const val = Number.parseFloat(inputX.value);
+        if (Number.isFinite(val)) {
+          commitDesign(
+            updateBezierControlPoint(workingDesign, bezierTarget, idx, { x: val }, lockedSpanRatios),
+          );
+        }
+      });
+      tdX.appendChild(inputX);
+
+      const tdY = document.createElement("td");
+      const inputY = document.createElement("input");
+      inputY.setAttribute("data-axis", "y");
+      inputY.type = "number";
+      inputY.step = "0.5";
+      inputY.value = pt.y.toFixed(2);
+      inputY.addEventListener("change", () => {
+        const val = Number.parseFloat(inputY.value);
+        if (Number.isFinite(val)) {
+          commitDesign(
+            updateBezierControlPoint(workingDesign, bezierTarget, idx, { y: val }, lockedSpanRatios),
+          );
+        }
+      });
+      tdY.appendChild(inputY);
+
+      tr.append(tdLabel, tdX, tdY);
+      bezierPointsBody.appendChild(tr);
     });
-    tdY.appendChild(inputY);
-
-    tr.append(tdLabel, tdX, tdY);
-    bezierPointsBody.appendChild(tr);
-  });
+  }
 }
 
 function renderStationTable(design: Design) {
@@ -2399,8 +2510,15 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
 
   if (wb.studio_mode === "gearbox" || wb.view_mode === "gearbox") {
     setStudioMode("gearbox");
+    const wantInspectorOpen = Boolean(wb.gearbox_inspector_open ?? true);
     if (wb.gearbox_selected_gear !== undefined) {
-      selectGear(wb.gearbox_selected_gear, Boolean(wb.gearbox_inspector_open ?? true));
+      selectGear(wb.gearbox_selected_gear, wantInspectorOpen);
+    }
+    if (!wantInspectorOpen) {
+      gearboxInspector?.classList.remove("open");
+      btnToggleGearboxInspector?.classList.remove("active");
+      btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+      syncDockAccessibilityState();
     }
   } else {
     studioMode = "blade";
@@ -2784,6 +2902,8 @@ btnViewSpin.addEventListener("click", () => {
   spinRotorMode = !spinRotorMode;
   btnViewSpin.classList.toggle("active", spinRotorMode);
   btnViewSpin.setAttribute("aria-pressed", String(spinRotorMode));
+  btnTbGearSpin?.classList.toggle("active", spinRotorMode);
+  btnTbGearSpin?.setAttribute("aria-pressed", String(spinRotorMode));
 });
 
 selectHeatmapMode.addEventListener("change", () => {
@@ -2882,17 +3002,43 @@ function triggerBlobDownload(bytes: Uint8Array | string, filename: string, mime:
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 15_000);
+}
+
+function buildFreshWingletStlBytes(design: Design, winglet: WingletConfig): Uint8Array {
+  // Build an unexploded mesh (explode_gap_mm = 0) so winglet STL is always fresh and print-ready
+  const rawFab = JSON.parse(buildFabricationOverridesJson()) as Record<string, unknown>;
+  delete rawFab.explode_gap_mm;
+  const meshData = build_mesh(JSON.stringify(design), JSON.stringify(rawFab));
+  let posCopy: Float32Array;
+  let idxCopy: Uint32Array;
+  try {
+    posCopy = new Float32Array(meshData.positions as Float32Array);
+    idxCopy = new Uint32Array(meshData.indices as Uint32Array);
+  } finally {
+    meshData.free();
+  }
+  applyWingletToBladeGeometry(posCopy, design, winglet);
+  const cleanGeo = buildCleanBladeGeometry(posCopy, idxCopy, 32);
+  try {
+    const posAttr = cleanGeo.getAttribute("position") as THREE.BufferAttribute;
+    return exportBufferGeometryStlBytes(
+      posAttr.array as Float32Array,
+      `BladeLab R${design.rotor.radius_mm} Winglet Blade STL`,
+    );
+  } finally {
+    cleanGeo.dispose();
+  }
 }
 
 async function handleExport(format: "stl" | "3mf" | "step") {
   const part = selectExportPart.value as "blade" | "assembly" | "hub";
   const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
   const activePartSuffix =
-    splitParts > 1 && selectSplitActivePart.value !== "all"
+    part === "blade" && splitParts > 1 && selectSplitActivePart.value !== "all"
       ? `-part${Number.parseInt(selectSplitActivePart.value, 10) + 1}`
       : "";
-  const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
+  const holeSuffix = part === "blade" && format !== "step" && inputSparHoleEnabled.checked ? "-cfhole" : "";
   const baseName = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}-${part}${holeSuffix}${activePartSuffix}`;
   exportStatus.textContent = `Exporting ${format.toUpperCase()}...`;
 
@@ -2903,9 +3049,12 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     if (format === "step") {
       try {
         const stepText =
-          part === "blade" || part === "assembly" || part === "hub" || fabJson === "{}"
-            ? export_step(JSON.stringify(workingDesign), part)
-            : export_fabricated_step(JSON.stringify(workingDesign), fabJson);
+          part === "blade" && splitParts > 1
+            ? export_fabricated_step(
+                JSON.stringify(workingDesign),
+                buildFabricationOverridesJson(undefined, "smooth"),
+              )
+            : export_step(JSON.stringify(workingDesign), part);
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
         exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
         return;
@@ -2917,18 +3066,11 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     // 2. Fast in-browser wasm export for blade STL and 3MF (including carbon tube hole & split parts)
     if (part === "blade" && format === "stl") {
       const winglet = readCurrentWingletConfig();
-      let bytes: Uint8Array;
-      if (winglet.enabled && latestCleanBladePositions && latestCleanBladePositions.length > 0) {
-        bytes = exportBufferGeometryStlBytes(
-          latestCleanBladePositions,
-          `BladeLab R${workingDesign.rotor.radius_mm} Winglet Blade STL`,
-        );
-      } else {
-        bytes =
-          fabJson === "{}"
-            ? export_stl_bytes(JSON.stringify(workingDesign))
-            : export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
-      }
+      const bytes: Uint8Array = winglet.enabled
+        ? buildFreshWingletStlBytes(workingDesign, winglet)
+        : fabJson === "{}"
+          ? export_stl_bytes(JSON.stringify(workingDesign))
+          : export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
       triggerBlobDownload(bytes, `${baseName}.stl`, "model/stl");
       exportStatus.textContent = `Saved ${baseName}.stl (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
       return;
@@ -3000,9 +3142,12 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     if (format === "step") {
       try {
         const stepText =
-          fabJson === "{}"
-            ? export_step(JSON.stringify(workingDesign), part)
-            : export_fabricated_step(JSON.stringify(workingDesign), fabJson);
+          part === "blade" && splitParts > 1
+            ? export_fabricated_step(
+                JSON.stringify(workingDesign),
+                buildFabricationOverridesJson(undefined, "smooth"),
+              )
+            : export_step(JSON.stringify(workingDesign), part);
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
         exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
         return;
@@ -3154,13 +3299,26 @@ btnSparFullSpan.addEventListener("click", () => {
 btnExportSplitAll.addEventListener("click", () => {
   const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
   const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
-  for (let p = 0; p < splitParts; p++) {
-    const fabJson = buildFabricationOverridesJson(p);
-    const bytes = export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
-    const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}.stl`;
-    triggerBlobDownload(bytes, fname, "model/stl");
+  exportStatus.textContent = `Exporting ${splitParts} split STL part(s)...`;
+  try {
+    const outputs: Array<{ bytes: Uint8Array; fname: string }> = [];
+    for (let p = 0; p < splitParts; p++) {
+      const fabJson = buildFabricationOverridesJson(p);
+      const bytes = export_fabricated_stl_bytes(JSON.stringify(workingDesign), fabJson);
+      const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}.stl`;
+      outputs.push({ bytes, fname });
+    }
+    outputs.forEach(({ bytes, fname }, idx) => {
+      if (idx === 0) {
+        triggerBlobDownload(bytes, fname, "model/stl");
+      } else {
+        setTimeout(() => triggerBlobDownload(bytes, fname, "model/stl"), idx * 180);
+      }
+    });
+    exportStatus.textContent = `Saved ${splitParts} split STL part(s)`;
+  } catch (err) {
+    exportStatus.textContent = `STL split export failed: ${err instanceof Error ? err.message : String(err)}`;
   }
-  exportStatus.textContent = `Saved ${splitParts} split STL part(s)`;
 });
 
 function handleExportSplitAllStep(stepMode: "smooth" | "features" = "smooth") {
@@ -3169,12 +3327,20 @@ function handleExportSplitAllStep(stepMode: "smooth" | "features" = "smooth") {
   const modeSuffix = stepMode === "features" ? "-joints" : "-smooth";
   exportStatus.textContent = `Exporting ${splitParts} split STEP part(s) (${stepMode})...`;
   try {
+    const outputs: Array<{ stepText: string; fname: string }> = [];
     for (let p = 0; p < splitParts; p++) {
       const fabJson = buildFabricationOverridesJson(p, stepMode);
       const stepText = export_fabricated_step(JSON.stringify(workingDesign), fabJson);
       const fname = `bladelab-R${workingDesign.rotor.radius_mm}-part${p + 1}of${splitParts}${holeSuffix}${modeSuffix}.step`;
-      triggerBlobDownload(stepText, fname, "application/step");
+      outputs.push({ stepText, fname });
     }
+    outputs.forEach(({ stepText, fname }, idx) => {
+      if (idx === 0) {
+        triggerBlobDownload(stepText, fname, "application/step");
+      } else {
+        setTimeout(() => triggerBlobDownload(stepText, fname, "application/step"), idx * 180);
+      }
+    });
     exportStatus.textContent = `Saved ${splitParts} split STEP part(s) (${stepMode})`;
   } catch (err) {
     exportStatus.textContent = `STEP export failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -3286,10 +3452,21 @@ function loadSavedSlotsFromStorage(): SavedSlotEntry[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is SavedSlotEntry =>
-        Boolean(item && typeof item === "object" && "id" in item && "snapshot" in item),
-    );
+    return parsed.filter((item): item is SavedSlotEntry => {
+      if (!item || typeof item !== "object") return false;
+      const rec = item as Record<string, unknown>;
+      if (typeof rec.id !== "string" || typeof rec.name !== "string") return false;
+      const snap = rec.snapshot as Record<string, unknown> | undefined;
+      const design = snap?.design as Record<string, unknown> | undefined;
+      const rotor = design?.rotor as Record<string, unknown> | undefined;
+      return Boolean(
+        rotor &&
+          typeof rotor.radius_mm === "number" &&
+          Number.isFinite(rotor.radius_mm) &&
+          typeof rotor.blade_count === "number" &&
+          Number.isFinite(rotor.blade_count),
+      );
+    });
   } catch {
     return [];
   }
@@ -3328,11 +3505,13 @@ function renderSavedSlotsList() {
 
     const subEl = document.createElement("span");
     subEl.className = "slot-sub";
-    const d = entry.snapshot.design.rotor;
-    const fab = entry.snapshot.fabrication;
+    const d = entry.snapshot?.design?.rotor;
+    const fab = entry.snapshot?.fabrication;
     const splitTag =
       fab && fab.split_parts > 1 ? `${fab.split_parts}-part (${fab.align_shape})` : "1-part";
-    subEl.textContent = `R${d.radius_mm} B${d.blade_count} · ${splitTag} · ${formatShortTime(entry.saved_at)}`;
+    subEl.textContent = d
+      ? `R${d.radius_mm} B${d.blade_count} · ${splitTag} · ${formatShortTime(entry.saved_at)}`
+      : `Saved · ${formatShortTime(entry.saved_at)}`;
 
     info.append(nameEl, subEl);
 
@@ -3424,10 +3603,21 @@ slotNameInput.addEventListener("keydown", (ev) => {
 
 // ---- Layer 1 Rotor Listeners ----
 function bindRotorNumberInput(input: HTMLInputElement, field: keyof Design["rotor"], isInt = false) {
+  input.addEventListener("input", () => {
+    const raw = isInt ? Number.parseInt(input.value, 10) : Number.parseFloat(input.value);
+    if (!Number.isFinite(raw)) return;
+    if (field === "radius_mm" && raw <= workingDesign.rotor.hub_radius_mm + 5) return;
+    if (field === "hub_radius_mm" && (raw < 0 || raw >= workingDesign.rotor.radius_mm - 5)) return;
+    if (field === "blade_count" && raw < 1) return;
+    if (field === "station_count" && raw < 2) return;
+    workingDesign = updateRotorField(history.current(), field, raw);
+    renderStationTable(workingDesign);
+    rebuild3D(workingDesign);
+  });
   input.addEventListener("change", () => {
     const raw = isInt ? Number.parseInt(input.value, 10) : Number.parseFloat(input.value);
     if (Number.isFinite(raw)) {
-      commitDesign(updateRotorField(workingDesign, field, raw));
+      commitDesign(updateRotorField(history.current(), field, raw));
     }
   });
 }
@@ -3447,22 +3637,37 @@ inputBladeLength.addEventListener("change", () => {
     const newHub = next.rotor.hub_radius_mm / next.rotor.radius_mm;
     if (Math.abs(newHub - oldHub) > RATIO_EPS && lockedSpanRatios.length > 0) {
       for (let i = 0; i < lockedSpanRatios.length; i++) {
-        lockedSpanRatios[i] = remapSpanRatio(lockedSpanRatios[i]!, oldHub, newHub);
+        lockedSpanRatios[i] = snapSpanRatioToGrid(
+          remapSpanRatio(lockedSpanRatios[i]!, oldHub, newHub),
+          next.rotor,
+        );
       }
     }
     commitDesign(next);
   }
 });
 
+let bladeLenDragBaseLocked: number[] | null = null;
+sliderBladeLength.addEventListener("pointerdown", () => {
+  bladeLenDragBaseLocked = [...lockedSpanRatios];
+});
+
 sliderBladeLength.addEventListener("input", () => {
   const len = sliderBladeLength.valueAsNumber;
   bladeLengthVal.textContent = `${len} mm`;
-  const oldHub = history.current().rotor.hub_radius_mm / history.current().rotor.radius_mm;
-  workingDesign = updateBladeLengthMm(history.current(), len);
+  if (bladeLenDragBaseLocked === null) {
+    bladeLenDragBaseLocked = [...lockedSpanRatios];
+  }
+  const baseDesign = history.current();
+  const oldHub = baseDesign.rotor.hub_radius_mm / baseDesign.rotor.radius_mm;
+  workingDesign = updateBladeLengthMm(baseDesign, len);
   const newHub = workingDesign.rotor.hub_radius_mm / workingDesign.rotor.radius_mm;
-  if (Math.abs(newHub - oldHub) > RATIO_EPS && lockedSpanRatios.length > 0) {
-    for (let i = 0; i < lockedSpanRatios.length; i++) {
-      lockedSpanRatios[i] = remapSpanRatio(lockedSpanRatios[i]!, oldHub, newHub);
+  if (Math.abs(newHub - oldHub) > RATIO_EPS && bladeLenDragBaseLocked.length > 0) {
+    for (let i = 0; i < bladeLenDragBaseLocked.length; i++) {
+      lockedSpanRatios[i] = snapSpanRatioToGrid(
+        remapSpanRatio(bladeLenDragBaseLocked[i]!, oldHub, newHub),
+        workingDesign.rotor,
+      );
     }
   }
   inputRadius.value = String(workingDesign.rotor.radius_mm);
@@ -3472,6 +3677,7 @@ sliderBladeLength.addEventListener("input", () => {
 });
 
 sliderBladeLength.addEventListener("change", () => {
+  bladeLenDragBaseLocked = null;
   commitDesign(updateBladeLengthMm(history.current(), sliderBladeLength.valueAsNumber));
 });
 
@@ -3578,8 +3784,9 @@ inputAirfoilCamber.addEventListener("change", applySelectedAirfoil);
 // ---- Planform & Span Transitions Listeners ----
 function planformEndpoints(design: Design): { root: number; tip: number } {
   const { rotor, distributions } = design;
+  const rootRatio = rotor.radius_mm > 0 ? rotor.hub_radius_mm / rotor.radius_mm : 0.1;
   return {
-    root: evalChordCurve(distributions.chord_mm, rotor, 0, 0),
+    root: evalChordCurve(distributions.chord_mm, rotor, rootRatio, 0),
     tip: evalChordCurve(distributions.chord_mm, rotor, 1, 1),
   };
 }
@@ -3616,6 +3823,15 @@ btnPlanformLinear.addEventListener("click", () => {
   const { root, tip } = planformEndpoints(workingDesign);
   const next = cloneDesign(workingDesign);
   next.distributions.chord_mm = { type: "linear", root, tip };
+  const twistCenter = cosineCenterOf(workingDesign, "twist_deg");
+  if (twistCenter !== null) {
+    const secs = readSections(workingDesign, twistCenter);
+    next.distributions.twist_deg = {
+      type: "linear",
+      root: secs.root.twist_deg,
+      tip: secs.tip.twist_deg,
+    };
+  }
   commitDesign(preserveLockedStations(workingDesign, next, lockedSpanRatios));
 });
 
@@ -3637,18 +3853,18 @@ for (const slider of [sliderPlanformCenter, sliderPlanformWidth]) {
 
 // ---- Layer 1/2 Distribution Listeners ----
 btnModeLinear.addEventListener("click", () => {
-  const rootChord = Number.parseFloat(inputRootChord.value) || 70;
-  const tipChord = Number.parseFloat(chordSlider.value) || 35;
-  const rootTwist = Number.parseFloat(inputRootTwist.value) || 20;
-  const tipTwist = Number.parseFloat(twistSlider.value) || 3;
+  const rootChord = parseFiniteInput(inputRootChord.value, 70);
+  const tipChord = parseFiniteInput(chordSlider.value, 35);
+  const rootTwist = parseFiniteInput(inputRootTwist.value, 20);
+  const tipTwist = parseFiniteInput(twistSlider.value, 3);
   commitDesign(
     applyLinearLayer1(workingDesign, rootChord, tipChord, rootTwist, tipTwist, lockedSpanRatios),
   );
 });
 
 btnModeSchmitz.addEventListener("click", () => {
-  const cl = Number.parseFloat(inputSchmitzCl.value) || 1.0;
-  const alpha = Number.parseFloat(inputSchmitzAlpha.value) || 6.0;
+  const cl = parseFiniteInput(inputSchmitzCl.value, 1.0);
+  const alpha = parseFiniteInput(inputSchmitzAlpha.value, 6.0);
   commitDesign(applySchmitzLayer1(workingDesign, cl, alpha, lockedSpanRatios));
 });
 
@@ -3759,14 +3975,14 @@ chordSlider.addEventListener("change", onSliderChange);
 
 inputSchmitzCl.addEventListener("change", () => {
   const cl = Number.parseFloat(inputSchmitzCl.value);
-  const alpha = Number.parseFloat(inputSchmitzAlpha.value) || 6.0;
+  const alpha = parseFiniteInput(inputSchmitzAlpha.value, 6.0);
   if (Number.isFinite(cl) && cl > 0) {
     commitDesign(applySchmitzLayer1(workingDesign, cl, alpha, lockedSpanRatios));
   }
 });
 
 inputSchmitzAlpha.addEventListener("change", () => {
-  const cl = Number.parseFloat(inputSchmitzCl.value) || 1.0;
+  const cl = parseFiniteInput(inputSchmitzCl.value, 1.0);
   const alpha = Number.parseFloat(inputSchmitzAlpha.value);
   if (Number.isFinite(alpha)) {
     commitDesign(applySchmitzLayer1(workingDesign, cl, alpha, lockedSpanRatios));
@@ -3784,21 +4000,33 @@ document.querySelectorAll<HTMLElement>("[data-scrub-for]").forEach((labelEl) => 
     ev.preventDefault();
     labelEl.setPointerCapture(ev.pointerId);
     const startX = ev.clientX;
-    const startVal = Number.parseFloat(inputEl.value) || 0;
-    const step = Number.parseFloat(inputEl.step) || 1;
+    const startVal = parseFiniteInput(inputEl.value, 0);
+    const step = parseFiniteInput(inputEl.step, 1);
+    const isIntField =
+      targetId === "rotor-blades" ||
+      targetId === "rotor-stations" ||
+      (inputEl.step === "1" && Number.isInteger(startVal));
     const min = inputEl.min !== "" ? Number.parseFloat(inputEl.min) : undefined;
     const max = inputEl.max !== "" ? Number.parseFloat(inputEl.max) : undefined;
+    let moved = false;
 
     const onMove = (moveEv: PointerEvent) => {
-      const nextVal = applyScrubDelta(
+      let nextVal = applyScrubDelta(
         startVal,
         moveEv.clientX - startX,
         step,
-        { shiftKey: moveEv.shiftKey, altKey: moveEv.altKey },
+        { shiftKey: moveEv.shiftKey, altKey: isIntField ? false : moveEv.altKey },
         { min, max },
       );
-      inputEl.value = String(nextVal);
-      inputEl.dispatchEvent(new Event("change"));
+      if (isIntField) {
+        nextVal = Math.round(nextVal);
+      }
+      const nextStr = String(nextVal);
+      if (inputEl.value !== nextStr) {
+        moved = true;
+        inputEl.value = nextStr;
+        inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     };
 
     const onEnd = () => {
@@ -3806,6 +4034,9 @@ document.querySelectorAll<HTMLElement>("[data-scrub-for]").forEach((labelEl) => 
       labelEl.removeEventListener("pointerup", onEnd);
       labelEl.removeEventListener("pointercancel", onEnd);
       labelEl.removeEventListener("lostpointercapture", onEnd);
+      if (moved) {
+        inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     };
 
     labelEl.addEventListener("pointermove", onMove);
@@ -4107,6 +4338,8 @@ function renderGistsList(gists: BladeLabGistSummary[]) {
             loadBtn.textContent = "Loading...";
             loadBtn.disabled = true;
             const res = await fetchBladeLabGist(g.id, getStoredGitHubToken());
+            activeGistId = g.id;
+            activeGistName = res.name;
             applyWorkbenchSnapshot(res.snapshot, { commitToHistory: true, badgePrefix: "Gist" });
             if (gistDesignNameInput) gistDesignNameInput.value = res.name;
             if (inputCloudDesignName) inputCloudDesignName.value = res.name;
@@ -4171,6 +4404,10 @@ function renderGistsList(gists: BladeLabGistSummary[]) {
             delBtn.textContent = "...";
             delBtn.disabled = true;
             await deleteBladeLabGist(token, g.id);
+            if (activeGistId === g.id) {
+              activeGistId = null;
+              activeGistName = null;
+            }
             currentGists = currentGists.filter((item) => item.id !== g.id);
             renderGistsList(currentGists);
             if (gistStatusEl) gistStatusEl.textContent = `Deleted Gist "${g.name}"`;
@@ -4214,6 +4451,8 @@ function renderGistsList(gists: BladeLabGistSummary[]) {
           try {
             btnLoad.textContent = "...";
             const res = await fetchBladeLabGist(g.id, getStoredGitHubToken());
+            activeGistId = g.id;
+            activeGistName = res.name;
             applyWorkbenchSnapshot(res.snapshot, { commitToHistory: true, badgePrefix: "Gist" });
             if (cloudStatusEl) cloudStatusEl.textContent = `Loaded ${res.name}`;
             btnLoad.textContent = "Load";
@@ -4257,6 +4496,9 @@ async function refreshGistsFromGitHub(token: string) {
   }
 }
 
+let activeGistId: string | null = null;
+let activeGistName: string | null = null;
+
 async function syncGistAuthState() {
   const token = getStoredGitHubToken();
   if (token) {
@@ -4278,15 +4520,31 @@ async function syncGistAuthState() {
       await refreshGistsFromGitHub(token);
     } catch (err) {
       console.warn("GitHub token verification failed:", err);
-      setStoredGitHubToken(null);
-      if (gistAuthRow) gistAuthRow.style.display = "flex";
-      if (gistTokenHelp) gistTokenHelp.style.display = "block";
-      if (gistUserBar) gistUserBar.style.display = "none";
-      if (gistSaveContainer) gistSaveContainer.style.display = "none";
-      if (gistDesignsListEl) {
-        gistDesignsListEl.innerHTML = `<div class="slot-empty" style="color: var(--status-err)">Invalid token or expired. Please re-enter your GitHub token.</div>`;
+      const isAuthRejected = err instanceof GitHubAuthError && err.status === 401;
+      if (isAuthRejected) {
+        setStoredGitHubToken(null);
+        activeGistId = null;
+        activeGistName = null;
+        if (gistAuthRow) gistAuthRow.style.display = "flex";
+        if (gistTokenHelp) gistTokenHelp.style.display = "block";
+        if (gistUserBar) gistUserBar.style.display = "none";
+        if (gistSaveContainer) gistSaveContainer.style.display = "none";
+        if (gistDesignsListEl) {
+          gistDesignsListEl.innerHTML = `<div class="slot-empty" style="color: var(--status-err)">Invalid token or expired. Please re-enter your GitHub token.</div>`;
+        }
+        if (cloudStatusEl) cloudStatusEl.textContent = "Not connected to GitHub";
+      } else {
+        // Preserve PAT on offline / network / rate-limit / 5xx errors
+        if (gistAuthRow) gistAuthRow.style.display = "none";
+        if (gistTokenHelp) gistTokenHelp.style.display = "none";
+        if (gistUserBar) gistUserBar.style.display = "flex";
+        if (gistUserLogin) gistUserLogin.textContent = "Offline (token saved)";
+        if (gistSaveContainer) gistSaveContainer.style.display = "block";
+        if (gistDesignsListEl) {
+          gistDesignsListEl.innerHTML = `<div class="slot-empty">Could not reach GitHub (offline or rate-limited). Token preserved — click Refresh to retry.</div>`;
+        }
+        if (cloudStatusEl) cloudStatusEl.textContent = "GitHub offline (token preserved)";
       }
-      if (cloudStatusEl) cloudStatusEl.textContent = "Not connected to GitHub";
     } finally {
       if (btnGistConnect) {
         btnGistConnect.textContent = "Connect";
@@ -4294,6 +4552,8 @@ async function syncGistAuthState() {
       }
     }
   } else {
+    activeGistId = null;
+    activeGistName = null;
     if (gistAuthRow) gistAuthRow.style.display = "flex";
     if (gistTokenHelp) gistTokenHelp.style.display = "block";
     if (gistUserBar) gistUserBar.style.display = "none";
@@ -4365,6 +4625,8 @@ async function handleLoadGistFromInput() {
       gistLoadStatus.style.color = "var(--text-muted)";
     }
     const gistData = await fetchBladeLabGist(cleanId, getStoredGitHubToken());
+    activeGistId = cleanId;
+    activeGistName = gistData.name;
     applyWorkbenchSnapshot(gistData.snapshot, { commitToHistory: true, badgePrefix: "Gist" });
     if (gistDesignNameInput) gistDesignNameInput.value = gistData.name;
     if (inputCloudDesignName) inputCloudDesignName.value = gistData.name;
@@ -4427,10 +4689,26 @@ async function handleSaveCurrentToGist() {
     if (gistStatusEl) gistStatusEl.textContent = "Saving to GitHub Gist...";
 
     const snap = buildCurrentWorkbenchSnapshot(nameVal);
-    const created = await saveBladeLabGist(token, nameVal, snap, isPublic);
+    const canUpdateActive =
+      activeGistId !== null &&
+      activeGistName === nameVal &&
+      currentGists.some((g) => g.id === activeGistId);
+    const created = await saveBladeLabGist(
+      token,
+      nameVal,
+      snap,
+      isPublic,
+      canUpdateActive ? activeGistId ?? undefined : undefined,
+    );
+    activeGistId = created.id;
+    activeGistName = nameVal;
 
-    if (gistStatusEl) gistStatusEl.textContent = `Saved: ${created.id.slice(0, 7)}`;
-    if (exportStatus) exportStatus.textContent = `Saved to Gist "${nameVal}"`;
+    if (gistStatusEl) {
+      gistStatusEl.textContent = `${canUpdateActive ? "Updated" : "Saved"}: ${created.id.slice(0, 7)}`;
+    }
+    if (exportStatus) {
+      exportStatus.textContent = `${canUpdateActive ? "Updated" : "Saved"} Gist "${nameVal}"`;
+    }
     flushAutoSaveNow("Saved to Gist");
 
     await refreshGistsFromGitHub(token);
@@ -4494,6 +4772,8 @@ btnUndo.addEventListener("click", performUndo);
 btnRedo.addEventListener("click", performRedo);
 btnReset.addEventListener("click", () => {
   slotNameInput.value = "";
+  activeGistId = null;
+  activeGistName = null;
   const factorySnapshot = createWorkbenchSnapshot(
     initialDesign,
     defaultFabricationSnapshot(),
@@ -4946,51 +5226,55 @@ renderSavedSlotsList();
 
 let restoredOnStartup = false;
 
-// 1. Check if a ?gist=<gist_id> URL parameter was passed for instant cross-device opening
-const urlParams = new URLSearchParams(window.location.search);
-const gistParam = urlParams.get("gist");
-if (gistParam) {
-  try {
-    const cleanGistId = extractGistId(gistParam);
-    const gistData = await fetchBladeLabGist(cleanGistId, getStoredGitHubToken());
-    applyWorkbenchSnapshot(gistData.snapshot, {
-      commitToHistory: true,
-      badgePrefix: "Gist",
+// 1. Restore synchronously from local auto-save (or factory default) so initial 3D render is never blocked
+try {
+  const rawAutoSave = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
+  if (rawAutoSave) {
+    const restoredSnapshot = parseLoadedProjectJson(rawAutoSave);
+    const isDifferentFromInitial =
+      JSON.stringify(restoredSnapshot.design) !== JSON.stringify(initialDesign);
+    applyWorkbenchSnapshot(restoredSnapshot, {
+      commitToHistory: isDifferentFromInitial,
+      badgePrefix: "Restored",
     });
-    autosaveBadge.textContent = `Gist: ${gistData.name}`;
-    autosaveBadge.title = `Loaded from GitHub Gist ${cleanGistId}`;
-    if (gistDesignNameInput) gistDesignNameInput.value = gistData.name;
-    if (inputCloudDesignName) inputCloudDesignName.value = gistData.name;
     restoredOnStartup = true;
-    console.log(`Loaded design from GitHub Gist ${gistParam} (${gistData.name})`);
-  } catch (err) {
-    console.error("Failed to load Gist from URL param:", err);
-    errorBanner.textContent = `Could not load design from Gist URL: ${String(err)}`;
-    errorBanner.style.display = "block";
   }
-}
-
-// 2. If no Gist URL param, restore from local auto-save
-if (!restoredOnStartup) {
-  try {
-    const rawAutoSave = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
-    if (rawAutoSave) {
-      const restoredSnapshot = parseLoadedProjectJson(rawAutoSave);
-      const isDifferentFromInitial =
-        JSON.stringify(restoredSnapshot.design) !== JSON.stringify(initialDesign);
-      applyWorkbenchSnapshot(restoredSnapshot, {
-        commitToHistory: isDifferentFromInitial,
-        badgePrefix: "Restored",
-      });
-      restoredOnStartup = true;
-    }
-  } catch {
-    // Ignore corrupted storage and start from initialDesign
-  }
+} catch {
+  // Ignore corrupted storage and start from initialDesign
 }
 
 if (!restoredOnStartup) {
   syncControlsFromDesign(workingDesign);
   rebuild3D(workingDesign);
   flushAutoSaveNow("Auto-saved");
+}
+
+// 2. If a ?gist=<gist_id> URL parameter was passed, fetch and apply asynchronously without blocking initial 3D viewport
+const urlParams = new URLSearchParams(window.location.search);
+const gistParam = urlParams.get("gist");
+if (gistParam) {
+  const cleanGistId = extractGistId(gistParam);
+  if (cleanGistId) {
+    autosaveBadge.textContent = "Loading Gist...";
+    void fetchBladeLabGist(cleanGistId, getStoredGitHubToken())
+      .then((gistData) => {
+        activeGistId = cleanGistId;
+        activeGistName = gistData.name;
+        applyWorkbenchSnapshot(gistData.snapshot, {
+          commitToHistory: true,
+          badgePrefix: "Gist",
+        });
+        autosaveBadge.textContent = `Gist: ${gistData.name}`;
+        autosaveBadge.title = `Loaded from GitHub Gist ${cleanGistId}`;
+        if (gistDesignNameInput) gistDesignNameInput.value = gistData.name;
+        if (inputCloudDesignName) inputCloudDesignName.value = gistData.name;
+        console.log(`Loaded design from GitHub Gist ${gistParam} (${gistData.name})`);
+      })
+      .catch((err) => {
+        console.error("Failed to load Gist from URL param:", err);
+        errorBanner.textContent = `Could not load design from Gist URL: ${String(err)}`;
+        errorBanner.style.display = "block";
+        autosaveBadge.textContent = "Gist load failed";
+      });
+  }
 }

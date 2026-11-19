@@ -100,6 +100,15 @@ export function setStoredGitHubToken(token: string | null): void {
   }
 }
 
+export class GitHubAuthError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "GitHubAuthError";
+    this.status = status;
+  }
+}
+
 /**
  * Verifies the GitHub token against /user and returns the authenticated user profile.
  */
@@ -114,7 +123,10 @@ export async function verifyGitHubUser(token: string): Promise<GitHubUser> {
 
   if (!resp.ok) {
     if (resp.status === 401) {
-      throw new Error("Invalid GitHub token. Please verify token permissions (needs 'gist' scope).");
+      throw new GitHubAuthError(
+        401,
+        "Invalid GitHub token. Please verify token permissions (needs 'gist' scope).",
+      );
     }
     throw new Error(`GitHub API error: ${resp.status} ${resp.statusText}`);
   }

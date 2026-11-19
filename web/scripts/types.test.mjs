@@ -1524,6 +1524,59 @@ test("Task 5 snapshots, winglet geometry, printer fit, and gist safety", async (
   }
 });
 
+test("Task 6: CSS design tokens/classes, hub diameter sync, WASM fabricated STEP parity & main.ts safeguards", () => {
+  // 1. index.html defines all referenced CSS tokens and utility classes without duplicate .table-wrap
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
+  assert.ok(html.includes("--radius-sm:"), "index.html :root must define --radius-sm");
+  assert.ok(html.includes("--bg-hover:"), "index.html :root must define --bg-hover");
+  assert.ok(/\.grid-3\s*\{/.test(html), "index.html must define .grid-3 CSS rule");
+  assert.ok(/\.btn-secondary\b[^{]*\{/.test(html), "index.html must define .btn-secondary CSS rule");
+  const tableWrapMatches = html.match(/^\s*\.table-wrap\s*\{/gm) || [];
+  assert.equal(tableWrapMatches.length, 1, `expected 1 .table-wrap rule, found ${tableWrapMatches.length}`);
+
+  // 2. Updating hub_radius_mm syncs hub.diameter_mm = 2 * hub_radius_mm
+  const smallHub = updateRotorField(initialDesign, "hub_radius_mm", 45);
+  assert.equal(smallHub.hub.diameter_mm, 90, "hub.diameter_mm must stay synced with 2 * rotor.hub_radius_mm");
+
+  // 3. Rebuilt WASM export_fabricated_step supports unsplit features + exploded split STEP
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  assert.ok(fs.existsSync(gluePath), "blade_wasm.js node glue must exist");
+  const require = createRequire(import.meta.url);
+  const { export_fabricated_step } = require(gluePath);
+  const unsplitFabStep = export_fabricated_step(
+    JSON.stringify(initialDesign),
+    JSON.stringify({ spar_hole_diameter_mm: 5.0, spar_hole_depth_mm: 240, step_mode: "features" }),
+  );
+  const planeCount = (unsplitFabStep.match(/PLANE\(/g) || []).length;
+  assert.ok(planeCount > 500, `unsplit features STEP must carry spar bore geometry, got ${planeCount} PLANEs`);
+
+  const explodedStep = export_fabricated_step(
+    JSON.stringify(initialDesign),
+    JSON.stringify({ split_parts: 2, split_ratio: 0.5, explode_gap_mm: 20, step_mode: "features" }),
+  );
+  // Extract max Z coordinate across all CARTESIAN_POINTs in exploded STEP
+  let maxZ = -Infinity;
+  for (const m of explodedStep.matchAll(/CARTESIAN_POINT\s*\(\s*'[^']*'\s*,\s*\([^,]+,[^,]+,([^)]+)\)\s*\)/g)) {
+    const z = Number.parseFloat(m[1]);
+    if (Number.isFinite(z) && z > maxZ) maxZ = z;
+  }
+  assert.ok(
+    maxZ >= initialDesign.rotor.radius_mm + 19.0,
+    `exploded split STEP must translate upper part by explode_gap_mm (20 mm), got maxZ=${maxZ}`,
+  );
+
+  // 4. main.ts structural safeguards (disposal, no dead STEP tautology, no unused export_all_split_step, safe PAT handling)
+  const mainTs = fs.readFileSync(path.resolve(__dirname, "../src/main.ts"), "utf8");
+  assert.ok(mainTs.includes("function disposeObject3D("), "main.ts must define recursive GPU disposeObject3D helper");
+  assert.ok(mainTs.includes("data.free()"), "main.ts must free WASM MeshData in rebuild3D");
+  assert.ok(
+    !mainTs.includes('part === "blade" || part === "assembly" || part === "hub"'),
+    "main.ts must not contain dead tautology blocking export_fabricated_step",
+  );
+  assert.ok(!mainTs.includes("export_all_split_step"), "main.ts must not import unused export_all_split_step");
+  assert.ok(mainTs.includes("activeGistId"), "main.ts must track activeGistId for PATCH updates");
+});
+
 
 
 
