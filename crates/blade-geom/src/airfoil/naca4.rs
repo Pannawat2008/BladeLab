@@ -135,16 +135,31 @@ impl Naca4 {
 
         let m = self.max_camber;
         let p = self.camber_position;
-        if x < p {
-            let y = m / (p * p) * (2.0 * p * x - x * x);
-            let slope = 2.0 * m / (p * p) * (p - x);
-            Ok((y, slope))
+        let (y, slope) = if x < p {
+            let ratio = (p - x) / p;
+            let y = m * (1.0 - ratio * ratio);
+            let slope = (2.0 * m / p) * ratio;
+            (y, slope)
         } else {
             let q = 1.0 - p;
-            let y = m / (q * q) * ((1.0 - 2.0 * p) + 2.0 * p * x - x * x);
-            let slope = 2.0 * m / (q * q) * (p - x);
-            Ok((y, slope))
+            let ratio = (x - p) / q;
+            let y = m * (1.0 - ratio * ratio);
+            let slope = -(2.0 * m / q) * ratio;
+            (y, slope)
+        };
+        if !y.is_finite() {
+            return Err(GeomError::NonFinite {
+                field: "camber_y",
+                value: y,
+            });
         }
+        if !slope.is_finite() {
+            return Err(GeomError::NonFinite {
+                field: "camber_slope",
+                value: slope,
+            });
+        }
+        Ok((y, slope))
     }
 
     /// Half-thickness `y_t` at chordwise station `x ∈ [0, 1]`, normalised by
@@ -450,5 +465,24 @@ mod tests {
             Err(GeomError::TrailingEdgeTooThin { .. })
         ));
         assert!(profile.check_trailing_edge(100.0, f64::NAN).is_err());
+    }
+
+    #[test]
+    fn camber_line_handles_tiny_and_near_one_camber_positions_without_nan_or_cancellation() {
+        let tiny = Naca4::new(0.04, 1e-160, 0.12).expect("valid tiny p");
+        let (y0, s0) = tiny.camber_line(0.0).expect("finite camber at x=0");
+        assert!(y0.is_finite() && s0.is_finite(), "y={y0}, s={s0}");
+        let (ym, sm) = tiny.camber_line(5e-161).expect("finite camber at x=p/2");
+        assert!(ym.is_finite() && sm.is_finite(), "y={ym}, s={sm}");
+
+        let near_one = Naca4::new(0.04, 1.0 - 1e-8, 0.12).expect("valid near-1 p");
+        let (y_hi, s_hi) = near_one
+            .camber_line(1.0 - 0.5e-8)
+            .expect("finite camber near TE");
+        assert!(
+            (y_hi - 0.03).abs() < 1e-6,
+            "expected y ≈ 0.03 without cancellation, got {y_hi}"
+        );
+        assert!(s_hi.is_finite());
     }
 }

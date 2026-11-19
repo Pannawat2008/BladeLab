@@ -311,8 +311,46 @@ impl BladeSurface {
                 max: self.span_end_mm,
             });
         }
-        let v = (span_mm - self.span_start_mm) / (self.span_end_mm - self.span_start_mm);
+        let range = self.span_end_mm - self.span_start_mm;
+        if !range.is_finite() || range <= 0.0 {
+            return Err(GeomError::SingularSystem);
+        }
+        let v = ((span_mm - self.span_start_mm) / range).clamp(0.0, 1.0);
         self.point_at(v, point_index)
+    }
+
+    /// Evaluates every contour point at spanwise station `span_mm`, computing
+    /// the B-spline basis functions once for the entire section.
+    ///
+    /// # Errors
+    ///
+    /// - [`GeomError::NonFinite`] when `span_mm` is not finite.
+    /// - [`GeomError::OutOfRange`] when `span_mm` is outside
+    ///   `[span_start_mm, span_end_mm]`.
+    pub fn section_at_span_mm(&self, span_mm: f64) -> Result<Vec<Point3>, GeomError> {
+        if !span_mm.is_finite() {
+            return Err(GeomError::NonFinite {
+                field: "span_mm",
+                value: span_mm,
+            });
+        }
+        if span_mm < self.span_start_mm || span_mm > self.span_end_mm {
+            return Err(GeomError::OutOfRange {
+                field: "span_mm",
+                value: span_mm,
+                min: self.span_start_mm,
+                max: self.span_end_mm,
+            });
+        }
+        let range = self.span_end_mm - self.span_start_mm;
+        if !range.is_finite() || range <= 0.0 {
+            return Err(GeomError::SingularSystem);
+        }
+        let v = ((span_mm - self.span_start_mm) / range).clamp(0.0, 1.0);
+        let basis = basis_values(&self.knots, self.degree, self.section_count(), v);
+        Ok((0..self.point_count)
+            .map(|point_index| combine(&basis, &self.control_points, point_index))
+            .collect())
     }
 
     /// Evaluates every contour point at the input section with `index`.
@@ -399,13 +437,13 @@ pub fn loft(sections: &[Section3D]) -> Result<BladeSurface, GeomError> {
 
     let count = sections.len();
     let degree = MAX_DEGREE.min(count - 1);
-    let section_params = span_params(sections);
+    let section_params = span_params(sections)?;
     let knots = clamped_knots(&section_params, degree);
 
     // Interpolation matrix: row k holds the basis functions at section k.
-    let mut matrix = vec![vec![0.0; count]; count];
-    for (row, &v) in section_params.iter().enumerate() {
-        matrix[row] = basis_values(&knots, degree, count, v);
+    let mut matrix = Vec::with_capacity(count);
+    for &v in &section_params {
+        matrix.push(basis_values(&knots, degree, count, v));
     }
     let (lu, permutation) = lu_decompose(matrix)?;
 
@@ -426,15 +464,17 @@ pub fn loft(sections: &[Section3D]) -> Result<BladeSurface, GeomError> {
         let cy = lu_solve(&lu, &permutation, &ys);
         let cz = lu_solve(&lu, &permutation, &zs);
         for (control_index, row) in control_points.iter_mut().enumerate() {
-            row[point_index] = Point3 {
-                x: cx[control_index],
-                y: cy[control_index],
-                z: cz[control_index],
-            };
+            let x = cx[control_index];
+            let y = cy[control_index];
+            let z = cz[control_index];
+            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                return Err(GeomError::SingularSystem);
+            }
+            row[point_index] = Point3 { x, y, z };
         }
     }
 
-    Ok(BladeSurface {
+    let surface = BladeSurface {
         degree,
         knots,
         control_points,
@@ -442,18 +482,49 @@ pub fn loft(sections: &[Section3D]) -> Result<BladeSurface, GeomError> {
         point_count,
         span_start_mm: sections[0].span_mm,
         span_end_mm: sections[count - 1].span_mm,
-    })
+    };
+
+    // Verify pass-through tolerance so ill-conditioned systems never silently pass.
+    for (sec_idx, section) in sections.iter().enumerate() {
+        let sampled = surface.section_at(sec_idx)?;
+        for (orig, eval) in section.points.iter().zip(&sampled) {
+            if !eval.x.is_finite()
+                || !eval.y.is_finite()
+                || !eval.z.is_finite()
+                || orig.distance_to(eval) > PASS_THROUGH_TOLERANCE_MM
+            {
+                return Err(GeomError::SingularSystem);
+            }
+        }
+    }
+
+    Ok(surface)
 }
 
 /// Normalised span parameters: `0` at the root section, `1` at the tip.
-fn span_params(sections: &[Section3D]) -> Vec<f64> {
+fn span_params(sections: &[Section3D]) -> Result<Vec<f64>, GeomError> {
     let start = sections[0].span_mm;
     let end = sections[sections.len() - 1].span_mm;
     let range = end - start;
-    sections
-        .iter()
-        .map(|section| (section.span_mm - start) / range)
-        .collect()
+    if !range.is_finite() || range <= 0.0 {
+        return Err(GeomError::SingularSystem);
+    }
+    let last = sections.len() - 1;
+    let mut params = Vec::with_capacity(sections.len());
+    for (idx, section) in sections.iter().enumerate() {
+        let v = if idx == 0 {
+            0.0
+        } else if idx == last {
+            1.0
+        } else {
+            (section.span_mm - start) / range
+        };
+        if !v.is_finite() {
+            return Err(GeomError::SingularSystem);
+        }
+        params.push(v);
+    }
+    Ok(params)
 }
 
 /// Builds the clamped knot vector for global interpolation at `params`.
@@ -532,12 +603,15 @@ fn lu_decompose(mut a: Vec<Vec<f64>>) -> Result<(Vec<Vec<f64>>, Vec<usize>), Geo
         let mut best = a[column][column].abs();
         for (row, values) in a.iter().enumerate().skip(column + 1) {
             let candidate = values[column].abs();
+            if !candidate.is_finite() {
+                return Err(GeomError::SingularSystem);
+            }
             if candidate > best {
                 best = candidate;
                 pivot = row;
             }
         }
-        if best <= SINGULAR_PIVOT {
+        if !best.is_finite() || best <= SINGULAR_PIVOT {
             return Err(GeomError::SingularSystem);
         }
         if pivot != column {

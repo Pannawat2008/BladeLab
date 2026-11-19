@@ -94,8 +94,27 @@ pub fn build_blended_sections(
 
     let pitch_axis_ratio = blade.rotor.pitch_axis_ratio;
     let min_te_mm = blade.manufacturing.min_trailing_edge_mm;
+    if !min_te_mm.is_finite() {
+        return Err(GeomError::NonFinite {
+            field: "min_trailing_edge_mm",
+            value: min_te_mm,
+        });
+    }
+    if min_te_mm < 0.0 {
+        return Err(GeomError::OutOfRange {
+            field: "min_trailing_edge_mm",
+            value: min_te_mm,
+            min: 0.0,
+            max: f64::INFINITY,
+        });
+    }
     let root_span_mm = blade.stations[0].span_mm;
     let tip_span_mm = blade.stations[blade.stations.len() - 1].span_mm;
+    if !root_span_mm.is_finite() || !tip_span_mm.is_finite() || tip_span_mm <= root_span_mm {
+        return Err(GeomError::SpansNotIncreasing {
+            index: blade.stations.len() - 1,
+        });
+    }
     let span_range = (tip_span_mm - root_span_mm).max(1e-9);
 
     let mut sections = Vec::with_capacity(blade.stations.len());
@@ -206,5 +225,18 @@ mod tests {
             build_sections(&blade),
             Err(GeomError::TrailingEdgeTooThin { .. })
         ));
+    }
+
+    #[test]
+    fn build_blended_sections_rejects_nan_min_te() {
+        let design = Design::from_json(FIXTURE).expect("fixture parses");
+        let mut blade = resolve(&design).expect("fixture resolves");
+        let root_af = blade.stations[0].airfoil.clone();
+        let tip_af = blade.stations[blade.stations.len() - 1].airfoil.clone();
+        blade.manufacturing.min_trailing_edge_mm = f64::NAN;
+        assert!(
+            build_blended_sections(&blade, &root_af, &tip_af).is_err(),
+            "NaN min_trailing_edge_mm must be rejected"
+        );
     }
 }

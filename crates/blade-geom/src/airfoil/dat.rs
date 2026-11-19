@@ -106,7 +106,7 @@ impl DatAirfoil {
                             line_idx + 1
                         )));
                     }
-                    raw_pairs.push((x.clamp(0.0, 1.0), y));
+                    raw_pairs.push((x, y));
                     continue;
                 }
             }
@@ -330,6 +330,9 @@ fn split_surfaces(pairs: &[(f64, f64)]) -> Result<(SurfacePairs, SurfacePairs), 
 }
 
 fn normalise_surface(surface: &mut Vec<(f64, f64)>, is_upper: bool) -> Result<(), GeomError> {
+    // Shift/normalize raw x coordinates after surface split so rounded negative-x
+    // noses keep the true minimum-x LE point at x = 0 instead of collapsing onto
+    // an upper-surface point.
     surface.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
     surface.dedup_by(|a, b| (a.0 - b.0).abs() <= 1e-9);
     if surface.len() < 3 {
@@ -338,11 +341,19 @@ fn normalise_surface(surface: &mut Vec<(f64, f64)>, is_upper: bool) -> Result<()
             if is_upper { "upper" } else { "lower" }
         )));
     }
-    if surface[0].0 > 0.05 || surface[surface.len() - 1].0 < 0.95 {
+    let min_x = surface[0].0;
+    let max_x = surface[surface.len() - 1].0;
+    if min_x > 0.05 || max_x < 0.95 || max_x <= min_x {
         return Err(GeomError::InvalidAirfoilData(format!(
             "{} surface does not span [0, 1]",
             if is_upper { "upper" } else { "lower" }
         )));
+    }
+    if min_x < 0.0 || max_x > 1.0 {
+        let span = max_x - min_x;
+        for pt in surface.iter_mut() {
+            pt.0 = ((pt.0 - min_x) / span).clamp(0.0, 1.0);
+        }
     }
     surface[0].0 = 0.0;
     let last_idx = surface.len() - 1;
@@ -500,5 +511,29 @@ LEDNICER TEST FOIL
             assert!((pm.x - 0.5 * (pa.x + pb.x)).abs() < 1e-12);
             assert!((pm.y - 0.5 * (pa.y + pb.y)).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn from_dat_preserves_rounded_negative_x_nose() {
+        let dat = "\
+RoundedNose
+1.000  0.002
+0.500  0.060
+0.100  0.040
+-0.002  0.004
+-0.003  0.000
+-0.001 -0.004
+0.100 -0.030
+0.500 -0.040
+1.000 -0.002
+";
+        let af = DatAirfoil::from_dat(dat).expect("parses rounded negative-x nose");
+        let surf = af.surface(100.0, 21).expect("samples surface");
+        let le = surf.points()[20];
+        assert!(
+            le.y.abs() < 0.1,
+            "true LE should stay near y=0 (not shifted to +0.4 mm), got y={}",
+            le.y
+        );
     }
 }

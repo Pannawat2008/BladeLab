@@ -264,3 +264,123 @@ fn resolves_bezier_and_formula_distributions_across_span() {
         );
     }
 }
+
+#[test]
+fn formula_errors_and_negative_values_at_override_stations_are_rejected() {
+    let mut design = typical();
+    design.rotor.station_count = 2;
+    design.overrides = vec![blade_model::StationOverride {
+        span_ratio: 0.55,
+        chord_mm: None,
+        twist_deg: Some(10.0),
+        airfoil: None,
+    }];
+    // Formula is positive at s = 0 and s = 1, but negative (-15) at s = 0.5 (span_ratio = 0.55).
+    design.distributions.chord_mm = CurveSource::Formula {
+        expr: "60.0 - 300.0 * s * (1.0 - s)".to_string(),
+    };
+    assert!(
+        resolve(&design).is_err(),
+        "negative chord at override station must be rejected"
+    );
+
+    // Formula divides by zero at x = 0.55 (override station), but finite at x = 0.1 and x = 1.0.
+    design.distributions.chord_mm = CurveSource::Formula {
+        expr: "10.0 / abs(x - 0.55)".to_string(),
+    };
+    assert!(
+        resolve(&design).is_err(),
+        "division by zero at override station must be rejected"
+    );
+}
+
+#[test]
+fn uniform_stations_pins_exact_tip_ratio_1_0() {
+    let mut design = typical();
+    design.overrides.clear();
+    design.rotor.radius_mm = 100.0;
+    design.rotor.hub_radius_mm = 19.0;
+    design.rotor.station_count = 6;
+    let blade = resolve(&design).expect("resolves");
+    let tip = blade.stations.last().unwrap();
+    assert_eq!(tip.span_ratio, 1.0, "tip span_ratio must be exact 1.0");
+    assert_eq!(tip.span_mm, 100.0, "tip span_mm must be exact radius_mm");
+}
+
+#[test]
+fn schmitz_rejects_overflow_and_out_of_range_twist() {
+    let mut design = typical();
+    design.overrides.clear();
+    design.distributions.twist_deg = CurveSource::Schmitz {
+        design_cl: None,
+        design_alpha_deg: Some(-60.0),
+    };
+    assert!(
+        resolve(&design).is_err(),
+        "Schmitz twist > 90 deg at root must be rejected"
+    );
+
+    let mut overflow_design = typical();
+    overflow_design.overrides.clear();
+    overflow_design.rotor.radius_mm = 1e307;
+    overflow_design.rotor.hub_radius_mm = 1e306;
+    overflow_design.distributions.chord_mm = CurveSource::Schmitz {
+        design_cl: Some(1e-10),
+        design_alpha_deg: None,
+    };
+    assert!(
+        resolve(&overflow_design).is_err(),
+        "Schmitz chord overflow to Inf must be rejected"
+    );
+}
+
+#[test]
+fn narrow_span_and_root_boundary_overrides_do_not_collapse_or_fail_airfoil() {
+    // Root-boundary override slightly below hub_ratio within RATIO_EPS must not trigger MissingAirfoil
+    let mut design = typical();
+    design.airfoils = vec![
+        blade_model::AirfoilStation {
+            span_ratio: 0.1 + 0.5e-9,
+            airfoil: blade_model::AirfoilSpec::Naca4 {
+                max_camber: 0.04,
+                camber_position: 0.4,
+                thickness_ratio: 0.12,
+            },
+        },
+        blade_model::AirfoilStation {
+            span_ratio: 1.0,
+            airfoil: blade_model::AirfoilSpec::Naca4 {
+                max_camber: 0.04,
+                camber_position: 0.4,
+                thickness_ratio: 0.12,
+            },
+        },
+    ];
+    design.overrides = vec![blade_model::StationOverride {
+        span_ratio: 0.1 - 0.9e-9,
+        chord_mm: Some(65.0),
+        twist_deg: None,
+        airfoil: None,
+    }];
+    let blade = resolve(&design).expect("root-boundary override must resolve cleanly");
+    assert!(blade.stations.len() >= 2);
+    assert!(blade.stations[0].span_mm >= 0.0);
+
+    // Extremely narrow span that would collapse to 1 station after dedup must be rejected by validate
+    let mut tiny_span = typical();
+    tiny_span.overrides.clear();
+    tiny_span.rotor.radius_mm = 600.0;
+    tiny_span.rotor.hub_radius_mm = 599.999_999_9;
+    assert!(
+        resolve(&tiny_span).is_err(),
+        "narrow span collapsing below 2 stations must fail validation"
+    );
+
+    // eval_bezier with NaN must return a finite fallback (root y), not bogus bisection result
+    let pts = [
+        blade_model::BezierControlPoint { x: 0.0, y: 70.0 },
+        blade_model::BezierControlPoint { x: 1.0, y: 35.0 },
+    ];
+    let nan_val = blade_model::eval_bezier(&pts, f64::NAN);
+    assert_eq!(nan_val, 70.0);
+}

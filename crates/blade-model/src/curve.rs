@@ -22,7 +22,7 @@ pub fn eval_bezier(points: &[BezierControlPoint], s: f64) -> f64 {
     if points.is_empty() {
         return 0.0;
     }
-    if points.len() == 1 {
+    if points.len() == 1 || !s.is_finite() {
         return points[0].y;
     }
     let clamped_s = s.clamp(0.0, 1.0);

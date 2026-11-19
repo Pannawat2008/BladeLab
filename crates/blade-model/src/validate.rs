@@ -61,7 +61,10 @@ fn check_rotor(design: &Design, issues: &mut Vec<ValidationIssue>) {
             "rotor.hub_radius_mm",
             "must be a finite, non-negative length in mm",
         ));
-    } else if finite(rotor.radius_mm) && rotor.hub_radius_mm >= rotor.radius_mm {
+    } else if finite(rotor.radius_mm)
+        && (rotor.hub_radius_mm >= rotor.radius_mm
+            || (rotor.radius_mm - rotor.hub_radius_mm) / rotor.radius_mm <= RATIO_EPS)
+    {
         issues.push(ValidationIssue::new(
             "rotor.hub_radius_mm",
             "must be smaller than rotor.radius_mm",
@@ -100,6 +103,15 @@ fn check_rotor(design: &Design, issues: &mut Vec<ValidationIssue>) {
 }
 
 fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
+    let valid_rotor_for_eval = positive(design.rotor.radius_mm)
+        && finite(design.rotor.hub_radius_mm)
+        && design.rotor.hub_radius_mm >= 0.0
+        && design.rotor.hub_radius_mm < design.rotor.radius_mm
+        && (design.rotor.radius_mm - design.rotor.hub_radius_mm) / design.rotor.radius_mm
+            > RATIO_EPS
+        && positive(design.rotor.design_tsr)
+        && (1..=12).contains(&design.rotor.blade_count);
+
     match &design.distributions.chord_mm {
         CurveSource::Schmitz { design_cl, .. } => {
             if !design_cl.is_some_and(positive) {
@@ -114,6 +126,36 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
                     "must be strictly positive when using a Schmitz chord distribution",
                 ));
             }
+            if valid_rotor_for_eval
+                && positive(design.rotor.hub_radius_mm)
+                && design_cl.is_some_and(positive)
+            {
+                let hub_ratio = design.rotor.hub_radius_mm / design.rotor.radius_mm;
+                let samples = design.rotor.station_count.clamp(2, 200);
+                for idx in 0..samples {
+                    let s = f64::from(idx) / f64::from(samples - 1);
+                    let ratio = if idx == 0 {
+                        hub_ratio
+                    } else if idx + 1 == samples {
+                        1.0
+                    } else {
+                        hub_ratio + (1.0 - hub_ratio) * s
+                    };
+                    let val = design
+                        .distributions
+                        .chord_mm
+                        .eval_chord(&design.rotor, ratio, s);
+                    if !positive(val) {
+                        issues.push(ValidationIssue::new(
+                            "distributions.chord_mm.design_cl",
+                            format!(
+                                "Schmitz chord evaluated to non-positive or non-finite value ({val}) at x = {ratio:.4}"
+                            ),
+                        ));
+                        break;
+                    }
+                }
+            }
         }
         curve => check_curve(
             design,
@@ -122,6 +164,7 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
             issues,
             positive,
             "must be a finite, strictly positive length in mm",
+            false,
         ),
     }
 
@@ -137,6 +180,33 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
                     "must be finite and within ±90 degrees",
                 ));
             }
+            if valid_rotor_for_eval && valid_alpha {
+                let hub_ratio = design.rotor.hub_radius_mm / design.rotor.radius_mm;
+                let samples = design.rotor.station_count.clamp(2, 200);
+                for idx in 0..samples {
+                    let s = f64::from(idx) / f64::from(samples - 1);
+                    let ratio = if idx == 0 {
+                        hub_ratio
+                    } else if idx + 1 == samples {
+                        1.0
+                    } else {
+                        hub_ratio + (1.0 - hub_ratio) * s
+                    };
+                    let val = design
+                        .distributions
+                        .twist_deg
+                        .eval_twist(&design.rotor, ratio, s);
+                    if !finite(val) || val.abs() > MAX_TWIST_DEG {
+                        issues.push(ValidationIssue::new(
+                            "distributions.twist_deg.design_alpha_deg",
+                            format!(
+                                "Schmitz twist evaluated to {val:.2} deg at x = {ratio:.4}, must be finite and within ±90 degrees"
+                            ),
+                        ));
+                        break;
+                    }
+                }
+            }
         }
         curve => check_curve(
             design,
@@ -145,6 +215,7 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
             issues,
             |value| finite(value) && value.abs() <= MAX_TWIST_DEG,
             "must be finite and within ±90 degrees",
+            true,
         ),
     }
 }
@@ -156,6 +227,7 @@ fn check_curve(
     issues: &mut Vec<ValidationIssue>,
     accepts: impl Fn(f64) -> bool,
     message: &str,
+    is_twist: bool,
 ) {
     match curve {
         CurveSource::Constant { .. } | CurveSource::Linear { .. } => {
@@ -224,10 +296,34 @@ fn check_curve(
             } else {
                 0.1
             };
+            let span = (1.0 - hub_ratio).max(RATIO_EPS);
             let samples = design.rotor.station_count.clamp(2, 200);
-            for idx in 0..samples {
-                let s = f64::from(idx) / f64::from(samples - 1);
-                let span_ratio = hub_ratio + (1.0 - hub_ratio) * s;
+            let mut eval_points: Vec<(f64, f64)> = (0..samples)
+                .map(|idx| {
+                    let s = f64::from(idx) / f64::from(samples - 1);
+                    let span_ratio = if idx == 0 {
+                        hub_ratio
+                    } else if idx + 1 == samples {
+                        1.0
+                    } else {
+                        hub_ratio + (1.0 - hub_ratio) * s
+                    };
+                    (span_ratio, s)
+                })
+                .collect();
+            for over in &design.overrides {
+                let overridden = if is_twist {
+                    over.twist_deg.is_some()
+                } else {
+                    over.chord_mm.is_some()
+                };
+                if !overridden && finite(over.span_ratio) {
+                    let clamped_r = over.span_ratio.clamp(hub_ratio, 1.0);
+                    let s = ((clamped_r - hub_ratio) / span).clamp(0.0, 1.0);
+                    eval_points.push((clamped_r, s));
+                }
+            }
+            for (span_ratio, s) in eval_points {
                 match crate::curve::eval_formula(expr, &design.rotor, span_ratio, s) {
                     Ok(value) => {
                         if !accepts(value) {

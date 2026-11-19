@@ -79,38 +79,72 @@ pub fn resolve(design: &Design) -> Result<ResolvedBlade, ModelError> {
     let span = 1.0 - root_ratio;
 
     let mut ratios = uniform_stations(root_ratio, design.rotor.station_count as usize);
-    ratios.extend(design.overrides.iter().map(|station| station.span_ratio));
+    ratios.extend(
+        design
+            .overrides
+            .iter()
+            .map(|station| station.span_ratio.clamp(root_ratio, 1.0)),
+    );
     ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     ratios.dedup_by(|a, b| (*a - *b).abs() <= RATIO_EPS);
 
     let mut stations = Vec::with_capacity(ratios.len());
     for ratio in ratios {
         let s = ((ratio - root_ratio) / span).clamp(0.0, 1.0);
-        let mut chord_mm = design
-            .distributions
-            .chord_mm
-            .eval_chord(&design.rotor, ratio, s);
-        let mut twist_deg = design
-            .distributions
-            .twist_deg
-            .eval_twist(&design.rotor, ratio, s);
-        let mut spec = pick_airfoil(&design.airfoils, ratio)?;
-
-        if let Some(over) = design
+        let matching_override = design
             .overrides
             .iter()
-            .find(|over| (over.span_ratio - ratio).abs() <= RATIO_EPS)
-        {
-            if let Some(chord) = over.chord_mm {
-                chord_mm = chord;
+            .find(|over| (over.span_ratio.clamp(root_ratio, 1.0) - ratio).abs() <= RATIO_EPS);
+
+        let chord_mm = if let Some(chord) = matching_override.and_then(|o| o.chord_mm) {
+            chord
+        } else if let crate::CurveSource::Formula { expr } = &design.distributions.chord_mm {
+            let val = crate::curve::eval_formula(expr, &design.rotor, ratio, s).map_err(|msg| {
+                ModelError::Invalid(vec![crate::ValidationIssue::new(
+                    "distributions.chord_mm.expr",
+                    msg,
+                )])
+            })?;
+            if !val.is_finite() || val <= 0.0 {
+                return Err(ModelError::Invalid(vec![crate::ValidationIssue::new(
+                    "distributions.chord_mm.expr",
+                    format!("formula evaluated to invalid chord {val} at x = {ratio:.4}"),
+                )]));
             }
-            if let Some(twist) = over.twist_deg {
-                twist_deg = twist;
+            val
+        } else {
+            design
+                .distributions
+                .chord_mm
+                .eval_chord(&design.rotor, ratio, s)
+        };
+        let twist_deg = if let Some(twist) = matching_override.and_then(|o| o.twist_deg) {
+            twist
+        } else if let crate::CurveSource::Formula { expr } = &design.distributions.twist_deg {
+            let val = crate::curve::eval_formula(expr, &design.rotor, ratio, s).map_err(|msg| {
+                ModelError::Invalid(vec![crate::ValidationIssue::new(
+                    "distributions.twist_deg.expr",
+                    msg,
+                )])
+            })?;
+            if !val.is_finite() || val.abs() > 90.0 {
+                return Err(ModelError::Invalid(vec![crate::ValidationIssue::new(
+                    "distributions.twist_deg.expr",
+                    format!("formula evaluated to invalid twist {val} at x = {ratio:.4}"),
+                )]));
             }
-            if let Some(airfoil) = &over.airfoil {
-                spec = airfoil;
-            }
-        }
+            val
+        } else {
+            design
+                .distributions
+                .twist_deg
+                .eval_twist(&design.rotor, ratio, s)
+        };
+        let spec = if let Some(airfoil) = matching_override.and_then(|o| o.airfoil.as_ref()) {
+            airfoil
+        } else {
+            pick_airfoil(&design.airfoils, ratio)?
+        };
 
         stations.push(ResolvedStation {
             span_ratio: ratio,
@@ -132,7 +166,15 @@ pub fn resolve(design: &Design) -> Result<ResolvedBlade, ModelError> {
 fn uniform_stations(root_ratio: f64, count: usize) -> Vec<f64> {
     let last = (count - 1) as f64;
     (0..count)
-        .map(|index| root_ratio + (1.0 - root_ratio) * index as f64 / last)
+        .map(|index| {
+            if index == 0 {
+                root_ratio
+            } else if index + 1 == count {
+                1.0
+            } else {
+                root_ratio + (1.0 - root_ratio) * index as f64 / last
+            }
+        })
         .collect()
 }
 

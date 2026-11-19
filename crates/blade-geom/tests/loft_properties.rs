@@ -92,3 +92,54 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn loft_rejects_non_finite_control_points_and_pass_through_drift() {
+    // Trigger 1: nearly coincident spans + huge coordinates -> Inf/NaN control points
+    let spans = [0.0, 50.0, 50.0 + 1e-8, 100.0];
+    let xs = [1e300, 1e300, 2e300, 1e300];
+    let sections: Vec<Section3D> = spans
+        .iter()
+        .zip(xs.iter())
+        .map(|(&z, &x)| {
+            Section3D::new(
+                z,
+                vec![
+                    Point3::new(x, 0.0, z).unwrap(),
+                    Point3::new(0.0, 1.0, z).unwrap(),
+                    Point3::new(0.0, -1.0, z).unwrap(),
+                ],
+            )
+            .unwrap()
+        })
+        .collect();
+    assert!(
+        loft(&sections).is_err(),
+        "loft must reject systems producing non-finite control points"
+    );
+
+    // Trigger 2: section_at_span_mm matches point_at_span_mm across all points
+    let good_sections: Vec<Section3D> = [0.0, 50.0, 100.0]
+        .iter()
+        .map(|&z| {
+            Section3D::new(
+                z,
+                vec![
+                    Point3::new(10.0, 0.5, z).unwrap(),
+                    Point3::new(0.0, 0.0, z).unwrap(),
+                    Point3::new(10.0, -0.5, z).unwrap(),
+                ],
+            )
+            .unwrap()
+        })
+        .collect();
+    let surf = loft(&good_sections).unwrap();
+    let sec = surf.section_at_span_mm(37.5).unwrap();
+    assert_eq!(sec.len(), 3);
+    for (idx, pt) in sec.iter().enumerate() {
+        let single = surf.point_at_span_mm(37.5, idx).unwrap();
+        assert!((pt.x - single.x).abs() < 1e-12);
+        assert!((pt.y - single.y).abs() < 1e-12);
+        assert!((pt.z - single.z).abs() < 1e-12);
+    }
+}
