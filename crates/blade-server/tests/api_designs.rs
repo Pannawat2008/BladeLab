@@ -243,3 +243,93 @@ async fn team_accounts_and_workspace_scoping_filter_designs() {
     assert_eq!(list_comp.len(), 1);
     assert_eq!(list_comp[0].team_id, "team-comp");
 }
+
+#[tokio::test]
+async fn update_preserves_author_and_enforces_team_scope_isolation() {
+    let app = build_router(AppState::new());
+
+    // Create a design in team-comp authored by alice
+    let resp_c = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/designs")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-bladelab-team", "team-comp")
+                .header("x-bladelab-user", "alice")
+                .body(Body::from(LINEAR_FIXTURE))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_c.status(), StatusCode::CREATED);
+    let created: DesignRecord =
+        serde_json::from_slice(&to_bytes(resp_c.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(created.author, "alice");
+
+    // Another team MUST NOT be able to read or delete team-comp's design
+    let cross_get = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v1/designs/{}", created.id))
+                .header("x-bladelab-team", "team-default")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(cross_get.status(), StatusCode::NOT_FOUND);
+
+    let cross_del = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/v1/designs/{}", created.id))
+                .header("x-bladelab-team", "team-default")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(cross_del.status(), StatusCode::NOT_FOUND);
+
+    // Same team update by bob MUST record bob as author on record and version 2
+    let resp_u = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/v1/designs/{}", created.id))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-bladelab-team", "team-comp")
+                .header("x-bladelab-user", "bob")
+                .body(Body::from(SCHMITZ_FIXTURE))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_u.status(), StatusCode::OK);
+    let updated: DesignRecord =
+        serde_json::from_slice(&to_bytes(resp_u.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(updated.author, "bob");
+
+    let resp_v2 = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/v1/designs/{}/versions/2", created.id))
+                .header("x-bladelab-team", "team-comp")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_v2.status(), StatusCode::OK);
+    let v2: DesignVersionRecord =
+        serde_json::from_slice(&to_bytes(resp_v2.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(v2.author, "bob");
+}

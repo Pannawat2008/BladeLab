@@ -131,9 +131,10 @@ fn load_stl(path: &str) -> Result<Manifold, String> {
         let mut tri = [0u32; 3];
         for vertex in 0..3 {
             let off = base + 12 + vertex * 12;
-            let x = f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
-            let y = f32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
-            let z = f32::from_le_bytes(bytes[off + 8..off + 12].try_into().unwrap());
+            let norm = |v: f32| if v == 0.0 { 0.0_f32 } else { v };
+            let x = norm(f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()));
+            let y = norm(f32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap()));
+            let z = norm(f32::from_le_bytes(bytes[off + 8..off + 12].try_into().unwrap()));
             let id = *weld.entry((x.to_bits(), y.to_bits(), z.to_bits())).or_insert_with(|| {
                 let id = (vertices.len() / 3) as u32;
                 vertices.push(x as f64);
@@ -180,7 +181,7 @@ fn write_stl(manifold: &Manifold, path: &str) -> Result<(), String> {
     fs::write(path, &out).map_err(|error| error.to_string())
 }
 
-/// Writes a 3MF archive from the manifold (`T-203`).
+/// Writes a valid OPC ZIP 3MF archive from the manifold (`T-203`).
 fn write_3mf(manifold: &Manifold, path: &str) -> Result<(), String> {
     use std::fmt::Write as _;
     let (props, n_props, triangles) = manifold.to_mesh_f64();
@@ -209,7 +210,92 @@ fn write_3mf(manifold: &Manifold, path: &str) -> Result<(), String> {
         );
     }
     xml.push_str("</triangles></mesh></object></resources><build><item objectid=\"1\"/></build></model>\n");
-    fs::write(path, xml.as_bytes()).map_err(|error| error.to_string())
+
+    const CONTENT_TYPES: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>
+"#;
+    const RELS: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>
+"#;
+
+    let zip_bytes = build_store_zip(&[
+        ("[Content_Types].xml", CONTENT_TYPES),
+        ("_rels/.rels", RELS),
+        ("3D/3dmodel.model", xml.as_bytes()),
+    ]);
+    fs::write(path, &zip_bytes).map_err(|error| error.to_string())
+}
+
+fn crc32_ieee(data: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffff_u32;
+    for &byte in data {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    !crc
+}
+
+fn build_store_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for &(name, data) in entries {
+        let offset = out.len() as u32;
+        let name_bytes = name.as_bytes();
+        let crc = crc32_ieee(data);
+        let size = data.len() as u32;
+        out.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
+        out.extend_from_slice(&20_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&size.to_le_bytes());
+        out.extend_from_slice(&size.to_le_bytes());
+        out.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(name_bytes);
+        out.extend_from_slice(data);
+
+        central.extend_from_slice(&0x0201_4b50_u32.to_le_bytes());
+        central.extend_from_slice(&20_u16.to_le_bytes());
+        central.extend_from_slice(&20_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u32.to_le_bytes());
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name_bytes);
+    }
+    let cd_offset = out.len() as u32;
+    let cd_size = central.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&cd_size.to_le_bytes());
+    out.extend_from_slice(&cd_offset.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out
 }
 
 fn face_normal(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> [f64; 3] {

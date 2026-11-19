@@ -29,7 +29,6 @@ import sys
 import traceback
 
 import FreeCAD
-import Import
 import Part
 
 
@@ -67,8 +66,10 @@ def main(argv):
     path = None
     flags = []
     for token in argv:
-        if path is None and not token.startswith("-") and token != "--pass":
-            if os.path.isfile(token) and os.path.abspath(token) not in ignore:
+        if token == "--pass":
+            continue
+        if path is None and not token.startswith("-"):
+            if os.path.abspath(token) not in ignore:
                 path = token
                 continue
         flags.append(token)
@@ -81,12 +82,16 @@ def main(argv):
 
     while flags:
         flag = flags.pop(0)
-        if flag == "--solids":
-            expect_solids = flags.pop(0)
-        elif flag == "--z-min":
-            z_min = flags.pop(0)
-        elif flag == "--z-max":
-            z_max = flags.pop(0)
+        if flag in ("--solids", "--z-min", "--z-max"):
+            if not flags:
+                die("missing value for flag %r" % flag)
+            val = flags.pop(0)
+            if flag == "--solids":
+                expect_solids = val
+            elif flag == "--z-min":
+                z_min = val
+            else:
+                z_max = val
         else:
             die("unknown flag %r" % flag)
 
@@ -98,18 +103,14 @@ def main(argv):
     z_min = float(z_min) if z_min else None
     z_max = float(z_max) if z_max else None
 
-    doc = FreeCAD.newDocument("step_check")
+    # Use Part.read() directly so multi-solid STEP files are always returned as a
+    # single compound independent of FreeCAD's ReadShapeCompoundMode user.cfg setting.
     try:
-        Import.insert(path, doc.Name)
+        shape = Part.read(path)
     except Exception as exc:  # noqa: BLE001 - report and fail
         die("STEP import failed: %r\n%s" % (exc, traceback.format_exc()))
 
-    shape = None
-    for obj in doc.Objects:
-        if hasattr(obj, "Shape") and obj.Shape is not None:
-            shape = obj.Shape
-            break
-    if shape is None:
+    if shape is None or shape.isNull():
         die("no shape recovered from %s" % path)
 
     if not shape.isValid():

@@ -8,10 +8,11 @@
 //!   in-memory artifact cache and panic containment (`catch_unwind`) so panics
 //!   never crash the server.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 
@@ -25,6 +26,7 @@ use blade_cli::{export_design_bytes, CliError, ExportFormat, ExportPart};
 use blade_model::{validate, Design, ModelError, SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::Semaphore;
 use tower::{Layer, Service};
 
 pub mod store;
@@ -34,12 +36,27 @@ pub use store::{
     DEFAULT_AUTHOR, DEFAULT_TEAM_ID, POSTGRES_SCHEMA_SQL,
 };
 
+const DEFAULT_CACHE_MAX_ENTRIES: usize = 128;
+const DEFAULT_CACHE_MAX_BYTES: usize = 128 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_EXPORTS: usize = 8;
+
 /// Shared application state holding the `blake3` export cache and the
 /// transactional [`DesignStore`] (`T-204`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AppState {
     cache: ExportCache,
     store: DesignStore,
+    export_permits: Arc<Semaphore>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            cache: ExportCache::default(),
+            store: DesignStore::default(),
+            export_permits: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_EXPORTS)),
+        }
+    }
 }
 
 impl AppState {
@@ -62,17 +79,27 @@ impl AppState {
     }
 }
 
-/// Thread-safe, `blake3`-addressed in-memory cache of exported CAD/mesh payloads.
-#[derive(Debug, Clone, Default)]
+/// Thread-safe, `blake3`-addressed bounded in-memory cache of exported CAD/mesh payloads.
+#[derive(Debug, Clone)]
 pub struct ExportCache {
     inner: Arc<RwLock<CacheInner>>,
+    hits: Arc<AtomicU64>,
+    misses: Arc<AtomicU64>,
 }
 
-#[derive(Debug, Default)]
+impl Default for ExportCache {
+    fn default() -> Self {
+        Self::with_limits(DEFAULT_CACHE_MAX_ENTRIES, DEFAULT_CACHE_MAX_BYTES)
+    }
+}
+
+#[derive(Debug)]
 struct CacheInner {
     entries: HashMap<String, Arc<Vec<u8>>>,
-    hits: u64,
-    misses: u64,
+    order: VecDeque<String>,
+    total_bytes: usize,
+    max_entries: usize,
+    max_bytes: usize,
 }
 
 /// Snapshot of cache counters for observability and integration tests.
@@ -87,28 +114,64 @@ pub struct CacheStats {
 }
 
 impl ExportCache {
+    /// Creates a bounded cache evicting oldest entries once `max_entries` or `max_bytes` is exceeded.
+    #[must_use]
+    pub fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(CacheInner {
+                entries: HashMap::new(),
+                order: VecDeque::new(),
+                total_bytes: 0,
+                max_entries: max_entries.max(1),
+                max_bytes: max_bytes.max(1),
+            })),
+            hits: Arc::new(AtomicU64::new(0)),
+            misses: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
     /// Looks up `digest` in the cache, incrementing `hits` or `misses`.
     #[must_use]
     pub fn get(&self, digest: &str) -> Option<Arc<Vec<u8>>> {
-        let mut guard = self
+        let guard = self
             .inner
-            .write()
+            .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(bytes) = guard.entries.get(digest).cloned() {
-            guard.hits += 1;
+            self.hits.fetch_add(1, Ordering::Relaxed);
             Some(bytes)
         } else {
-            guard.misses += 1;
+            self.misses.fetch_add(1, Ordering::Relaxed);
             None
         }
     }
 
-    /// Stores `payload` under its `blake3` hex `digest`.
+    /// Stores `payload` under its `blake3` hex `digest`, evicting oldest entries as needed.
     pub fn insert(&self, digest: String, payload: Arc<Vec<u8>>) {
         let mut guard = self
             .inner
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let payload_len = payload.len();
+        if payload_len > guard.max_bytes {
+            return;
+        }
+        if let Some(prev) = guard.entries.remove(&digest) {
+            guard.total_bytes = guard.total_bytes.saturating_sub(prev.len());
+            guard.order.retain(|k| k != &digest);
+        }
+        while guard.entries.len() >= guard.max_entries
+            || guard.total_bytes.saturating_add(payload_len) > guard.max_bytes
+        {
+            let Some(oldest) = guard.order.pop_front() else {
+                break;
+            };
+            if let Some(removed) = guard.entries.remove(&oldest) {
+                guard.total_bytes = guard.total_bytes.saturating_sub(removed.len());
+            }
+        }
+        guard.total_bytes = guard.total_bytes.saturating_add(payload_len);
+        guard.order.push_back(digest.clone());
         guard.entries.insert(digest, payload);
     }
 
@@ -121,8 +184,8 @@ impl ExportCache {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         CacheStats {
             entry_count: guard.entries.len(),
-            hits: guard.hits,
-            misses: guard.misses,
+            hits: self.hits.load(Ordering::Relaxed),
+            misses: self.misses.load(Ordering::Relaxed),
         }
     }
 }
@@ -354,30 +417,53 @@ async fn handle_list_designs(
     Json(state.store.list_for_team(team_filter.as_deref()))
 }
 
+fn ensure_team_access(
+    record: &DesignRecord,
+    headers: &HeaderMap,
+    id: &str,
+) -> Result<(), ServerError> {
+    if let Some(team) = header_string(headers, "x-bladelab-team") {
+        if team != "all" && record.team_id != team {
+            return Err(ServerError::NotFound(format!("design `{id}` not found")));
+        }
+    }
+    Ok(())
+}
+
 async fn handle_get_design(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<DesignRecord>, ServerError> {
-    state.store.get(&id).map(Json).map_err(map_store_error)
+    let rec = state.store.get(&id).map_err(map_store_error)?;
+    ensure_team_access(&rec, &headers, &id)?;
+    Ok(Json(rec))
 }
 
 async fn handle_update_design(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     body: Bytes,
 ) -> Result<Json<DesignRecord>, ServerError> {
-    let (name_opt, design, note, _team_opt, _author_opt) = parse_design_upsert(&body)?;
+    let existing = state.store.get(&id).map_err(map_store_error)?;
+    ensure_team_access(&existing, &headers, &id)?;
+    let (name_opt, design, note, _team_opt, body_author) = parse_design_upsert(&body)?;
+    let author = body_author.or_else(|| header_string(&headers, "x-bladelab-user"));
     state
         .store
-        .update(&id, name_opt, design, note)
+        .update_with_author(&id, name_opt, design, note, author)
         .map(Json)
         .map_err(map_store_error)
 }
 
 async fn handle_delete_design(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ServerError> {
+    let existing = state.store.get(&id).map_err(map_store_error)?;
+    ensure_team_access(&existing, &headers, &id)?;
     state
         .store
         .delete(&id)
@@ -387,8 +473,11 @@ async fn handle_delete_design(
 
 async fn handle_list_versions(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<DesignVersionRecord>>, ServerError> {
+    let existing = state.store.get(&id).map_err(map_store_error)?;
+    ensure_team_access(&existing, &headers, &id)?;
     state
         .store
         .list_versions(&id)
@@ -398,8 +487,11 @@ async fn handle_list_versions(
 
 async fn handle_get_version(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((id, version)): Path<(String, u32)>,
 ) -> Result<Json<DesignVersionRecord>, ServerError> {
+    let existing = state.store.get(&id).map_err(map_store_error)?;
+    ensure_team_access(&existing, &headers, &id)?;
     state
         .store
         .get_version(&id, version)
@@ -409,11 +501,15 @@ async fn handle_get_version(
 
 async fn handle_restore_version(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((id, version)): Path<(String, u32)>,
 ) -> Result<Json<DesignRecord>, ServerError> {
+    let existing = state.store.get(&id).map_err(map_store_error)?;
+    ensure_team_access(&existing, &headers, &id)?;
+    let author = header_string(&headers, "x-bladelab-user");
     state
         .store
-        .restore_version(&id, version, None)
+        .restore_version_with_author(&id, version, None, author)
         .map(Json)
         .map_err(map_store_error)
 }
@@ -422,22 +518,20 @@ async fn healthz() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok" }))
 }
 
+fn etag_matches(header_value: &str, etag_value: &str, digest: &str) -> bool {
+    header_value.split(',').any(|token| {
+        let trimmed = token.trim();
+        let unweak = trimmed.strip_prefix("W/").unwrap_or(trimmed).trim();
+        unweak == "*" || unweak == etag_value || unweak == digest
+    })
+}
+
 async fn handle_export(
     State(state): State<AppState>,
     Query(query): Query<ExportQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, ServerError> {
-    // Allow integration tests to verify panic containment via a dedicated header
-    // in addition to catching any panic inside the geometry/CAD kernel.
-    if headers
-        .get("x-bladelab-debug-panic")
-        .and_then(|v| v.to_str().ok())
-        == Some("true")
-    {
-        panic!("simulated export handler panic");
-    }
-
     let (design, format, part) = parse_export_request(&body, &query)?;
     if design.schema_version != SCHEMA_VERSION {
         return Err(ServerError::BadRequest(format!(
@@ -452,18 +546,17 @@ async fn handle_export(
     let digest = compute_blake3_key(&canonical_json, format, part);
     let etag_value = format!("\"{digest}\"");
 
-    if let Some(if_none_match) = headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|v| v.to_str().ok())
-    {
-        if if_none_match.trim() == etag_value || if_none_match.trim() == digest {
-            let mut response = StatusCode::NOT_MODIFIED.into_response();
-            insert_export_headers(response.headers_mut(), format, &etag_value, "HIT");
-            return Ok(response);
-        }
-    }
-
     if let Some(cached) = state.cache.get(&digest) {
+        if let Some(if_none_match) = headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok())
+        {
+            if etag_matches(if_none_match, &etag_value, &digest) {
+                let mut response = StatusCode::NOT_MODIFIED.into_response();
+                insert_export_headers(response.headers_mut(), format, &etag_value, "HIT");
+                return Ok(response);
+            }
+        }
         return Ok(build_binary_response(
             (*cached).clone(),
             format,
@@ -471,6 +564,13 @@ async fn handle_export(
             "HIT",
         ));
     }
+
+    let _permit = state
+        .export_permits
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|err| ServerError::Export(format!("export limiter closed: {err}")))?;
 
     let join_result = tokio::task::spawn_blocking(move || {
         catch_unwind(AssertUnwindSafe(|| {

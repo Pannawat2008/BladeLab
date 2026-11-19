@@ -381,11 +381,15 @@ impl DesignStore {
             .inner
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let created_at_epoch_ms = guard
+            .teams
+            .get(&tid)
+            .map_or(now, |existing| existing.created_at_epoch_ms);
         let acct = TeamAccount {
             id: tid.clone(),
             name: tname,
             members,
-            created_at_epoch_ms: now,
+            created_at_epoch_ms,
         };
         guard.teams.insert(tid, acct.clone());
         Ok(acct)
@@ -422,6 +426,25 @@ impl DesignStore {
         design: Design,
         note: Option<String>,
     ) -> Result<DesignRecord, StoreError> {
+        self.update_with_author(id, name, design, note, None)
+    }
+
+    /// Updates an existing design with an explicit optional `author`,
+    /// incrementing `current_version` and appending an immutable entry to
+    /// `design_versions`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] if `id` is not found, `name` is empty, or `design`
+    /// fails semantic validation.
+    pub fn update_with_author(
+        &self,
+        id: &str,
+        name: Option<String>,
+        design: Design,
+        note: Option<String>,
+        author: Option<String>,
+    ) -> Result<DesignRecord, StoreError> {
         validate_design_payload(&design)?;
         let digest = canonical_design_blake3(&design);
         let now = now_epoch_ms();
@@ -449,6 +472,12 @@ impl DesignStore {
 
         if let Some(updated_name) = next_name {
             existing.name = updated_name;
+        }
+        if let Some(updated_author) = author
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+        {
+            existing.author = updated_author;
         }
         existing.current_version += 1;
         existing.content_blake3 = digest.clone();
@@ -489,9 +518,32 @@ impl DesignStore {
         target_version: u32,
         note: Option<String>,
     ) -> Result<DesignRecord, StoreError> {
+        self.restore_version_with_author(id, target_version, note, None)
+    }
+
+    /// Restores a historical version `target_version` with an optional `author`
+    /// attribution for the new head version.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::NotFound`] or [`StoreError::VersionNotFound`] if
+    /// the design or version does not exist.
+    pub fn restore_version_with_author(
+        &self,
+        id: &str,
+        target_version: u32,
+        note: Option<String>,
+        author: Option<String>,
+    ) -> Result<DesignRecord, StoreError> {
         let historical = self.get_version(id, target_version)?;
         let restore_note = note.or_else(|| Some(format!("Restored from version {target_version}")));
-        self.update(id, Some(historical.name), historical.design, restore_note)
+        self.update_with_author(
+            id,
+            Some(historical.name),
+            historical.design,
+            restore_note,
+            author,
+        )
     }
 
     /// Deletes a design and all of its version history.

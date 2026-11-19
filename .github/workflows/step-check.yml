@@ -9,14 +9,26 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: "step-check-${{ github.ref }}"
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
+      - name: Verify core crates compile for wasm32-unknown-unknown
+        run: cargo build -p blade-model -p blade-geom -p blade-mesh -p blade-aero --target wasm32-unknown-unknown
       - name: Verify generated TypeScript types match Rust structs (T-106)
         run: cargo test -p blade-model --test ts_bindings
       - name: Verify 5-fixture volume & bounding-box golden snapshots (T-107)
@@ -31,9 +43,10 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
 
       # FreeCAD provides the OCCT kernel used to validate the STEP files.
-      # The community package tracks weekly builds of FreeCAD 1.x.
       - name: Install FreeCAD (headless OCCT kernel)
         shell: powershell
         run: choco install freecad -y --no-progress
@@ -55,4 +68,12 @@ jobs:
           $py = Get-ChildItem "C:\Program Files\FreeCAD*\bin\python.exe","C:\ProgramData\chocolatey\lib\freecad\*\bin\python.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $py) { Write-Error "FreeCAD python not found"; exit 1 }
           & $py.FullName tests\step_check.py target\naca4412.assembly.step --solids 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Validate D-flat hub STEP
+        shell: powershell
+        run: |
+          $py = Get-ChildItem "C:\Program Files\FreeCAD*\bin\python.exe","C:\ProgramData\chocolatey\lib\freecad\*\bin\python.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $py) { Write-Error "FreeCAD python not found"; exit 1 }
+          & $py.FullName tests\step_check.py target\naca4412.hub-dflat.step --solids 1
           if ($LASTEXITCODE -ne 0) { exit 1 }

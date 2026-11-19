@@ -98,6 +98,10 @@ pub struct ExportArgs {
 /// Errors returned by the `bladelab` CLI.
 #[derive(Debug, Error)]
 pub enum CliError {
+    /// User requested help text (`-h`, `--help`, `help`).
+    #[error("{0}")]
+    Help(String),
+
     /// Usage or command-line argument error.
     #[error("{0}")]
     Usage(String),
@@ -165,7 +169,7 @@ where
     }
 
     match tokens[0].as_str() {
-        "-h" | "--help" | "help" => return Err(CliError::Usage(usage_text())),
+        "-h" | "--help" | "help" => return Err(CliError::Help(usage_text())),
         "export" => {}
         other => {
             return Err(CliError::Usage(format!(
@@ -184,7 +188,7 @@ where
     while index < tokens.len() {
         let token = &tokens[index];
         if token == "-h" || token == "--help" {
-            return Err(CliError::Usage(usage_text()));
+            return Err(CliError::Help(usage_text()));
         } else if token == "-f" || token == "--format" {
             index += 1;
             let value = tokens.get(index).ok_or_else(|| {

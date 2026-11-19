@@ -2,7 +2,10 @@
 
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
-use blade_server::{build_router, AppState};
+use axum::routing::get;
+use axum::Router;
+use blade_server::{build_router, AppState, CatchPanicLayer, ExportCache};
+use std::sync::Arc;
 use tower::ServiceExt;
 
 const LINEAR_FIXTURE: &str = include_str!("../../../fixtures/naca4412-linear.json");
@@ -156,20 +159,39 @@ async fn panics_are_caught_and_do_not_crash_the_server() {
     let state = AppState::new();
     let app = build_router(state);
 
-    // Trigger a deliberate panic inside the handler via `x-bladelab-debug-panic: true`.
-    let panic_req = Request::builder()
+    // Production export route MUST ignore x-bladelab-debug-panic header (no remote DoS).
+    let header_req = Request::builder()
         .method(Method::POST)
         .uri("/api/v1/export?format=stl")
         .header("x-bladelab-debug-panic", "true")
         .body(Body::from(LINEAR_FIXTURE))
         .unwrap();
-    let panic_resp = app.clone().oneshot(panic_req).await.unwrap();
+    let header_resp = app.clone().oneshot(header_req).await.unwrap();
+    assert_eq!(header_resp.status(), StatusCode::OK);
+
+    // Verify CatchPanicLayer catches panics in a test-only route without crashing.
+    let panic_app = Router::new()
+        .route(
+            "/_test/panic",
+            get(|| async {
+                panic!("simulated handler panic");
+                #[allow(unreachable_code)]
+                "unreachable"
+            }),
+        )
+        .layer(CatchPanicLayer);
+    let panic_req = Request::builder()
+        .method(Method::GET)
+        .uri("/_test/panic")
+        .body(Body::empty())
+        .unwrap();
+    let panic_resp = panic_app.oneshot(panic_req).await.unwrap();
     assert_eq!(panic_resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let panic_body = to_bytes(panic_resp.into_body(), 64 * 1024).await.unwrap();
     let panic_str = std::str::from_utf8(&panic_body).unwrap();
     assert!(panic_str.contains("internal server panic recovered"));
 
-    // Subsequent requests to the same server state/router still succeed!
+    // Subsequent requests to the main router still succeed!
     let health_req = Request::builder()
         .method(Method::GET)
         .uri("/healthz")
@@ -185,4 +207,51 @@ async fn panics_are_caught_and_do_not_crash_the_server() {
         .unwrap();
     let export_resp = app.oneshot(export_req).await.unwrap();
     assert_eq!(export_resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn export_cache_bounds_memory_and_cold_if_none_match_checks_cache() {
+    // 1. Bounded cache evicts oldest entries when capacity is reached.
+    let cache = ExportCache::with_limits(2, 1024);
+    cache.insert("k1".into(), Arc::new(vec![1; 100]));
+    cache.insert("k2".into(), Arc::new(vec![2; 100]));
+    cache.insert("k3".into(), Arc::new(vec![3; 100]));
+    assert_eq!(cache.stats().entry_count, 2);
+    assert!(cache.get("k1").is_none(), "oldest entry evicted");
+    assert!(cache.get("k3").is_some(), "newest entry retained");
+
+    // 2. Cold server with matching If-None-Match must NOT return fake 304 HIT before caching.
+    let warm_app = build_router(AppState::new());
+    let first = warm_app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/export?format=stl")
+                .body(Body::from(LINEAR_FIXTURE))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let etag = first
+        .headers()
+        .get(header::ETAG)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let cold_app = build_router(AppState::new());
+    let cold_resp = cold_app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/export?format=stl")
+                .header(header::IF_NONE_MATCH, &etag)
+                .body(Body::from(LINEAR_FIXTURE))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(cold_resp.status(), StatusCode::OK);
+    assert_eq!(cold_resp.headers().get("x-bladelab-cache").unwrap(), "MISS");
 }

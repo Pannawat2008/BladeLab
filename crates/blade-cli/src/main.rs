@@ -5,6 +5,10 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args = match blade_cli::parse_args(std::env::args().skip(1)) {
         Ok(args) => args,
+        Err(blade_cli::CliError::Help(text)) => {
+            println!("{text}");
+            return ExitCode::SUCCESS;
+        }
         Err(err) => {
             eprintln!("error: {err}");
             return ExitCode::FAILURE;

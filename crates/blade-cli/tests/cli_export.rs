@@ -160,5 +160,20 @@ fn bladelab_binary_exports_files_and_handles_errors_cleanly() {
         .expect("spawns bladelab");
     assert!(!bad.status.success());
 
+    // `--help` exits 0 and prints usage to stdout.
+    let help = Command::new(bin)
+        .args(["--help"])
+        .output()
+        .expect("spawns bladelab --help");
+    assert!(
+        help.status.success(),
+        "--help should exit 0, stderr: {}",
+        String::from_utf8_lossy(&help.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&help.stdout).contains("Usage:"),
+        "--help should write usage to stdout"
+    );
+
     let _ = std::fs::remove_dir_all(&out_dir);
 }
