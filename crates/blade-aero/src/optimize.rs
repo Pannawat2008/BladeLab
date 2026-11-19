@@ -201,18 +201,35 @@ fn build_candidate_design(
     span_ratios: &[f64],
     chords: &[f64],
     twists: &[f64],
+    locked_mask: &[bool],
 ) -> Design {
     let mut candidate = base_design.clone();
     if let (Some(&c_root), Some(&c_tip)) = (chords.first(), chords.last()) {
         candidate.distributions.chord_mm = CurveSource::Linear {
-            root: (c_root * 100.0).round() / 100.0,
-            tip: (c_tip * 100.0).round() / 100.0,
+            root: if locked_mask.first().copied().unwrap_or(false) {
+                c_root
+            } else {
+                (c_root * 100.0).round() / 100.0
+            },
+            tip: if locked_mask.last().copied().unwrap_or(false) {
+                c_tip
+            } else {
+                (c_tip * 100.0).round() / 100.0
+            },
         };
     }
     if let (Some(&t_root), Some(&t_tip)) = (twists.first(), twists.last()) {
         candidate.distributions.twist_deg = CurveSource::Linear {
-            root: (t_root * 100.0).round() / 100.0,
-            tip: (t_tip * 100.0).round() / 100.0,
+            root: if locked_mask.first().copied().unwrap_or(false) {
+                t_root
+            } else {
+                (t_root * 100.0).round() / 100.0
+            },
+            tip: if locked_mask.last().copied().unwrap_or(false) {
+                t_tip
+            } else {
+                (t_tip * 100.0).round() / 100.0
+            },
         };
     }
 
@@ -224,10 +241,21 @@ fn build_candidate_design(
             .iter()
             .find(|ov| (ov.span_ratio - sr).abs() < 1e-5)
             .and_then(|ov| ov.airfoil.clone());
+        let is_locked_st = locked_mask.get(i).copied().unwrap_or(false);
+        let chord_val = if is_locked_st {
+            chords[i]
+        } else {
+            (chords[i] * 100.0).round() / 100.0
+        };
+        let twist_val = if is_locked_st {
+            twists[i]
+        } else {
+            (twists[i] * 100.0).round() / 100.0
+        };
         new_overrides.push(StationOverride {
             span_ratio: sr,
-            chord_mm: Some((chords[i] * 100.0).round() / 100.0),
-            twist_deg: Some((twists[i] * 100.0).round() / 100.0),
+            chord_mm: Some(chord_val),
+            twist_deg: Some(twist_val),
             airfoil: existing_airfoil,
         });
     }
@@ -274,6 +302,43 @@ pub fn optimize_blade(
     polars: &PolarSet,
     config: &OptimizerConfig,
 ) -> Result<OptimizationResult, AeroError> {
+    if !config.min_twist_deg.is_finite()
+        || !config.max_twist_deg.is_finite()
+        || config.min_twist_deg > config.max_twist_deg
+    {
+        return Err(AeroError::InvalidOperatingPoint(
+            "optimizer twist bounds must be finite with min_twist_deg <= max_twist_deg".into(),
+        ));
+    }
+    if !config.min_chord_mm.is_finite()
+        || !config.max_chord_mm.is_finite()
+        || config.min_chord_mm < 0.0
+        || (config.max_chord_mm > 0.0 && config.min_chord_mm > config.max_chord_mm)
+    {
+        return Err(AeroError::InvalidOperatingPoint(
+            "optimizer chord bounds must be finite with 0 <= min_chord_mm <= max_chord_mm".into(),
+        ));
+    }
+    if !config.pitch_deg.is_finite() {
+        return Err(AeroError::InvalidOperatingPoint(
+            "optimizer pitch_deg must be finite".into(),
+        ));
+    }
+    if let Some(w) = config.wind_speed_mps {
+        if !w.is_finite() || w <= 0.0 {
+            return Err(AeroError::InvalidOperatingPoint(
+                "optimizer wind_speed_mps must be finite and > 0".into(),
+            ));
+        }
+    }
+    if let OptimizationObjective::BroadbandTsr { spread_ratio } = config.objective {
+        if !spread_ratio.is_finite() || spread_ratio <= 0.0 {
+            return Err(AeroError::InvalidOperatingPoint(
+                "optimizer spread_ratio must be finite and > 0".into(),
+            ));
+        }
+    }
+
     let initial_blade =
         resolve(design).map_err(|e| AeroError::InvalidBlade(format!("resolve failed: {e}")))?;
     let wind = config
@@ -394,8 +459,13 @@ pub fn optimize_blade(
                         &baseline_twists,
                         config.enforce_monotonic,
                     );
-                    let cand_design =
-                        build_candidate_design(design, &span_ratios, &cand_c, &cand_t);
+                    let cand_design = build_candidate_design(
+                        design,
+                        &span_ratios,
+                        &cand_c,
+                        &cand_t,
+                        &locked_mask,
+                    );
                     if validate(&cand_design).is_ok() {
                         if let Ok(cand_blade) = resolve(&cand_design) {
                             if let Ok((score, aero)) = evaluate_objective(
@@ -455,7 +525,8 @@ pub fn optimize_blade(
                     &baseline_twists,
                     config.enforce_monotonic,
                 );
-                let cand_design = build_candidate_design(design, &span_ratios, &cand_c, &cand_t);
+                let cand_design =
+                    build_candidate_design(design, &span_ratios, &cand_c, &cand_t, &locked_mask);
                 if validate(&cand_design).is_ok() {
                     if let Ok(cand_blade) = resolve(&cand_design) {
                         if let Ok((score, aero)) = evaluate_objective(
@@ -497,7 +568,8 @@ pub fn optimize_blade(
                     &baseline_twists,
                     config.enforce_monotonic,
                 );
-                let cand_design = build_candidate_design(design, &span_ratios, &cand_c, &cand_t);
+                let cand_design =
+                    build_candidate_design(design, &span_ratios, &cand_c, &cand_t, &locked_mask);
                 if validate(&cand_design).is_ok() {
                     if let Ok(cand_blade) = resolve(&cand_design) {
                         if let Ok((score, aero)) = evaluate_objective(
@@ -627,6 +699,58 @@ mod tests {
             "broadband objective should improve: init={:.4}, opt={:.4}",
             result.initial_objective,
             result.optimized_objective
+        );
+    }
+
+    #[test]
+    fn optimizer_rejects_inverted_bounds_and_preserves_non_integer_locked_stations() {
+        let polars = PolarSet::builtin();
+        let linear = Design::from_json(FIXTURE_LINEAR).expect("valid fixture");
+
+        // Inverted min/max twist bounds previously panicked in f64::clamp
+        let bad_cfg = OptimizerConfig {
+            min_twist_deg: 20.0,
+            max_twist_deg: 5.0,
+            ..OptimizerConfig::default()
+        };
+        assert!(
+            optimize_blade(&linear, &polars, &bad_cfg).is_err(),
+            "inverted twist bounds must return Err instead of panicking"
+        );
+
+        let nan_cfg = OptimizerConfig {
+            min_chord_mm: f64::NAN,
+            ..OptimizerConfig::default()
+        };
+        assert!(
+            optimize_blade(&linear, &polars, &nan_cfg).is_err(),
+            "NaN min_chord_mm must return Err instead of panicking"
+        );
+
+        // Non-integer locked station on Schmitz fixture must not drift by 0.01 rounding
+        let schmitz = Design::from_json(include_str!("../../../fixtures/naca4412-schmitz.json"))
+            .expect("schmitz fixture");
+        let base_blade = resolve(&schmitz).expect("resolve schmitz");
+        let sr0 = base_blade.stations[0].span_ratio;
+        let c0 = base_blade.stations[0].chord_mm;
+        let t0 = base_blade.stations[0].twist_deg;
+
+        let lock_cfg = OptimizerConfig {
+            locked_span_ratios: vec![sr0],
+            max_iterations: 4,
+            ..OptimizerConfig::default()
+        };
+        let res = optimize_blade(&schmitz, &polars, &lock_cfg).expect("optimize schmitz");
+        let opt_blade = resolve(&res.optimized_design).expect("resolve optimized");
+        assert!(
+            (opt_blade.stations[0].chord_mm - c0).abs() < 1e-9,
+            "locked non-integer chord drifted: {} vs {c0}",
+            opt_blade.stations[0].chord_mm
+        );
+        assert!(
+            (opt_blade.stations[0].twist_deg - t0).abs() < 1e-9,
+            "locked non-integer twist drifted: {} vs {t0}",
+            opt_blade.stations[0].twist_deg
         );
     }
 }

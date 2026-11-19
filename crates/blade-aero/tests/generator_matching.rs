@@ -95,6 +95,23 @@ fn rejects_invalid_generator_specs_without_panicking() {
     ));
 }
 
+#[test]
+fn match_generator_handles_high_tsr_runaway_above_tsr_12() {
+    let raw = include_str!("../../../fixtures/naca6409-high-tsr-5blade.json");
+    let blade = resolve(&Design::from_json(raw).unwrap()).unwrap();
+    let polars = PolarSet::builtin();
+    // Very light load (200 ohm) on high-TSR rotor can run away past TSR 12
+    let spec = GeneratorSpec::new(200.0, 2.0, 0.05);
+    let matched = match_generator(&blade, &polars, 8.0, 0.0, &spec, 200.0).unwrap();
+    assert!(
+        (matched.aero.torque_nm - matched.generator.torque_nm).abs() < 1e-2,
+        "high-TSR light-load equilibrium did not converge: tsr={}, Q_aero={}, Q_gen={}",
+        matched.tip_speed_ratio,
+        matched.aero.torque_nm,
+        matched.generator.torque_nm
+    );
+}
+
 proptest! {
     #[test]
     fn prop_generator_state_conserves_energy_and_voltage_divider_laws(

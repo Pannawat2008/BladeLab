@@ -151,6 +151,10 @@ pub fn extract_geometry_features(
         for win in norm_pts.windows(2) {
             let (x0, y0) = win[0];
             let (x1, y1) = win[1];
+            // Skip Lednicer surface-restart chord jumps from upper TE (x≈1) back to lower LE (x≈0).
+            if x0 > 0.7 && x1 < 0.3 {
+                continue;
+            }
             if (x0 <= xc && xc <= x1) || (x1 <= xc && xc <= x0) {
                 let dx = x1 - x0;
                 let y = if dx.abs() < 1e-9 {
@@ -225,14 +229,16 @@ pub fn synthesize_polar_from_features(
             let d_alpha_rad = (alpha - alpha0_deg).to_radians();
             let cl_linear = cl_slope_per_rad * d_alpha_rad;
 
-            // Smooth Kirchhoff / trailing-edge separation factor f_sep in [0, 1]
-            let stall_ref = if alpha >= alpha0_deg {
-                stall_pos_deg
+            // Smooth Kirchhoff / trailing-edge separation factor f_sep in [0, 1].
+            // Measure attached-flow span relative to alpha0 so cambered airfoils are
+            // not double-shifted by alpha0_deg and peak cleanly near stall_pos_deg.
+            let stall_span = if alpha >= alpha0_deg {
+                (stall_pos_deg - alpha0_deg).max(6.0)
             } else {
-                stall_neg_deg.abs()
+                (alpha0_deg - stall_neg_deg).max(6.0)
             };
-            let ratio = (alpha - alpha0_deg).abs() / stall_ref.max(4.0);
-            let sep_blend = 1.0 / (1.0 + ratio.powi(5));
+            let ratio = (alpha - alpha0_deg).abs() / (stall_span * 1.15);
+            let sep_blend = 1.0 / (1.0 + ratio.powi(6));
             let cl_post = 0.92 * (2.0 * d_alpha_rad).sin();
             let cl = cl_linear * sep_blend + cl_post * (1.0 - sep_blend);
 
@@ -366,5 +372,51 @@ mod tests {
         let table = synthesize_contour_polar("CUSTOM2412", &pts, 12.0).expect("contour polar");
         let eval = table.eval(6.0, 80_000.0).expect("eval");
         assert!(eval.cl > 0.6 && eval.cd > 0.006);
+    }
+
+    #[test]
+    fn synthesized_naca4412_matches_realistic_peak_cl_and_lednicer_contour_is_accurate() {
+        // 1. NACA 4412 at Re=100k should achieve Cl_max >= 1.25 near alpha 10..15 deg
+        //    (previously double-shifted by alpha0 and stalled at 7 deg with Cl=0.89).
+        let naca4412 = synthesize_naca4_polar(0.04, 0.4, 0.12, 12.0).expect("4412");
+        let mut peak_cl = f64::NEG_INFINITY;
+        let mut peak_alpha = 0.0;
+        for a in 0..=16 {
+            let cl = naca4412.eval(f64::from(a), 100_000.0).unwrap().cl;
+            if cl > peak_cl {
+                peak_cl = cl;
+                peak_alpha = f64::from(a);
+            }
+        }
+        assert!(
+            peak_cl >= 1.25 && peak_alpha >= 10.0,
+            "synthesized NACA4412 stalled too early/low: peak Cl={peak_cl:.3} at {peak_alpha}°"
+        );
+
+        // 2. Lednicer-ordered undercambered contour (upper 0->1, then lower 0->1 with positive lower y)
+        let mut lednicer = Vec::new();
+        for i in 0..=20 {
+            let x = (i as f64) / 20.0;
+            let yc = 0.06 * 4.0 * x * (1.0 - x);
+            let yt = 0.04 * (x.sqrt() - x).max(0.0);
+            lednicer.push((x, yc + yt));
+        }
+        for i in 0..=20 {
+            let x = (i as f64) / 20.0;
+            let yc = 0.06 * 4.0 * x * (1.0 - x);
+            let yt = 0.04 * (x.sqrt() - x).max(0.0);
+            lednicer.push((x, yc - yt));
+        }
+        let feat = extract_geometry_features(&lednicer).expect("lednicer features");
+        assert!(
+            (feat.max_camber - 0.06).abs() < 0.005,
+            "Lednicer chord jump corrupted max_camber: got {}",
+            feat.max_camber
+        );
+        assert!(
+            (feat.camber_position - 0.50).abs() < 0.05,
+            "Lednicer chord jump corrupted camber_position: got {}",
+            feat.camber_position
+        );
     }
 }

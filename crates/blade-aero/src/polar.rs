@@ -218,10 +218,10 @@ impl PolarSet {
         let p_f = airfoil.camber_position * 10.0;
         let t_f = airfoil.thickness_ratio * 100.0;
         let m_pct = m_f.round() as u32;
-        let p_tenth = p_f.round() as u32;
+        let p_tenth = if m_pct == 0 { 0 } else { p_f.round() as u32 };
         let t_pct = t_f.round() as u32;
         if (m_f - f64::from(m_pct)).abs() < 1e-3
-            && (p_f - f64::from(p_tenth)).abs() < 1e-3
+            && (m_pct == 0 || (p_f - f64::from(p_tenth)).abs() < 1e-3)
             && (t_f - f64::from(t_pct)).abs() < 1e-3
         {
             let naca_key = format!("NACA{m_pct}{p_tenth}{t_pct:02}");

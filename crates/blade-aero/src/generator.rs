@@ -213,14 +213,15 @@ pub fn match_generator(
         Ok((aero.torque_nm - gen.torque_nm, aero, gen))
     };
 
-    // Scan from high TSR down to low TSR to locate the stable high-speed equilibrium
-    // where net torque crosses from positive (below equilibrium TSR) to negative (above equilibrium TSR).
-    let mut bracket: Option<(f64, f64)> = None;
-    let mut best_tsr = blade.rotor.design_tsr.clamp(tsr_min, tsr_max);
-    let mut best_abs_diff = f64::INFINITY;
+    // Scan across TSR to locate the highest-TSR stable equilibrium where net torque
+    // crosses from positive (below equilibrium TSR) to negative (above equilibrium TSR).
+    let mut stable_bracket: Option<(f64, f64)> = None;
+    let mut any_bracket: Option<(f64, f64)> = None;
 
     let mut prev_tsr = tsr_min;
     let (mut prev_diff, _, _) = torque_balance(prev_tsr)?;
+    let mut best_tsr = prev_tsr;
+    let mut best_abs_diff = prev_diff.abs();
 
     for i in 1..=n_scan {
         let cur_tsr = tsr_min + (tsr_max - tsr_min) * (i as f64 / n_scan as f64);
@@ -229,15 +230,32 @@ pub fn match_generator(
             best_abs_diff = cur_diff.abs();
             best_tsr = cur_tsr;
         }
-        // Prefer stable crossing (prev_diff >= 0 -> cur_diff <= 0) or any sign change
-        if prev_diff * cur_diff <= 0.0 {
-            bracket = Some((prev_tsr, cur_tsr));
+        if prev_diff >= 0.0 && cur_diff <= 0.0 {
+            stable_bracket = Some((prev_tsr, cur_tsr));
+        } else if prev_diff * cur_diff <= 0.0 {
+            any_bracket = Some((prev_tsr, cur_tsr));
         }
         prev_tsr = cur_tsr;
         prev_diff = cur_diff;
     }
 
-    let eq_tsr = if let Some((lo, hi)) = bracket {
+    // If rotor is still accelerating past tsr_max under light/open load, extend scan up to TSR 30.
+    while stable_bracket.is_none() && prev_diff > 0.0 && prev_tsr < 30.0 {
+        let cur_tsr = (prev_tsr + 0.5).min(30.0);
+        let (cur_diff, _, _) = torque_balance(cur_tsr)?;
+        if cur_diff.abs() < best_abs_diff {
+            best_abs_diff = cur_diff.abs();
+            best_tsr = cur_tsr;
+        }
+        if prev_diff >= 0.0 && cur_diff <= 0.0 {
+            stable_bracket = Some((prev_tsr, cur_tsr));
+            break;
+        }
+        prev_tsr = cur_tsr;
+        prev_diff = cur_diff;
+    }
+
+    let eq_tsr = if let Some((lo, hi)) = stable_bracket.or(any_bracket) {
         brent_root(lo, hi, 1e-7, 60, |tsr| {
             torque_balance(tsr).map(|t| t.0).unwrap_or(0.0)
         })

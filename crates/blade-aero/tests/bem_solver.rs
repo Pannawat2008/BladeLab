@@ -151,6 +151,56 @@ fn rejects_invalid_operating_points_without_panicking() {
     ));
 }
 
+#[test]
+fn simulate_handles_zero_hub_radius_prandtl_hub_formula_and_flat_brent() {
+    // 1. Valid design with hub_radius_mm == 0.0 must never produce NaN
+    let mut design = Design::from_json(include_str!("../../../fixtures/naca4412-linear.json"))
+        .expect("fixture parses");
+    design.rotor.hub_radius_mm = 0.0;
+    let blade = resolve(&design).expect("zero-hub design resolves");
+    let polars = PolarSet::builtin();
+    let op = OperatingPoint::from_blade(&blade);
+    let res = simulate(&blade, &polars, &op).expect("BEM succeeds with hub_radius=0");
+    assert!(
+        res.cp.is_finite() && res.ct.is_finite() && res.cq.is_finite() && res.power_w.is_finite(),
+        "zero hub radius produced non-finite metrics: cp={}, ct={}, cq={}, power={}",
+        res.cp,
+        res.ct,
+        res.cq,
+        res.power_w
+    );
+    for st in &res.stations {
+        assert!(st.axial_induction.is_finite() && st.tangential_induction.is_finite());
+        assert!(st.thrust_per_m_n.is_finite() && st.torque_per_m_nm.is_finite());
+    }
+
+    // 2. Prandtl hub-loss exponent must use r_hub_m in denominator (not r_m)
+    let r_hub = 0.06_f64;
+    let r_tip = 0.60_f64;
+    let r_m = 0.102_f64;
+    let phi = 35.0_f64.to_radians();
+    let f_got = prandtl_loss_factor(3, r_m, r_hub, r_tip, phi);
+    let sin_phi = phi.sin().abs();
+    let f_tip_exp = (1.5 * (r_tip - r_m) / (r_m * sin_phi)).min(50.0);
+    let f_hub_exp = (1.5 * (r_m - r_hub) / (r_hub * sin_phi)).min(50.0);
+    let expected = (2.0 / std::f64::consts::PI)
+        * (-f_tip_exp).exp().acos()
+        * (2.0 / std::f64::consts::PI)
+        * (-f_hub_exp).exp().acos();
+    assert!(
+        (f_got - expected).abs() < 1e-6,
+        "Prandtl hub loss mismatch: got {f_got}, expected {expected}"
+    );
+    assert!(prandtl_loss_factor(3, 0.0, 0.0, 0.60, 0.5).is_finite());
+
+    // 3. brent_root must stay finite on flat constant functions (fa == fb)
+    let flat_root = brent_root(0.0, 1.0, 1e-9, 50, |_| 1.0);
+    assert!(
+        flat_root.is_finite(),
+        "brent_root returned NaN/Inf on flat fn: {flat_root}"
+    );
+}
+
 proptest! {
     #[test]
     fn prop_bem_solver_converges_and_respects_betz_limit_across_operating_envelope(

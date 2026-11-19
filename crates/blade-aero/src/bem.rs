@@ -148,11 +148,18 @@ pub fn prandtl_loss_factor(
     let sin_phi = phi_rad.sin().abs().max(1e-6);
     let b_half = 0.5 * f64::from(blade_count.max(1));
 
-    let f_tip = (b_half * (r_tip_m - r_m).max(0.0) / (r_m * sin_phi)).min(50.0);
-    let f_hub = (b_half * (r_m - r_hub_m).max(0.0) / (r_m * sin_phi)).min(50.0);
-
-    let loss_tip = (2.0 / PI) * (-f_tip).exp().clamp(-1.0, 1.0).acos();
-    let loss_hub = (2.0 / PI) * (-f_hub).exp().clamp(-1.0, 1.0).acos();
+    let loss_tip = if r_m > 1e-9 {
+        let f_tip = (b_half * (r_tip_m - r_m).max(0.0) / (r_m * sin_phi)).min(50.0);
+        (2.0 / PI) * (-f_tip).exp().clamp(-1.0, 1.0).acos()
+    } else {
+        1.0
+    };
+    let loss_hub = if r_hub_m > 1e-9 {
+        let f_hub = (b_half * (r_m - r_hub_m).max(0.0) / (r_hub_m * sin_phi)).min(50.0);
+        (2.0 / PI) * (-f_hub).exp().clamp(-1.0, 1.0).acos()
+    } else {
+        1.0
+    };
 
     (loss_tip * loss_hub).clamp(1e-4, 1.0)
 }
@@ -218,21 +225,24 @@ where
             return b;
         }
 
-        let mut s = if (fa - fc).abs() > 1e-14 && (fb - fc).abs() > 1e-14 {
+        let mut s = if (fa - fc).abs() > 1e-14 && (fb - fc).abs() > 1e-14 && (fa - fb).abs() > 1e-14
+        {
             // Inverse quadratic interpolation
             a * fb * fc / ((fa - fb) * (fa - fc))
                 + b * fa * fc / ((fb - fa) * (fb - fc))
                 + c * fa * fb / ((fc - fa) * (fc - fb))
-        } else {
+        } else if (fb - fa).abs() > 1e-15 {
             // Secant step
             b - fb * (b - a) / (fb - fa)
+        } else {
+            0.5 * (a + b)
         };
 
         let cond1 = {
             let bound1 = (3.0 * a + b) * 0.25;
             let lo = bound1.min(b);
             let hi = bound1.max(b);
-            s < lo || s > hi
+            !s.is_finite() || s < lo || s > hi
         };
         let cond2 = mflag && (s - b).abs() >= 0.5 * (b - c).abs();
         let cond3 = !mflag && (s - b).abs() >= 0.5 * (c - d).abs();
@@ -325,7 +335,7 @@ fn eval_ning_state(
         0.0
     } else {
         let kp = (ctx.solidity * ct) / denom_tang;
-        if (1.0 - kp).abs() < 1e-6 {
+        if !kp.is_finite() || (1.0 - kp).abs() < 1e-6 {
             0.0
         } else {
             (kp / (1.0 - kp)).clamp(-0.5, 1.5)
@@ -379,7 +389,7 @@ fn solve_station(
             // Scan 36 sub-intervals in [eps, phi_hi] to find any sign-change bracket
             let n_scan = 36;
             let mut bracket: Option<(f64, f64)> = None;
-            let mut best_phi = phi_sol;
+            let mut best_phi = eps;
             let mut best_abs = f_lo.abs();
             let mut prev_phi = eps;
             let mut prev_f = f_lo;
@@ -507,7 +517,8 @@ pub fn simulate(
         let r_eff_m = r_m.clamp(r_hub_m + inset_m, r_tip_m - inset_m);
         let chord_m = st.chord_mm * 1e-3;
         let local_tsr = (omega_rad_s * r_m / op.wind_speed_mps).max(1e-4);
-        let solidity = (f64::from(b.rotor.blade_count) * chord_m) / (2.0 * PI * r_m);
+        let r_solidity_m = r_m.max(1e-4 * r_tip_m);
+        let solidity = (f64::from(b.rotor.blade_count) * chord_m) / (2.0 * PI * r_solidity_m);
         let ctx = StationContext {
             blade_count: b.rotor.blade_count,
             r_m,

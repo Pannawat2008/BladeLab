@@ -147,6 +147,23 @@ fn rejects_malformed_polar_specs_and_non_finite_queries_without_panicking() {
     ));
 }
 
+#[test]
+fn symmetric_naca_with_nonzero_camber_position_resolves_builtin_naca0012() {
+    let set = PolarSet::builtin();
+    let af = blade_model::ResolvedAirfoil {
+        max_camber: 0.0,
+        camber_position: 0.4,
+        thickness_ratio: 0.12,
+        name: None,
+    };
+    let resolved = set.resolve_for_station(&af).expect("resolves NACA0012");
+    assert_eq!(
+        resolved.name(),
+        "NACA0012",
+        "symmetric NACA with camber_position=0.4 must resolve built-in NACA0012"
+    );
+}
+
 proptest! {
     #[test]
     fn prop_viterna_polar_evaluation_is_finite_positive_drag_and_periodic_across_all_angles(
