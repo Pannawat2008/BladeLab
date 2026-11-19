@@ -70,10 +70,13 @@ fn hub_step_parses_as_a_hollow_cylinder() {
     let kernel = TruckKernel::new();
     let solid = kernel.hub_solid(&hub).expect("hub solid");
     assert_eq!(solid.boundaries().len(), 1);
-    // `whole_rsweep` revolves in three 120° spans (`DIVISION = 3` in truck),
-    // so each of the four annular faces appears three times in the closed shell.
+    // 2D extrusion (`tsweep`) of the annular face: bottom/top caps + 3 outer + 3 inner arcs
+    // (passes OCCT BOPCheck with 0 InvalidCurveOnSurface errors).
     let face_count = solid.boundaries()[0].len();
-    assert_eq!(face_count, 12, "outer, bore, top, bottom x 3 spans");
+    assert_eq!(
+        face_count, 8,
+        "bottom/top caps + 3 outer arcs + 3 bore arcs"
+    );
 
     let step = kernel.write_step(&[solid]).expect("STEP export");
     let table = Table::from_step(&step).expect("truck reader accepts the file");
@@ -155,6 +158,35 @@ fn d_flat_with_invalid_distances_is_rejected() {
 }
 
 #[test]
+fn mesh_solid_rejects_oob_indices_without_panicking() {
+    let kernel = TruckKernel::new();
+    let bad_mesh = blade_mesh::Mesh {
+        vertices: vec![
+            blade_geom::Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            blade_geom::Point3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            blade_geom::Point3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+        ],
+        triangles: vec![blade_mesh::Triangle::new(0, 1, 99)],
+    };
+    assert!(
+        matches!(kernel.mesh_solid(&bad_mesh), Err(CadError::Topology(_))),
+        "out-of-bounds vertex index must return CadError::Topology instead of panicking"
+    );
+}
+
+#[test]
 fn multiple_bodies_share_one_step_document() {
     let kernel = TruckKernel::new();
     let blade = kernel.blade_solid(&fixture_surface()).expect("blade");
@@ -221,21 +253,21 @@ fn all_five_golden_fixtures_export_valid_step_solids_with_expected_span_bounds()
             include_str!("../../../fixtures/naca4412-linear.json"),
             60.0,
             600.0,
-            12,
+            8,
         ),
         (
             "naca4412-schmitz.json",
             include_str!("../../../fixtures/naca4412-schmitz.json"),
             60.0,
             600.0,
-            12,
+            8,
         ),
         (
             "naca0012-constant.json",
             include_str!("../../../fixtures/naca0012-constant.json"),
             40.0,
             400.0,
-            12,
+            8,
         ),
         (
             "naca2415-multistation-dflat.json",

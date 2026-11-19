@@ -81,7 +81,7 @@ fn build_model_xml(mesh: &Mesh) -> String {
             triangle.b as usize,
             triangle.c as usize,
         );
-        if a < vertex_count && b < vertex_count && c < vertex_count {
+        if a < vertex_count && b < vertex_count && c < vertex_count && a != b && b != c && c != a {
             let _ = writeln!(
                 xml,
                 "          <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\"/>",

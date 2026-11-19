@@ -157,15 +157,22 @@ impl Default for FabricationSpec {
 #[must_use]
 pub fn section_core_station(section: &[Point3]) -> (Point3, f64, usize, usize) {
     let n = section.len();
+    if n < 3 {
+        let fallback = section.first().copied().unwrap_or_default();
+        return (fallback, 0.0, 0, 0);
+    }
     let n_le = n / 2;
-    let mut best_d = (n_le / 3).max(1);
+    let mut best_d = (n_le / 3).max(1).min(n_le.saturating_sub(1));
     let mut best_thickness = 0.0_f64;
 
     // Search chordwise stations between ~10% and ~65% of the contour half-length
     // around the thickest core of the airfoil.
-    let d_min = (n_le / 8).max(1);
-    let d_max = ((n_le * 3) / 4).max(d_min + 1).min(n_le.saturating_sub(1));
+    let d_min = (n_le / 8).max(1).min(n_le.saturating_sub(1));
+    let d_max = ((n_le * 3) / 4).max(d_min).min(n_le.saturating_sub(1));
     for d in d_min..=d_max {
+        if n_le + d >= n {
+            break;
+        }
         let upper = section[n_le - d];
         let lower = section[n_le + d];
         let dist = upper.distance_to(&lower);
@@ -176,7 +183,7 @@ pub fn section_core_station(section: &[Point3]) -> (Point3, f64, usize, usize) {
     }
 
     let upper_idx = n_le - best_d;
-    let lower_idx = n_le + best_d;
+    let lower_idx = (n_le + best_d).min(n - 1);
     let upper = section[upper_idx];
     let lower = section[lower_idx];
     let center = Point3 {
@@ -192,13 +199,19 @@ fn evaluate_section_at_span(
     surface: &BladeSurface,
     span_mm: f64,
 ) -> Result<Vec<Point3>, MeshError> {
-    let point_count = surface.point_count();
-    let mut pts = Vec::with_capacity(point_count);
-    for idx in 0..point_count {
-        let pt = surface.point_at_span_mm(span_mm, idx)?;
-        pts.push(pt);
+    Ok(surface.section_at_span_mm(span_mm)?)
+}
+
+fn compute_hole_end_mm(span_start: f64, span_end: f64, depth_mm: f64) -> Option<f64> {
+    if !depth_mm.is_finite() || depth_mm <= 0.1 || !span_start.is_finite() || !span_end.is_finite()
+    {
+        return None;
     }
-    Ok(pts)
+    if span_end <= span_start + 1e-3 {
+        return None;
+    }
+    let min_end = (span_start + 1.0).min(span_end);
+    Some((span_start + depth_mm).clamp(min_end, span_end))
 }
 
 /// Computes the spanwise split plane coordinates `[z_0, z_1, ..., z_K]` in mm.
@@ -217,7 +230,7 @@ pub fn compute_split_spans(
 
     let mut bounds = Vec::with_capacity(parts + 1);
     bounds.push(span_start_mm);
-    if let Some(r) = split_ratio {
+    if let Some(r) = split_ratio.filter(|v| v.is_finite()) {
         let r_clamped = r.clamp(0.12, 0.88);
         if parts == 2 {
             bounds.push(span_start_mm + r_clamped * total);
@@ -346,7 +359,7 @@ impl SparTubeAxis {
         spec: SparHoleSpec,
         z_start: f64,
         z_end: f64,
-    ) -> Result<Self, MeshError> {
+    ) -> Result<Option<Self>, MeshError> {
         let samples = 9usize;
         let mut secs = Vec::with_capacity(samples);
         let mut cores = Vec::with_capacity(samples);
@@ -362,16 +375,39 @@ impl SparTubeAxis {
         }
 
         let min_thick = thicks.iter().copied().fold(f64::INFINITY, f64::min);
+        if !min_thick.is_finite() || min_thick <= 0.0 {
+            return Ok(None);
+        }
         let max_offset = (0.15 * min_thick).max(0.0);
-        let ox = spec.offset_x_mm.clamp(-max_offset, max_offset);
-        let oy = spec.offset_y_mm.clamp(-max_offset, max_offset);
+        let raw_ox = if spec.offset_x_mm.is_finite() {
+            spec.offset_x_mm
+        } else {
+            0.0
+        };
+        let raw_oy = if spec.offset_y_mm.is_finite() {
+            spec.offset_y_mm
+        } else {
+            0.0
+        };
+        let ox = raw_ox.clamp(-max_offset, max_offset);
+        let oy = raw_oy.clamp(-max_offset, max_offset);
 
         let x0 = cores[0].x + ox;
         let y0 = cores[0].y + oy;
         let x1_core = cores[samples - 1].x + ox;
         let y1_core = cores[samples - 1].y + oy;
 
-        let desired_radius = (0.5 * (spec.diameter_mm + spec.tolerance_mm.max(0.0))).max(0.2);
+        let raw_tol = if spec.tolerance_mm.is_finite() {
+            spec.tolerance_mm.max(0.0)
+        } else {
+            0.0
+        };
+        let raw_dia = if spec.diameter_mm.is_finite() {
+            spec.diameter_mm
+        } else {
+            return Ok(None);
+        };
+        let desired_radius = (0.5 * (raw_dia + raw_tol)).max(0.2);
 
         // Search candidate vertical (+z) axes between (x0, y0) and (x1_core, y1_core)
         // to find the vertical cylinder with maximum skin wall clearance across all
@@ -413,13 +449,16 @@ impl SparTubeAxis {
             let skin_r = if point_in_contour(sec, cx, cy) {
                 (distance_to_contour(sec, cx, cy) - 0.50).min(0.38 * th)
             } else {
-                0.25
+                0.0
             };
             max_safe_radius = max_safe_radius.min(skin_r);
         }
-        let radius = desired_radius.clamp(0.2, max_safe_radius.max(0.25));
+        if !max_safe_radius.is_finite() || max_safe_radius < 0.2 {
+            return Ok(None);
+        }
+        let radius = desired_radius.clamp(0.2, max_safe_radius);
 
-        Ok(Self {
+        Ok(Some(Self {
             z_start,
             z_end,
             x_start,
@@ -427,7 +466,7 @@ impl SparTubeAxis {
             x_end,
             y_end,
             radius,
-        })
+        }))
     }
 
     /// Evaluates the bore circle at spanwise station `z`.
@@ -1020,16 +1059,23 @@ pub fn spar_tube_axis_points(
     surface: &BladeSurface,
     spec: &FabricationSpec,
 ) -> Result<Option<[f64; 7]>, MeshError> {
-    let active_hole = spec
-        .spar_hole
-        .filter(|h| h.diameter_mm > 0.1 && h.depth_mm > 0.1);
+    let active_hole = spec.spar_hole.filter(|h| {
+        h.diameter_mm.is_finite()
+            && h.diameter_mm > 0.1
+            && h.depth_mm.is_finite()
+            && h.depth_mm > 0.1
+    });
     let Some(h) = active_hole else {
         return Ok(None);
     };
     let span_start = surface.span_start_mm();
     let span_end = surface.span_end_mm();
-    let hole_end_mm = (span_start + h.depth_mm).clamp(span_start + 1.0, span_end);
-    let axis = SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?;
+    let Some(hole_end_mm) = compute_hole_end_mm(span_start, span_end, h.depth_mm) else {
+        return Ok(None);
+    };
+    let Some(axis) = SparTubeAxis::plan(surface, h, span_start, hole_end_mm)? else {
+        return Ok(None);
+    };
     Ok(Some([
         axis.x_start,
         axis.y_start,
@@ -1064,15 +1110,20 @@ pub fn alignment_report(
     let span_start = surface.span_start_mm();
     let span_end = surface.span_end_mm();
     let bounds = compute_split_spans(span_start, span_end, split_parts, spec.split_ratio);
-    let active_hole = spec
-        .spar_hole
-        .filter(|h| h.diameter_mm > 0.1 && h.depth_mm > 0.1);
+    let active_hole = spec.spar_hole.filter(|h| {
+        h.diameter_mm.is_finite()
+            && h.diameter_mm > 0.1
+            && h.depth_mm.is_finite()
+            && h.depth_mm > 0.1
+    });
     let hole_end_mm = active_hole
-        .map(|h| (span_start + h.depth_mm).clamp(span_start + 1.0, span_end))
+        .and_then(|h| compute_hole_end_mm(span_start, span_end, h.depth_mm))
         .unwrap_or(span_start);
     let hole_axis = match active_hole {
-        Some(h) => Some(SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?),
-        None => None,
+        Some(h) if hole_end_mm > span_start + 1e-3 => {
+            SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?
+        }
+        _ => None,
     };
 
     let mut out = Vec::with_capacity(split_parts - 1);
@@ -1114,9 +1165,24 @@ pub fn tessellate_fabricated(
     surface: &BladeSurface,
     spec: &FabricationSpec,
 ) -> Result<Mesh, MeshError> {
-    let active_hole = spec
-        .spar_hole
-        .filter(|h| h.diameter_mm > 0.1 && h.depth_mm > 0.1);
+    if surface.section_count() < 2 {
+        return Err(MeshError::TooFewSections {
+            got: surface.section_count(),
+        });
+    }
+    if surface.point_count() < 3 {
+        return Err(MeshError::TooFewContourPoints {
+            min: 3,
+            got: surface.point_count(),
+        });
+    }
+
+    let active_hole = spec.spar_hole.filter(|h| {
+        h.diameter_mm.is_finite()
+            && h.diameter_mm > 0.1
+            && h.depth_mm.is_finite()
+            && h.depth_mm > 0.1
+    });
     let split_parts = spec.split_parts.clamp(1, 8);
 
     if active_hole.is_none() && split_parts == 1 {
@@ -1136,12 +1202,18 @@ pub fn tessellate_fabricated(
     }
 
     let hole_end_mm = active_hole
-        .map(|h| (span_start + h.depth_mm).clamp(span_start + 1.0, span_end))
+        .and_then(|h| compute_hole_end_mm(span_start, span_end, h.depth_mm))
         .unwrap_or(span_start);
     let hole_axis = match active_hole {
-        Some(h) => Some(SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?),
-        None => None,
+        Some(h) if hole_end_mm > span_start + 1e-3 => {
+            SparTubeAxis::plan(surface, h, span_start, hole_end_mm)?
+        }
+        _ => None,
     };
+
+    if hole_axis.is_none() && split_parts == 1 {
+        return tessellate(surface, &MeshOptions::default());
+    }
 
     // Alignment features for every interior split face.
     let mut planes: Vec<Option<PlaneFeatures>> = Vec::with_capacity(split_parts + 1);
@@ -1168,34 +1240,44 @@ pub fn tessellate_fabricated(
         _ => 0..split_parts,
     };
 
-    let explode_gap = if spec.active_part.is_none() && split_parts > 1 {
-        spec.explode_gap_mm.max(0.0)
-    } else {
-        0.0
-    };
+    let explode_gap =
+        if spec.active_part.is_none() && split_parts > 1 && spec.explode_gap_mm.is_finite() {
+            spec.explode_gap_mm.max(0.0)
+        } else {
+            0.0
+        };
 
     for part_idx in part_range {
         let z_a = split_bounds[part_idx];
         let z_b = split_bounds[part_idx + 1];
         let z_shift = (part_idx as f64) * explode_gap;
 
-        // Collect all spanwise stations inside [z_a, z_b], including z_a, z_b,
+        // Collect all spanwise stations inside [z_a, z_b], including exact endpoints z_a, z_b,
         // and hole_end_mm if a blind hole terminates inside this segment.
+        let seg_len = z_b - z_a;
+        let dedup_eps = (seg_len * 1e-4).clamp(1e-9, 1e-3);
         let mut seg_spans = vec![z_a, z_b];
         for &zs in &base_spans {
-            if zs > z_a + 1e-4 && zs < z_b - 1e-4 {
+            if zs > z_a + dedup_eps && zs < z_b - dedup_eps {
                 seg_spans.push(zs);
             }
         }
-        if active_hole.is_some() && hole_end_mm > z_a + 1e-3 && hole_end_mm < z_b - 1e-3 {
+        if hole_axis.is_some() && hole_end_mm > z_a + dedup_eps && hole_end_mm < z_b - dedup_eps {
             seg_spans.push(hole_end_mm);
         }
         seg_spans.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        seg_spans.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
+        seg_spans.dedup_by(|a, b| (*a - *b).abs() < dedup_eps);
+        if let Some(last) = seg_spans.last_mut() {
+            *last = z_b;
+        }
+        if seg_spans.len() < 2 {
+            seg_spans = vec![z_a, z_b];
+        }
 
         // Ensure at least MIN_SEGMENT_STATIONS stations for smooth lofted skin.
         while seg_spans.len() < MIN_SEGMENT_STATIONS {
-            let mut refined = Vec::with_capacity(seg_spans.len() * 2);
+            let prev_len = seg_spans.len();
+            let mut refined = Vec::with_capacity(prev_len * 2);
             for w in seg_spans.windows(2) {
                 refined.push(w[0]);
                 refined.push(0.5 * (w[0] + w[1]));
@@ -1203,11 +1285,14 @@ pub fn tessellate_fabricated(
             if let Some(&last) = seg_spans.last() {
                 refined.push(last);
             }
+            if refined.len() <= prev_len {
+                break;
+            }
             seg_spans = refined;
         }
 
         let seg_hole = hole_axis.and_then(|axis| {
-            if hole_end_mm > z_a + 1e-3 {
+            if hole_end_mm > z_a + dedup_eps {
                 Some((axis, hole_end_mm.min(z_b)))
             } else {
                 None
@@ -2054,5 +2139,78 @@ mod tests {
             single.active_part = Some(part);
             let _ = volume_of(&surface, &single);
         }
+    }
+
+    #[test]
+    fn short_blade_and_tiny_segments_do_not_panic_or_hang() {
+        let af = blade_geom::Naca4::new(0.04, 0.4, 0.12)
+            .unwrap()
+            .surface(50.0, 21)
+            .unwrap();
+        // Blade span < 1.0 mm with active spar hole previously panicked in clamp(span_start + 1.0, span_end)
+        let s0 = blade_geom::Section3D::from_airfoil(&af, 50.0, 5.0, 0.25, 10.0).unwrap();
+        let s1 = blade_geom::Section3D::from_airfoil(&af, 50.0, 5.0, 0.25, 10.5).unwrap();
+        let short_surf = blade_geom::loft(&[s0, s1]).unwrap();
+        let spec_short = FabricationSpec {
+            spar_hole: Some(SparHoleSpec {
+                diameter_mm: 4.0,
+                depth_mm: 5.0,
+                offset_x_mm: 0.0,
+                offset_y_mm: 0.0,
+                tolerance_mm: 0.0,
+            }),
+            split_parts: 1,
+            ..FabricationSpec::default()
+        };
+        let _ = spar_tube_axis_points(&short_surf, &spec_short);
+        let _ = tessellate_fabricated(&short_surf, &spec_short);
+
+        // Segment span < 1e-3 mm previously looped infinitely in while seg_spans.len() < MIN_SEGMENT_STATIONS
+        let t0 = blade_geom::Section3D::from_airfoil(&af, 50.0, 5.0, 0.25, 10.0).unwrap();
+        let t1 = blade_geom::Section3D::from_airfoil(&af, 50.0, 5.0, 0.25, 10.002).unwrap();
+        let tiny_surf = blade_geom::loft(&[t0, t1]).unwrap();
+        let spec_tiny = FabricationSpec {
+            split_parts: 4,
+            ..FabricationSpec::default()
+        };
+        let _ = tessellate_fabricated(&tiny_surf, &spec_tiny);
+    }
+
+    #[test]
+    fn section_core_station_handles_short_slices_and_thin_spar_returns_none() {
+        // Must not panic on empty or 2-point slice
+        let (_, t0, _, _) = section_core_station(&[]);
+        assert_eq!(t0, 0.0);
+        let p = Point3 {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let (_, t2, _, _) = section_core_station(&[p, p]);
+        assert_eq!(t2, 0.0);
+
+        // Ultra-thin blade (t/c = 0.01, chord = 10 mm -> max thickness 0.1 mm): bore cannot fit inside skin
+        let thin_af = blade_geom::Naca4::new(0.0, 0.0, 0.01)
+            .unwrap()
+            .surface(10.0, 21)
+            .unwrap();
+        let s0 = blade_geom::Section3D::from_airfoil(&thin_af, 10.0, 0.0, 0.25, 60.0).unwrap();
+        let s1 = blade_geom::Section3D::from_airfoil(&thin_af, 10.0, 0.0, 0.25, 160.0).unwrap();
+        let thin_surf = blade_geom::loft(&[s0, s1]).unwrap();
+        let spec = FabricationSpec {
+            spar_hole: Some(SparHoleSpec {
+                diameter_mm: 5.0,
+                depth_mm: 50.0,
+                offset_x_mm: 0.0,
+                offset_y_mm: 0.0,
+                tolerance_mm: 0.0,
+            }),
+            ..FabricationSpec::default()
+        };
+        let axis = spar_tube_axis_points(&thin_surf, &spec).unwrap();
+        assert!(
+            axis.is_none(),
+            "spar bore must return None when blade is too thin to contain it safely, got {axis:?}"
+        );
     }
 }

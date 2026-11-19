@@ -220,7 +220,9 @@ fn weld_blade_into_sector_zero(
         });
     }
 
-    // Partition 0..p_count into 4 quadrants matching corners c1 (+x,-y), c2 (+x,+y), c3 (-x,+y), c0 (-x,-y).
+    // Partition 0..p_count into 4 quadrants matching corners:
+    //   c0 = (-x,-y), c1 = (+x,-y), c2 = (+x,+y), c3 = (-x,+y)
+    //   q0 = 0° (+x), q1 = 90° (+y), q2 = 180° (-x), q3 = 270° (-y)
     let q0 = 0_usize;
     let q1 = p_count / 4;
     let q2 = p_count / 2;
@@ -228,24 +230,28 @@ fn weld_blade_into_sector_zero(
 
     let w_at = |idx: usize| w_start + ((idx % p_count) as u32);
 
-    // 4 bridge triangles connecting the outer quad edges to the quadrant split vertices on W.
-    triangles.push(Triangle::new(c0, c1, w_at(q0)));
-    triangles.push(Triangle::new(c1, c2, w_at(q1)));
-    triangles.push(Triangle::new(c2, c3, w_at(q2)));
-    triangles.push(Triangle::new(c3, c0, w_at(q3)));
+    // 4 bridge triangles connecting each outer quad edge to the directly facing
+    // split vertex on W (all strictly +z normal, zero crossing):
+    //   bottom (-y) c0->c1 faces q3, right (+x) c1->c2 faces q0,
+    //   top (+y) c2->c3 faces q1, left (-x) c3->c0 faces q2.
+    triangles.push(Triangle::new(c0, c1, w_at(q3)));
+    triangles.push(Triangle::new(c1, c2, w_at(q0)));
+    triangles.push(Triangle::new(c2, c3, w_at(q1)));
+    triangles.push(Triangle::new(c3, c0, w_at(q2)));
 
-    // 4 corner fans covering all P segments of W with half-edge direction W[idx+1] -> W[idx].
+    // 4 corner fans covering all P segments of W with half-edge direction W[idx+1] -> W[idx],
+    // each fanned from the corner occupying that quadrant so every triangle faces +z:
     for idx in q0..q1 {
-        triangles.push(Triangle::new(c1, w_at(idx + 1), w_at(idx)));
-    }
-    for idx in q1..q2 {
         triangles.push(Triangle::new(c2, w_at(idx + 1), w_at(idx)));
     }
-    for idx in q2..q3 {
+    for idx in q1..q2 {
         triangles.push(Triangle::new(c3, w_at(idx + 1), w_at(idx)));
     }
-    for idx in q3..p_count {
+    for idx in q2..q3 {
         triangles.push(Triangle::new(c0, w_at(idx + 1), w_at(idx)));
+    }
+    for idx in q3..p_count {
+        triangles.push(Triangle::new(c1, w_at(idx + 1), w_at(idx)));
     }
 
     // Append all blade surface sections (0..s_count).
@@ -476,6 +482,29 @@ mod tests {
             assert_eq!(&threemf[..4], b"PK\x03\x04");
             let stl = write_stl(&a_mesh);
             assert_eq!(stl.len(), 84 + 50 * a_mesh.triangle_count());
+
+            // Every triangle lying purely on the hub +z top face must have positive +z normal
+            // (no inverted/self-intersecting quadrant-shifted corner fans).
+            let z_top = resolved.hub.length_mm;
+            let mut inverted_top_tris = 0usize;
+            for tri in &a_mesh.triangles {
+                let a = a_mesh.vertices[tri.a as usize];
+                let b = a_mesh.vertices[tri.b as usize];
+                let c = a_mesh.vertices[tri.c as usize];
+                if (a.z - z_top).abs() < 1e-6
+                    && (b.z - z_top).abs() < 1e-6
+                    && (c.z - z_top).abs() < 1e-6
+                {
+                    let cross_z = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+                    if cross_z <= 0.0 {
+                        inverted_top_tris += 1;
+                    }
+                }
+            }
+            assert_eq!(
+                inverted_top_tris, 0,
+                "fixture {idx} assembly has {inverted_top_tris} inverted (-z) triangles on hub top face"
+            );
         }
     }
 }

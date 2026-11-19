@@ -21,7 +21,7 @@ use std::f64::consts::PI;
 use blade_geom::BladeSurface;
 use blade_model::Hub;
 use truck_modeling::{
-    builder, BSplineCurve, BSplineSurface, Curve, Edge, Face, KnotVec, Point3, Rad, Shell, Solid,
+    builder, BSplineCurve, BSplineSurface, Curve, Edge, Face, KnotVec, Point3, Shell, Solid,
     Surface, Vector3, Vertex, Wire,
 };
 use truck_stepio::out::{CompleteStepDisplay, StepHeaderDescriptor, StepModels};
@@ -89,6 +89,19 @@ impl TruckKernel {
 
         for tri in &mesh.triangles {
             let idx = tri.indices();
+            if idx[0] == idx[1] || idx[1] == idx[2] || idx[2] == idx[0] {
+                return Err(CadError::Topology(
+                    "triangle contains duplicate vertex indices".to_string(),
+                ));
+            }
+            for &vi in &idx {
+                if (vi as usize) >= vertices.len() {
+                    return Err(CadError::Topology(format!(
+                        "triangle vertex index {vi} out of bounds for {} vertices",
+                        vertices.len()
+                    )));
+                }
+            }
             let mut tri_edges = Vec::with_capacity(3);
             for k in 0..3 {
                 let a = idx[k];
@@ -265,30 +278,15 @@ impl CadKernel for TruckKernel {
                         .to_string(),
                 ));
             }
-            let solid = d_flat_hub(inner, outer, length, flat_mm)?;
-            return Solid::try_new(solid.into_boundaries()).map_err(topology);
+            return d_flat_hub(inner, outer, length, flat_mm);
         }
 
-        // Annular profile in the x/z half-plane; revolving it once produces
-        // the four faces of a hollow cylinder.
-        let v0 = builder::vertex(Point3::new(inner, 0.0, 0.0));
-        let v1 = builder::vertex(Point3::new(outer, 0.0, 0.0));
-        let v2 = builder::vertex(Point3::new(outer, 0.0, length));
-        let v3 = builder::vertex(Point3::new(inner, 0.0, length));
-        let profile_wire: Wire = vec![
-            line_edge(&v0, &v1)?,
-            line_edge(&v1, &v2)?,
-            line_edge(&v2, &v3)?,
-            line_edge(&v3, &v0)?,
-        ]
-        .into();
-        let profile = builder::try_attach_plane(&[profile_wire]).map_err(topology)?;
-        let solid = builder::rsweep(
-            &profile,
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::unit_z(),
-            Rad(2.0 * PI),
-        );
+        // Build round hollow hub via 2D extrusion (`tsweep`) of the annular face
+        // (outer circle CCW + inner bore circle CW) so OCCT BOPCheck passes with
+        // 0 `BOPAlgo_InvalidCurveOnSurface` errors (unlike `rsweep`).
+        let face = builder::try_attach_plane(&[circle_wire(outer), circle_wire(inner).inverse()])
+            .map_err(topology)?;
+        let solid = builder::tsweep(&face, Vector3::new(0.0, 0.0, length));
         Solid::try_new(solid.into_boundaries()).map_err(topology)
     }
 

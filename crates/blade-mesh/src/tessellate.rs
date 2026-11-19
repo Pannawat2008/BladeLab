@@ -213,7 +213,10 @@ pub(crate) fn triangulate_cap(
             let c = points[next];
             let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
             let dot = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
-            if (-1e-9 * scale * scale..=epsilon).contains(&cross) && dot > 0.0 {
+            if (-1e-9 * scale * scale..=epsilon).contains(&cross)
+                && dot > 0.0
+                && ear_is_valid(points, &order, previous, current, next, epsilon, pt_tol2)
+            {
                 triangles.push([previous, current, next]);
                 order.remove(position);
                 clipped = true;
@@ -224,7 +227,7 @@ pub(crate) fn triangulate_cap(
             continue;
         }
 
-        // Pass 3: pick the valid ear with the largest cross product.
+        // Pass 3: pick the valid ear with the largest cross product (strictly CCW first).
         let mut best_pos = None;
         let mut best_cross = f64::NEG_INFINITY;
         for position in 0..remaining {
@@ -235,12 +238,27 @@ pub(crate) fn triangulate_cap(
             let b = points[current];
             let c = points[next];
             let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-            if cross > -1e-7 * scale * scale
+            if cross > 0.0
                 && ear_is_valid(points, &order, previous, current, next, -epsilon, pt_tol2)
                 && cross > best_cross
             {
                 best_cross = cross;
                 best_pos = Some(position);
+            }
+        }
+        if best_pos.is_none() {
+            for position in 0..remaining {
+                let previous = order[(position + remaining - 1) % remaining];
+                let current = order[position];
+                let next = order[(position + 1) % remaining];
+                let a = points[previous];
+                let b = points[current];
+                let c = points[next];
+                let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+                if cross > -1e-7 * scale * scale && cross > best_cross {
+                    best_cross = cross;
+                    best_pos = Some(position);
+                }
             }
         }
         if let Some(position) = best_pos {

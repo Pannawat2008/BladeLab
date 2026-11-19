@@ -242,7 +242,6 @@ pub fn check_mesh(mesh: &Mesh) -> MeshReport {
             continue;
         };
         if !(finite(a) && finite(b) && finite(c)) {
-            out_of_range_triangles += 1;
             continue;
         }
 

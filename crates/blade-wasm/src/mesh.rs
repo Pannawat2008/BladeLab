@@ -141,21 +141,39 @@ impl Overrides {
 /// Reports how many alignment pins / keys fit on each split face as JSON
 /// (`[{"span_mm":..,"requested":..,"placed":..,"pin_height_mm":..,"socket_depth_mm":..}]`).
 pub fn fabrication_report_json(design_json: &str, overrides: &Overrides) -> Result<String, String> {
-    let design = Design::from_json(design_json).map_err(as_string)?;
+    let mut design = Design::from_json(design_json).map_err(as_string)?;
+    if let Some(chord) = overrides.tip_chord_mm {
+        design.distributions.chord_mm = with_tip_value(design.distributions.chord_mm, chord);
+    }
+    if let Some(twist) = overrides.tip_twist_deg {
+        design.distributions.twist_deg = with_tip_value(design.distributions.twist_deg, twist);
+    }
+    if let Some(stations) = overrides.station_count {
+        design.rotor.station_count = stations;
+    }
     let blade = resolve(&design).map_err(as_string)?;
     let sections = build_sections(&blade).map_err(as_string)?;
     let surface = loft(&sections).map_err(as_string)?;
     let reports = alignment_report(&surface, &overrides.fabrication_spec()).map_err(as_string)?;
-    let rows: Vec<String> = reports
+    #[derive(serde::Serialize)]
+    struct ReportRow {
+        span_mm: f64,
+        requested: usize,
+        placed: usize,
+        pin_height_mm: f64,
+        socket_depth_mm: f64,
+    }
+    let rows: Vec<ReportRow> = reports
         .iter()
-        .map(|r| {
-            format!(
-                "{{\"span_mm\":{:.3},\"requested\":{},\"placed\":{},\"pin_height_mm\":{:.3},\"socket_depth_mm\":{:.3}}}",
-                r.span_mm, r.requested, r.placed, r.pin_height_mm, r.socket_depth_mm
-            )
+        .map(|r| ReportRow {
+            span_mm: (r.span_mm * 1000.0).round() / 1000.0,
+            requested: r.requested,
+            placed: r.placed,
+            pin_height_mm: (r.pin_height_mm * 1000.0).round() / 1000.0,
+            socket_depth_mm: (r.socket_depth_mm * 1000.0).round() / 1000.0,
         })
         .collect();
-    Ok(format!("[{}]", rows.join(",")))
+    serde_json::to_string(&rows).map_err(as_string)
 }
 
 /// Runs the full `Design → resolve → build_sections → loft → tessellate`
@@ -262,9 +280,9 @@ fn build_segment_surface(
         let t = (i as f64) / ((SEG_STATIONS - 1) as f64);
         let z = z_a + t * (z_b - z_a);
         let z_eval = z.clamp(span_min, span_max);
+        let sampled = surface.section_at_span_mm(z_eval).map_err(as_string)?;
         let mut points = Vec::with_capacity(point_count);
-        for idx in 0..point_count {
-            let pt = surface.point_at_span_mm(z_eval, idx).map_err(as_string)?;
+        for pt in sampled {
             let p = Point3::new(pt.x, pt.y, z + z_shift).map_err(as_string)?;
             points.push(p);
         }
@@ -321,9 +339,14 @@ fn build_split_solids(
         } else {
             let mut part_spec = fab;
             part_spec.active_part = Some(part_idx);
-            part_spec.explode_gap_mm = z_shift;
+            part_spec.explode_gap_mm = 0.0;
 
-            let part_mesh = tessellate_fabricated(surface, &part_spec).map_err(as_string)?;
+            let mut part_mesh = tessellate_fabricated(surface, &part_spec).map_err(as_string)?;
+            if z_shift > 0.0 {
+                for v in &mut part_mesh.vertices {
+                    v.z += z_shift;
+                }
+            }
             let solid = kernel.mesh_solid(&part_mesh).map_err(as_string)?;
             solids.push(solid);
         }
@@ -359,12 +382,19 @@ pub fn export_step_with_overrides(
     let kernel = TruckKernel::new();
     let part_norm = part.trim().to_ascii_lowercase();
 
+    let fab_spec = overrides.fabrication_spec();
+    let wants_unsplit_features = matches!(
+        overrides.step_mode.as_deref(),
+        Some("features" | "fabricated")
+    ) && (fab_spec.spar_hole.is_some()
+        || fab_spec.alignment.is_some());
+
     let bodies = match part_norm.as_str() {
         "hub" => vec![kernel.hub_solid(&resolved.hub).map_err(as_string)?],
         "assembly" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            let mut solids = if overrides.split_parts.unwrap_or(1) > 1 {
+            let mut solids = if overrides.split_parts.unwrap_or(1) > 1 || wants_unsplit_features {
                 build_split_solids(&surface, overrides, &kernel)?
             } else {
                 vec![kernel.blade_solid(&surface).map_err(as_string)?]
@@ -385,7 +415,7 @@ pub fn export_step_with_overrides(
         "" | "blade" => {
             let sections = build_sections(&resolved).map_err(as_string)?;
             let surface = loft(&sections).map_err(as_string)?;
-            if overrides.split_parts.unwrap_or(1) > 1 {
+            if overrides.split_parts.unwrap_or(1) > 1 || wants_unsplit_features {
                 build_split_solids(&surface, overrides, &kernel)?
             } else {
                 vec![kernel.blade_solid(&surface).map_err(as_string)?]
@@ -399,10 +429,26 @@ pub fn export_step_with_overrides(
                 let idx: usize = idx_str
                     .parse()
                     .map_err(|_| format!("invalid split part index `{idx_str}`"))?;
+                if idx >= 8 {
+                    return Err(format!(
+                        "split part index `{idx}` out of range (maximum 8 split parts, indices 0..7)"
+                    ));
+                }
                 let sections = build_sections(&resolved).map_err(as_string)?;
                 let surface = loft(&sections).map_err(as_string)?;
                 let mut part_overrides = overrides.clone();
-                let split_parts = part_overrides.split_parts.unwrap_or(1).max(idx + 1);
+                let split_parts = match part_overrides.split_parts {
+                    Some(n) => {
+                        let clamped = n.clamp(1, 8);
+                        if idx >= clamped {
+                            return Err(format!(
+                                "split part index `{idx}` out of range for `split_parts = {clamped}`"
+                            ));
+                        }
+                        clamped
+                    }
+                    None => (idx + 1).max(2),
+                };
                 part_overrides.split_parts = Some(split_parts);
                 part_overrides.active_part = Some(idx);
                 build_split_solids(&surface, &part_overrides, &kernel)?
@@ -712,5 +758,51 @@ mod tests {
 
         let threemf_asm = export_part_3mf(FIXTURE, "assembly").expect("assembly 3mf export");
         assert!(threemf_asm.starts_with(b"PK"));
+    }
+
+    #[test]
+    fn step_export_unsplit_features_explode_and_bounds() {
+        // 1. Unsplit blade with step_mode="features" and spar hole must include spar bore faces
+        let unsplit_fab = Overrides {
+            split_parts: Some(1),
+            spar_hole_diameter_mm: Some(5.0),
+            spar_hole_depth_mm: Some(150.0),
+            step_mode: Some("features".to_string()),
+            ..Overrides::default()
+        };
+        let step_unsplit =
+            export_step_with_overrides(FIXTURE, &unsplit_fab, "blade").expect("unsplit fab STEP");
+        assert!(
+            step_unsplit.matches("PLANE").count() > 500,
+            "unsplit blade with step_mode=features and spar hole must include fabricated bore faces"
+        );
+
+        // 2. Multi-solid fabricated STEP with explode_gap_mm=50 must shift Part 1 beyond z=640 mm
+        let split_exploded = Overrides {
+            split_parts: Some(2),
+            split_ratio: Some(0.5),
+            explode_gap_mm: Some(50.0),
+            spar_hole_diameter_mm: Some(5.0),
+            spar_hole_depth_mm: Some(150.0),
+            step_mode: Some("features".to_string()),
+            ..Overrides::default()
+        };
+        let step_exp = export_step_with_overrides(FIXTURE, &split_exploded, "split")
+            .expect("exploded split STEP");
+        assert_eq!(step_exp.matches("MANIFOLD_SOLID_BREP").count(), 2);
+        assert!(
+            step_exp.contains("650."),
+            "exploded split fabricated STEP must translate Part 1 by +50 mm to z=650"
+        );
+
+        // 3. Out-of-range blade_part_N and usize::MAX must return Err instead of exporting all or panicking
+        assert!(
+            export_step(FIXTURE, "blade_part_8").is_err(),
+            "blade_part_8 exceeds max split parts 8 and must return Err"
+        );
+        assert!(
+            export_step(FIXTURE, "blade_part_18446744073709551615").is_err(),
+            "blade_part_usize_max must return Err without overflow panic"
+        );
     }
 }
