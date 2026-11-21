@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-21 13:31 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-21 15:07 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -1044,3 +1044,5 @@ note="user reported: 'now the model export as Step are also has ripple rought se
 [ACK] 2026-11-21T13:21:20+07:00 agent=geom-1 mem=v103 last_entry=F-geom1-073 task=T-105
 [ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-073. Implementing combined #1 Daylight Atelier x #3 Swiss Blueprint ("Atelier Blueprint") default UI with live Atelier/Dark switcher and 4-step guided wizard across web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs.
 [END] 2026-11-21T13:31:00+07:00 agent=geom-1 mem=v104 note="Implemented combined Daylight Atelier (#1) x Swiss Blueprint (#3) Atelier Blueprint UI as default workbench style with live Atelier|Dark switcher, 4-step right drafting sheet wizard (01 Wind -> 02 Shape -> 03 Aero -> 04 Print), open stone 3D viewport with matte-charcoal dock and camera view offset, and dual-theme Cobalt/Vermilion SVGs; verified lint/typecheck/26 tests/vite build and 7 headless Chrome captures (0 errors, 0 overflows); F-geom1-074 recorded"
+[ACK] 2026-11-21T15:07:35+07:00 agent=geom-1 mem=v104 last_entry=F-geom1-074 task=T-105
+[ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-074 (Atelier Blueprint UI). Integrating Nose Cone Studio (web/src/nosecone.ts, state.ts, index.html, main.ts, types.test.mjs) fitted to Kidwind4-LockRev4.step (Ø60x20mm, 2mm trefoil boss R15+3xR7.5 @ r=20, 3x M3 rear blind bolts on BCD 40, blade sockets @ Z=10mm offset 60deg) plus rotor match mode, 4 aero profiles, 3 blade-base wraps + Flush, 3D assembly slide, live 2D blueprint canvas, and watertight STL export.
