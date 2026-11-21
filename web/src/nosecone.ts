@@ -830,6 +830,19 @@ function buildPrintableNoseManifold(
         ? cfg.bolt_circle_mm * 0.5
         : clamp(effHubDia * 0.31, 6, effHubDia * 0.38);
     const blindDepth = clamp(coneLen * 0.16, 7.5, 10.5);
+    const trefDepthEff =
+      cfg.hub_fit_mode === "kidwind4_lockrev4"
+        ? cfg.trefoil_depth_mm + 0.35
+        : clamp(cfg.trefoil_depth_mm + 2.0, 2.0, 5.0);
+    const floorTopZ = clamp(trefDepthEff + Math.max(2.4, wall + 0.4), 4.6, Math.max(5.4, coneLen * 0.14));
+    const nutClearR = clamp(
+      boreR + 2.5,
+      Math.min(4.5, Math.max(2.0, baseR - wall - 1.0)),
+      Math.max(5.2, boltR - 5.2),
+    );
+    const bossR = clamp(Math.min(4.6, boltR - nutClearR - 0.5), 3.1, 4.6);
+    const bossTopZ = blindDepth + Math.max(2.2, wall);
+
     const m3Prof: Vec2[] = [
       [0, -0.6],
       [2.1, -0.6],
@@ -851,8 +864,7 @@ function buildPrintableNoseManifold(
       subtractList.push(hole);
     }
 
-    // 5. Compute true blade root cutouts + track max blade height so internal cavity stays cleanly clear
-    let bladeMaxZ = -Infinity;
+    // 5. Compute true blade root cutouts + track max blade height
     let bladeNYMin = 0;
     let bladeNYMax = 0;
     if (cfg.wrap_style !== "flush") {
@@ -867,21 +879,18 @@ function buildPrintableNoseManifold(
       );
 
       for (const p of rawPolys) {
-        for (const [py, pz] of p) {
-          if (pz > bladeMaxZ) bladeMaxZ = pz;
+        for (const [py] of p) {
           if (py < bladeNYMin) bladeNYMin = py;
           if (py > bladeNYMax) bladeNYMax = py;
         }
       }
-      const cutBounds = cut2D.bounds();
-      bladeMaxZ = Math.max(bladeMaxZ, cutBounds.max[1]);
 
       // Build sector safety clip so adjacent 120-deg blades can NEVER merge and detach skirt segments,
-      // and radial start r >= baseR - 0.6 never breaches internal trefoil/M3 hub core.
+      // and radial start never breaches internal trefoil/M3 boss pillars.
       const sectorHalfRad = Math.PI / bCount;
       const pierHalfRad = Math.min(0.16, sectorHalfRad * 0.25);
       const maxAngle = Math.max(0.15, sectorHalfRad - pierHalfRad);
-      const rCutIn = Math.max(boltR + 3.5, baseR - 0.7);
+      const rCutIn = Math.max(boltR + bossR + 0.4, baseR - 0.7);
       const rCutOut = baseR + wall + 36;
       const wedgePts: Vec2[] = [];
       const nArc = 16;
@@ -946,50 +955,97 @@ function buildPrintableNoseManifold(
       }
     }
 
-    // 6. Carve central nut-clearance shaft + self-supporting <=45-deg internal lightening dome
-    const deckTopZ = clamp(
-      Math.max(blindDepth + wall + 1.8, (Number.isFinite(bladeMaxZ) ? bladeMaxZ : 0) + wall + 1.2),
-      11.5,
-      Math.max(12.5, coneLen * 0.45),
-    );
-    const nutClearR = clamp(boreR + 2.5, 4.5, Math.max(5.5, boltR - 4.5));
-    const maxCavityTipZ = coneLen - Math.max(wall * 1.4, 3.2);
+    // 6. Carve thin-wall self-supporting hollow aerodynamic dome + protect integrated ribbed M3 bosses
+    const maxCavityTipZ = coneLen - Math.max(wall * 1.6, 3.6);
+    const rInnerTargetAt = (z: number) => {
+      const c = clamp(1 - z / coneLen, 0, 1);
+      const rOutMin = evalNoseProfileRadius(
+        cfg.aero_profile,
+        c,
+        baseR + wall + 0.25,
+        Math.PI,
+        bladeCtx.root_chord_mm,
+        effPitch,
+      );
+      return Math.max(0, rOutMin - wall);
+    };
 
-    const domeProf: Vec2[] = [[0, -0.5], [nutClearR, -0.5], [nutClearR, deckTopZ]];
-    if (maxCavityTipZ > deckTopZ + 8.0) {
-      // Check available radius inside nose wall at mid-cone; flare <= 40 deg from nutClearR
-      const rFlareMax = (z: number) => nutClearR + (z - deckTopZ) * 0.84;
-      const rInnerAt = (z: number) => {
-        const c = clamp(1 - z / coneLen, 0, 1);
-        const rOutMin = evalNoseProfileRadius(
-          cfg.aero_profile,
-          c,
-          baseR + wall + 0.25,
-          Math.PI,
-          bladeCtx.root_chord_mm,
-          effPitch,
-        );
-        return Math.max(0, Math.min(rFlareMax(z), rOutMin - wall));
-      };
-      const N_CAV = 24;
-      for (let i = 1; i <= N_CAV; i++) {
-        const frac = i / N_CAV;
-        const z = deckTopZ + frac * (maxCavityTipZ - deckTopZ);
-        const r = rInnerAt(z);
-        if (r > 0.2) {
-          domeProf.push([r, z]);
+    const domeProf: Vec2[] = [[0, -0.5], [nutClearR, -0.5], [nutClearR, floorTopZ]];
+    if (maxCavityTipZ > floorTopZ + 5.0) {
+      const N_CAV = 32;
+      const zStep = (maxCavityTipZ - floorTopZ) / N_CAV;
+      const rVals: number[] = [];
+      for (let i = 0; i <= N_CAV; i++) {
+        const z = floorTopZ + i * zStep;
+        const target = rInnerTargetAt(z);
+        if (i === 0) {
+          rVals.push(Math.max(nutClearR, target));
+        } else {
+          // Enforce <= 40-deg outward expansion from lower ring so dome wall never overhangs
+          rVals.push(Math.min(target, rVals[i - 1]! + 0.84 * zStep));
         }
       }
-      domeProf.push([0, maxCavityTipZ]);
+      if (rVals[0]! > nutClearR + 0.3) {
+        domeProf.push([rVals[0]!, floorTopZ]);
+      }
+      let tipZ = maxCavityTipZ;
+      for (let i = 1; i < N_CAV; i++) {
+        const z = floorTopZ + i * zStep;
+        const r = rVals[i]!;
+        if (r > 0.25) {
+          domeProf.push([r, z]);
+        } else {
+          tipZ = z;
+          break;
+        }
+      }
+      domeProf.push([0, tipZ]);
     } else {
-      domeProf.push([0, deckTopZ + nutClearR]);
+      domeProf.push([0, floorTopZ + nutClearR]);
     }
 
     const domeCs = new mk.CrossSection([ensureCCW2D(domeProf)], "Positive");
     track.push(domeCs);
-    const domeRev = domeCs.revolve(72);
-    track.push(domeRev);
-    subtractList.push(domeRev);
+    const rawDomeRev = domeCs.revolve(72);
+    track.push(rawDomeRev);
+
+    // Protect 3x integral blind M3 screw bosses + radial stiffener ribs fused into the pier shell
+    const bossProf: Vec2[] = [
+      [0, -1.0],
+      [bossR, -1.0],
+      [bossR, bossTopZ],
+      [0, bossTopZ + bossR * 0.75],
+    ];
+    const bossCs = new mk.CrossSection([ensureCCW2D(bossProf)], "Positive");
+    track.push(bossCs);
+    const bossProto = bossCs.revolve(32);
+    track.push(bossProto);
+
+    const ribW = Math.min(3.2, bossR * 0.72);
+    const ribOverlap = Math.min(1.8, bossR * 0.45);
+    const ribLen = Math.max(5.5, baseR + wall + 6 - boltR + ribOverlap);
+    const ribTopZ = Math.max(floorTopZ + 1.5, bossTopZ - 1.5);
+    const ribProto = mk.Manifold.cube([ribLen, ribW, ribTopZ + 1.0], false).translate([
+      boltR - ribOverlap,
+      -ribW * 0.5,
+      -1.0,
+    ]);
+    track.push(ribProto);
+    const bossUnitProto = bossProto.translate([boltR, 0, 0]).add(ribProto);
+    track.push(bossUnitProto);
+
+    const bossProtectList: Manifold[] = [];
+    for (let k = 0; k < bCount; k++) {
+      const deg = ((k + 0.5) * 360) / bCount;
+      const unit = bossUnitProto.rotate([0, 0, deg]);
+      track.push(unit);
+      bossProtectList.push(unit);
+    }
+    const m3BossProtect = mk.Manifold.union(bossProtectList);
+    track.push(m3BossProtect);
+    const lighteningCavity = rawDomeRev.subtract(m3BossProtect);
+    track.push(lighteningCavity);
+    subtractList.push(lighteningCavity);
 
     // Execute batch Boolean difference
     const carved = solid.subtract(mk.Manifold.union(subtractList));
@@ -1055,7 +1111,7 @@ function buildPrintableNoseManifold(
         volume_cm3: Number(volumeCm3.toFixed(2)),
         is_watertight: statusOk,
         is_single_solid: true,
-        print_status: statusOk ? "1 Solid · Watertight · Printable" : `Mesh Error (${singleSolid.status()})`,
+        print_status: statusOk ? "Manifold-3D · 1 Solid · Watertight · Printable" : `Mesh Error (${singleSolid.status()})`,
         chord_fit_warning: chordFitWarning,
       },
       submesh: {
@@ -1329,7 +1385,7 @@ export function computeNoseConeMetrics(
       : `Auto-matched Rotor Hub Ø${effHubDia.toFixed(0)}mm (${bCount} blades)`;
   const fitNote = overrides?.chordFitWarning
     ? `${fitNoteBase} · Notice: ${overrides.chordFitWarning}`
-    : `${fitNoteBase} · ${overrides?.printStatus ?? "1 Solid · Watertight · Printable"}`;
+    : `${fitNoteBase} · ${overrides?.printStatus ?? "Manifold-3D · 1 Solid · Watertight · Printable"}`;
 
   return {
     hub_diameter_mm: effHubDia,
@@ -1342,7 +1398,7 @@ export function computeNoseConeMetrics(
     total_triangles: overrides?.totalTriangles ?? 0,
     is_watertight: overrides?.isWatertight ?? true,
     is_single_solid: overrides?.isSingleSolid ?? true,
-    print_status: overrides?.printStatus ?? "1 Solid · Watertight · Printable",
+    print_status: overrides?.printStatus ?? "Manifold-3D · 1 Solid · Watertight · Printable",
     hardware_label: `${bCount}× M3×30 Blind`,
     fit_note: fitNote,
   };
@@ -1434,7 +1490,7 @@ export function exportNoseConeStlBytes(
 
   const buf = new ArrayBuffer(84 + triCount * 50);
   const view = new DataView(buf);
-  const header = `BladeLab NoseCone ${cfg.aero_profile}/${cfg.wrap_style} D=${metrics.hub_diameter_mm.toFixed(0)}mm 1Solid`;
+  const header = `BladeLab NoseCone ${cfg.aero_profile}/${cfg.wrap_style} D=${metrics.hub_diameter_mm.toFixed(0)}mm 1Solid-v2`;
   for (let i = 0; i < Math.min(80, header.length); i++) {
     view.setUint8(i, header.charCodeAt(i));
   }

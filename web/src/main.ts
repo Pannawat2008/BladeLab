@@ -577,6 +577,13 @@ let activeNoseWrap: NoseConeWrapStyle = "saddle";
 let activeNoseView: NoseConeViewMode = "mounted";
 let noseCutawayMode = false;
 let noseBlueprintPhase = 0;
+let latestRawBladeMesh: {
+  positions: Float32Array;
+  indices: Uint32Array;
+  pivotShift: number;
+  rotZRad: number;
+  hubYOffset: number;
+} | null = null;
 let latestNoseBladeMeshInput: NoseBladeMeshInput | undefined = undefined;
 let latestNoseCfgCache: NoseConeConfig = defaultNoseConeConfig();
 let latestNoseBladeCtxCache: NoseConeBladeContext = {
@@ -1421,6 +1428,29 @@ function disposeObject3D(root: THREE.Object3D): void {
   for (const mat of materials) mat.dispose();
 }
 
+function buildNoseBladeMeshInputForConfig(
+  design: Design,
+  cfg: NoseConeConfig,
+): NoseBladeMeshInput | undefined {
+  if (!latestRawBladeMesh) return latestNoseBladeMeshInput;
+  const effHubLen =
+    cfg.hub_fit_mode === "kidwind4_lockrev4"
+      ? 20
+      : Math.max(10, design.hub.length_mm);
+  const effRadialFit =
+    cfg.hub_fit_mode === "kidwind4_lockrev4"
+      ? Math.min(0, cfg.hub_diameter_mm * 0.5 - design.rotor.hub_radius_mm)
+      : 0;
+  return {
+    positions: latestRawBladeMesh.positions,
+    indices: latestRawBladeMesh.indices,
+    pivot_shift_mm: latestRawBladeMesh.pivotShift,
+    rot_z_rad: latestRawBladeMesh.rotZRad,
+    hub_front_y_mm: effHubLen / 2 + latestRawBladeMesh.hubYOffset,
+    radial_shift_mm: effRadialFit,
+  };
+}
+
 function getNoseConeBladeContext(
   design: Design,
   bladeMeshInput: NoseBladeMeshInput | undefined = latestNoseBladeMeshInput,
@@ -1478,7 +1508,7 @@ function applyNoseConeConfigToDom(cfg?: NoseConeConfig) {
 
 function updateNosePanelUi(design: Design, overrideMetrics?: NoseConeMetrics): NoseConeConfig {
   const cfg = readCurrentNoseConeConfig();
-  const bladeCtx = getNoseConeBladeContext(design);
+  const bladeCtx = getNoseConeBladeContext(design, buildNoseBladeMeshInputForConfig(design, cfg));
   latestNoseCfgCache = cfg;
   latestNoseBladeCtxCache = bladeCtx;
   const metrics = overrideMetrics ?? computeNoseConeMetrics(cfg, bladeCtx);
@@ -1574,8 +1604,8 @@ function frameNoseCamera(view: NoseConeViewMode) {
     camera.position.set(108, 82, 128);
     controls.target.set(0, 26, 0);
   } else {
-    camera.position.set(95, -95, 120);
-    controls.target.set(0, 8, 0);
+    camera.position.set(88, -112, 108);
+    controls.target.set(0, 14, 0);
   }
   controls.update();
 }
@@ -1844,21 +1874,17 @@ function rebuild3D(design: Design) {
     const hubYOffset = bladeFlipped ? -rootCoreY : rootCoreY;
 
     const effNoseHubLen =
-      studioMode === "nose" && noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+      noseCfg.hub_fit_mode === "kidwind4_lockrev4"
         ? 20
         : Math.max(10, design.hub.length_mm);
-    const effNoseRadialFit =
-      studioMode === "nose" && noseCfg.hub_fit_mode === "kidwind4_lockrev4"
-        ? Math.min(0, noseCfg.hub_diameter_mm * 0.5 - design.rotor.hub_radius_mm)
-        : 0;
-    latestNoseBladeMeshInput = {
+    latestRawBladeMesh = {
       positions: posCopy,
       indices: idxCopy,
-      pivot_shift_mm: pivotShift,
-      rot_z_rad: rotZRad,
-      hub_front_y_mm: effNoseHubLen / 2 + hubYOffset,
-      radial_shift_mm: effNoseRadialFit,
+      pivotShift,
+      rotZRad,
+      hubYOffset,
     };
+    latestNoseBladeMeshInput = buildNoseBladeMeshInputForConfig(design, noseCfg);
 
     if (studioMode === "nose" && noseCfg.view_mode !== "mounted") {
       const csStart = performance.now();
@@ -1880,7 +1906,7 @@ function rebuild3D(design: Design) {
       rotorGroup.userData.isNoseGroup = true;
 
       const slideRaw = noseCfg.assembly_slide_pct / 100;
-      const slideRear = noseCfg.view_mode === "rear_fit" && slideRaw === 0 ? 0.35 : slideRaw;
+      const slideRear = noseCfg.view_mode === "rear_fit" && slideRaw === 0 ? 0.62 : slideRaw;
       const hubFrontY = effNoseHubLen / 2 + hubYOffset;
       const bCount = Math.max(1, bladeCtx.blade_count);
       const effHubDia =
@@ -1909,7 +1935,7 @@ function rebuild3D(design: Design) {
           rotorGroup.add(alignedCuffs);
         }
       } else {
-        const hubGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.84);
+        const hubGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.45);
         const alignedHub = wrapAlignedNoseGroup(hubGrp);
         alignedHub.position.y = hubFrontY;
         rotorGroup.add(alignedHub);
@@ -2210,13 +2236,15 @@ function rebuild3D(design: Design) {
           const rotorMatchedCfg: NoseConeConfig = {
             ...noseCfg,
             hub_fit_mode:
-              Math.abs(hubOuterR * 2 - 60) > 1 ? "match_design" : noseCfg.hub_fit_mode,
+              Math.abs(hubOuterR * 2 - 60) > 1 || Math.abs(hubLen - 20) > 1
+                ? "match_design"
+                : noseCfg.hub_fit_mode,
             skirt_length_mm: autoSkirtMm,
             cutaway_mode: false,
             assembly_slide_pct: 0,
           };
           const mountedCtx: NoseConeBladeContext = {
-            ...bladeCtx,
+            ...getNoseConeBladeContext(design, buildNoseBladeMeshInputForConfig(design, rotorMatchedCfg)),
             hub_diameter_mm: hubOuterR * 2,
           };
           const noseBundle = buildNoseConeMeshes(rotorMatchedCfg, mountedCtx);
@@ -3561,11 +3589,24 @@ btnTbNoseSpin?.addEventListener("click", () => {
   btnTbNoseSpin.setAttribute("aria-pressed", String(spinRotorMode));
 });
 
-[inputNoseEnabled, selectNoseHubFit].forEach((el) => {
-  el?.addEventListener("change", () => {
-    rebuild3D(workingDesign);
-    scheduleAutoSave();
-  });
+inputNoseEnabled?.addEventListener("change", () => {
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+});
+
+selectNoseHubFit?.addEventListener("change", () => {
+  if (sliderNoseSkirt) {
+    const currSkirt = Number.parseFloat(sliderNoseSkirt.value || "20") || 20;
+    if (selectNoseHubFit.value === "match_design" && currSkirt <= 20) {
+      sliderNoseSkirt.value = String(
+        Math.min(52, Math.max(20, Math.round(workingDesign.hub.length_mm * 0.62))),
+      );
+    } else if (selectNoseHubFit.value === "kidwind4_lockrev4" && currSkirt > 24) {
+      sliderNoseSkirt.value = "20";
+    }
+  }
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
 });
 
 [
@@ -3586,7 +3627,8 @@ btnTbNoseSpin?.addEventListener("click", () => {
 
 function exportNoseConeTargetStl(target: "cone" | "cuff") {
   const cfg = readCurrentNoseConeConfig();
-  const bladeCtx = getNoseConeBladeContext(workingDesign, latestNoseBladeMeshInput);
+  const bladeMeshInput = buildNoseBladeMeshInputForConfig(workingDesign, cfg);
+  const bladeCtx = getNoseConeBladeContext(workingDesign, bladeMeshInput);
   const bytes = exportNoseConeStlBytes(cfg, bladeCtx, target);
   const effDia =
     cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;

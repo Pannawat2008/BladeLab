@@ -1921,7 +1921,10 @@ test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile
       assert.equal(bundle.submeshes[0].id, "nose-cone-solid");
       assert.equal(bundle.metrics.is_watertight, true);
       assert.equal(bundle.metrics.is_single_solid, true);
-      assert.ok(bundle.metrics.volume_cm3 > 2);
+      assert.ok(
+        bundle.metrics.volume_cm3 > 15 && bundle.metrics.volume_cm3 < 50,
+        `${label}: expected thin-walled lightweight volume in (15, 50) cm3, got ${bundle.metrics.volume_cm3}`,
+      );
       assertWatertightPositive(bundle.submeshes, label, true);
       assertWatertightPositive(bundle.ghost_hub_submeshes, `${label}/ghost`, false);
       if (wrap_style === "cuff") {
@@ -1951,6 +1954,12 @@ test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile
       const label = `match_wasm/${wrap_style}/cut=${cutaway_mode}`;
       assert.equal(bundle.submeshes.length, 1);
       assert.equal(bundle.metrics.is_watertight, true);
+      if (!cutaway_mode) {
+        assert.ok(
+          bundle.metrics.volume_cm3 > 40 && bundle.metrics.volume_cm3 < 200,
+          `${label}: expected thin-walled Auto-Match Ø120mm volume in (40, 200) cm3, got ${bundle.metrics.volume_cm3}`,
+        );
+      }
       assertWatertightPositive(bundle.submeshes, label, true);
     }
   }
@@ -1959,6 +1968,8 @@ test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile
   const coneFullBundle = buildNoseConeMeshes({ ...def, cutaway_mode: false }, bladeCtxKid);
   const expectedConeTris = coneFullBundle.submeshes[0].indices.length / 3;
   const coneStl = exportNoseConeStlBytes({ ...def, cutaway_mode: true }, bladeCtxKid, "cone");
+  const coneHeader = Buffer.from(coneStl.subarray(0, 80)).toString("ascii").replace(/\0+$/, "");
+  assert.ok(coneHeader.includes("1Solid-v2"), `Expected STL header to include '1Solid-v2', got '${coneHeader}'`);
   const coneView = new DataView(coneStl.buffer, coneStl.byteOffset, coneStl.byteLength);
   const coneTriCount = coneView.getUint32(80, true);
   assert.equal(coneTriCount, expectedConeTris, "exportNoseConeStlBytes must ignore cutaway_mode and export full cone");
