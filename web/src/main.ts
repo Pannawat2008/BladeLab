@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import wasmUrl from "../pkg/blade_wasm_bg.wasm?url";
+import manifoldWasmUrl from "manifold-3d/manifold.wasm?url";
 import init, {
   build_mesh,
   export_3mf_bytes,
@@ -113,6 +114,7 @@ import {
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
   defaultNoseConeConfig,
+  initNoseConeKernel,
   computeNoseConeMetrics,
   buildNoseConeMeshes,
   exportNoseConeStlBytes,
@@ -122,7 +124,9 @@ import {
   type NoseConeWrapStyle,
   type NoseConeHubFitMode,
   type NoseConeViewMode,
+  type NoseBladeMeshInput,
   type NoseConeBladeContext,
+  type NoseConeMetrics,
   type NoseConeSubMesh,
   type WorkbenchSnapshot,
   type WorkbenchUiSnapshot,
@@ -143,7 +147,7 @@ import {
 import type { AirfoilSpec, BezierControlPoint, Design } from "./types/blade-model";
 
 // ---- wasm bootstrap ----
-await init(wasmUrl);
+await Promise.all([init(wasmUrl), initNoseConeKernel(manifoldWasmUrl)]);
 const initialDesign: Design = JSON.parse(designJson) as Design;
 const history = new DesignHistory(initialDesign);
 let workingDesign: Design = history.current();
@@ -573,6 +577,7 @@ let activeNoseWrap: NoseConeWrapStyle = "saddle";
 let activeNoseView: NoseConeViewMode = "mounted";
 let noseCutawayMode = false;
 let noseBlueprintPhase = 0;
+let latestNoseBladeMeshInput: NoseBladeMeshInput | undefined = undefined;
 let latestNoseCfgCache: NoseConeConfig = defaultNoseConeConfig();
 let latestNoseBladeCtxCache: NoseConeBladeContext = {
   blade_count: 3,
@@ -1416,7 +1421,10 @@ function disposeObject3D(root: THREE.Object3D): void {
   for (const mat of materials) mat.dispose();
 }
 
-function getNoseConeBladeContext(design: Design): NoseConeBladeContext {
+function getNoseConeBladeContext(
+  design: Design,
+  bladeMeshInput: NoseBladeMeshInput | undefined = latestNoseBladeMeshInput,
+): NoseConeBladeContext {
   const rows = resolveStationsPreview(design);
   return {
     blade_count: Math.max(1, design.rotor.blade_count),
@@ -1426,6 +1434,7 @@ function getNoseConeBladeContext(design: Design): NoseConeBladeContext {
     root_chord_mm: rows[0]?.effective_chord_mm ?? 70,
     root_twist_deg: rows[0]?.effective_twist_deg ?? 20,
     collective_pitch_deg: collectivePitchDeg,
+    blade_mesh: bladeMeshInput,
   };
 }
 
@@ -1442,7 +1451,7 @@ function readCurrentNoseConeConfig(): NoseConeConfig {
     wrap_style: activeNoseWrap,
     view_mode: activeNoseView,
     cone_length_mm: Math.max(35, Math.min(150, Number.parseFloat(sliderNoseLength?.value || String(def.cone_length_mm)) || def.cone_length_mm)),
-    skirt_length_mm: Math.max(6, Math.min(36, Number.parseFloat(sliderNoseSkirt?.value || String(def.skirt_length_mm)) || def.skirt_length_mm)),
+    skirt_length_mm: Math.max(6, Math.min(52, Number.parseFloat(sliderNoseSkirt?.value || String(def.skirt_length_mm)) || def.skirt_length_mm)),
     wall_thickness_mm: Math.max(1.6, Math.min(5.0, Number.parseFloat(sliderNoseWall?.value || String(def.wall_thickness_mm)) || def.wall_thickness_mm)),
     blade_clearance_mm: Math.max(0.2, Math.min(2.5, Number.parseFloat(sliderNoseGap?.value || String(def.blade_clearance_mm)) || def.blade_clearance_mm)),
     trefoil_clearance_mm: Math.max(0.1, Math.min(0.6, Number.parseFloat(sliderNoseTrefoilTol?.value || String(def.trefoil_clearance_mm)) || def.trefoil_clearance_mm)),
@@ -1467,12 +1476,12 @@ function applyNoseConeConfigToDom(cfg?: NoseConeConfig) {
   if (sliderNoseTrefoilTol) sliderNoseTrefoilTol.value = String(c.trefoil_clearance_mm);
 }
 
-function updateNosePanelUi(design: Design): NoseConeConfig {
+function updateNosePanelUi(design: Design, overrideMetrics?: NoseConeMetrics): NoseConeConfig {
   const cfg = readCurrentNoseConeConfig();
   const bladeCtx = getNoseConeBladeContext(design);
   latestNoseCfgCache = cfg;
   latestNoseBladeCtxCache = bladeCtx;
-  const metrics = computeNoseConeMetrics(cfg, bladeCtx);
+  const metrics = overrideMetrics ?? computeNoseConeMetrics(cfg, bladeCtx);
 
   const profileLabels: Record<NoseConeAeroProfile, string> = {
     adaptive: "Adaptive",
@@ -1583,29 +1592,48 @@ function buildThreeNoseSubMeshGroup(
     : new THREE.LineBasicMaterial({
         color: 0x0f172a,
         transparent: true,
-        opacity: 0.24,
+        opacity: 0.22,
       });
 
   submeshes.forEach((sub, idx) => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(sub.positions, 3));
-    geo.setIndex(new THREE.BufferAttribute(sub.indices, 1));
-    geo.computeVertexNormals();
+    const geo = buildCleanBladeGeometry(sub.positions, sub.indices, 34);
 
     const isGhostBody = sub.id.startsWith("ghost-hub-body") || sub.id.startsWith("ghost-hub-trefoil");
+    const isMainNose = sub.id === "nose-cone-solid";
     const matOpacity = isGhostBody ? opacity : 1.0;
-    const mat = new THREE.MeshStandardMaterial({
-      color: sub.color_hex,
-      metalness: sub.id.includes("bolt") ? 0.55 : isGhostBody ? 0.35 : 0.16,
-      roughness: sub.id.includes("bolt") ? 0.28 : isGhostBody ? 0.45 : 0.34,
-      wireframe,
-      transparent: matOpacity < 0.99,
-      opacity: matOpacity,
-      side: THREE.DoubleSide,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    });
+
+    let colorHex = sub.color_hex;
+    if (isMainNose) {
+      // High-contrast studio titanium-graphite in Atelier Daylight, Aerospace Cobalt in Dark
+      colorHex = activeUiStyle === "atelier" ? 0x263244 : 0x2563eb;
+    }
+
+    const mat: THREE.Material = isMainNose
+      ? new THREE.MeshPhysicalMaterial({
+          color: colorHex,
+          metalness: 0.22,
+          roughness: 0.28,
+          clearcoat: 0.45,
+          clearcoatRoughness: 0.22,
+          wireframe,
+          side: THREE.FrontSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        })
+      : new THREE.MeshStandardMaterial({
+          color: colorHex,
+          metalness: sub.id.includes("bolt") ? 0.58 : isGhostBody ? 0.35 : 0.2,
+          roughness: sub.id.includes("bolt") ? 0.26 : isGhostBody ? 0.42 : 0.32,
+          wireframe,
+          transparent: matOpacity < 0.99,
+          opacity: matOpacity,
+          side: isGhostBody ? THREE.DoubleSide : THREE.FrontSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+
     const mesh = new THREE.Mesh(geo, mat);
     if (translatePerIndex) {
       const [dx, dy, dz] = translatePerIndex(idx);
@@ -1614,7 +1642,7 @@ function buildThreeNoseSubMeshGroup(
     grp.add(mesh);
 
     if (edgeMat && !isGhostBody) {
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), edgeMat);
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 36), edgeMat);
       if (translatePerIndex) {
         const [dx, dy, dz] = translatePerIndex(idx);
         edges.position.set(dx, dy, dz);
@@ -1646,21 +1674,20 @@ function buildRadialCuffInstances(
   const grp = new THREE.Group();
   if (cuffSubmeshes.length === 0) return grp;
   const proto = cuffSubmeshes[0]!;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(proto.positions, 3));
-  geo.setIndex(new THREE.BufferAttribute(proto.indices, 1));
-  geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({
+  const geo = buildCleanBladeGeometry(proto.positions, proto.indices, 34);
+  const mat = new THREE.MeshPhysicalMaterial({
     color: proto.color_hex,
-    metalness: 0.18,
-    roughness: 0.34,
+    metalness: 0.24,
+    roughness: 0.30,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.25,
     wireframe,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
   });
-  const edgeGeo = wireframe ? null : new THREE.EdgesGeometry(geo, 30);
+  const edgeGeo = wireframe ? null : new THREE.EdgesGeometry(geo, 36);
   const edgeMat = wireframe
     ? null
     : new THREE.LineBasicMaterial({
@@ -1695,98 +1722,7 @@ function rebuild3D(design: Design) {
     const gearCfg = updateGearboxPanelUi();
     const noseCfg = updateNosePanelUi(design);
 
-    if (studioMode === "nose" && noseCfg.view_mode !== "mounted") {
-      const start = performance.now();
-      const bladeCtx = getNoseConeBladeContext(design);
-      const noseBundle = buildNoseConeMeshes(noseCfg, bladeCtx);
-      const elapsed = performance.now() - start;
-
-      errorBanner.style.display = "none";
-      errorBanner.textContent = "";
-      viewportHeatmapLegend.classList.remove("visible");
-      viewportHeatmapLegend.setAttribute("aria-hidden", "true");
-
-      if (rotorGroup !== null) {
-        disposeObject3D(rotorGroup);
-        scene.remove(rotorGroup);
-      }
-      rotorGroup = new THREE.Group();
-      rotorGroup.userData.isNoseGroup = true;
-
-      const slideRaw = noseCfg.assembly_slide_pct / 100;
-      const slideRear = noseCfg.view_mode === "rear_fit" && slideRaw === 0 ? 0.35 : slideRaw;
-      const effHubLen =
-        noseCfg.hub_fit_mode === "kidwind4_lockrev4" ? 20 : Math.max(10, design.hub.length_mm);
-      const hubFrontY = effHubLen / 2;
-
-      const bCount = Math.max(1, bladeCtx.blade_count);
-      const effHubDia =
-        noseCfg.hub_fit_mode === "kidwind4_lockrev4"
-          ? noseCfg.hub_diameter_mm
-          : design.hub.diameter_mm;
-      const cuffSlideMm = slideRaw * 65;
-
-      if (noseCfg.view_mode === "cone_only") {
-        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
-        const alignedCone = wrapAlignedNoseGroup(coneGrp);
-        alignedCone.position.y = 0;
-        rotorGroup.add(alignedCone);
-
-        if (noseBundle.cuff_submeshes.length > 0) {
-          const cuffGrp = buildRadialCuffInstances(
-            noseBundle.cuff_submeshes,
-            bCount,
-            effHubDia,
-            effHubLen,
-            cuffSlideMm,
-            wireframeMode,
-          );
-          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
-          alignedCuffs.position.y = 0;
-          rotorGroup.add(alignedCuffs);
-        }
-      } else {
-        // rear_fit view: ghost hub + M3 bolts + separated cone showing rear trefoil pocket & M3 bosses
-        const hubGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.84);
-        const alignedHub = wrapAlignedNoseGroup(hubGrp);
-        alignedHub.position.y = hubFrontY;
-        rotorGroup.add(alignedHub);
-
-        const axialSep =
-          noseCfg.wrap_style === "closed" || noseCfg.wrap_style === "cuff"
-            ? slideRear * 48
-            : slideRear * 58;
-        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
-        const alignedCone = wrapAlignedNoseGroup(coneGrp);
-        alignedCone.position.y = hubFrontY + axialSep;
-        rotorGroup.add(alignedCone);
-
-        if (noseBundle.cuff_submeshes.length > 0) {
-          const cuffGrp = buildRadialCuffInstances(
-            noseBundle.cuff_submeshes,
-            bCount,
-            effHubDia,
-            effHubLen,
-            cuffSlideMm,
-            wireframeMode,
-          );
-          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
-          alignedCuffs.position.y = hubFrontY + axialSep;
-          rotorGroup.add(alignedCuffs);
-        }
-      }
-
-      scene.add(rotorGroup);
-      updateStats(elapsed, {
-        triangle_count: noseBundle.metrics.total_triangles,
-        volume_mm3: Math.round((noseBundle.metrics.est_mass_g / 1.27) * 1000),
-        span_min_mm: -noseBundle.metrics.skirt_length_mm,
-        span_max_mm: noseCfg.cone_length_mm,
-      });
-      return;
-    }
-
-    if (viewMode === "gearbox") {
+    if (studioMode !== "nose" && viewMode === "gearbox") {
       const start = performance.now();
       const gearBundle = buildGearboxMeshes(gearCfg);
       const elapsed = performance.now() - start;
@@ -1898,17 +1834,125 @@ function rebuild3D(design: Design) {
       data.free();
     }
 
-    errorBanner.style.display = "none";
-    errorBanner.textContent = "";
+    const stationRows = resolveStationsPreview(design);
+    const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
+    const pivotX = design.rotor.pitch_axis_ratio * rootChord;
+    const pivotShift = -pivotX;
+    const baseAngle = bladeFlipped ? Math.PI : 0;
+    const rotZRad = baseAngle + (collectivePitchDeg * Math.PI) / 180;
+    const rootCoreY = tubeAxis && tubeAxis.length >= 7 ? tubeAxis[1]! : 0;
+    const hubYOffset = bladeFlipped ? -rootCoreY : rootCoreY;
+
+    const effNoseHubLen =
+      studioMode === "nose" && noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+        ? 20
+        : Math.max(10, design.hub.length_mm);
+    const effNoseRadialFit =
+      studioMode === "nose" && noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+        ? Math.min(0, noseCfg.hub_diameter_mm * 0.5 - design.rotor.hub_radius_mm)
+        : 0;
+    latestNoseBladeMeshInput = {
+      positions: posCopy,
+      indices: idxCopy,
+      pivot_shift_mm: pivotShift,
+      rot_z_rad: rotZRad,
+      hub_front_y_mm: effNoseHubLen / 2 + hubYOffset,
+      radial_shift_mm: effNoseRadialFit,
+    };
+
+    if (studioMode === "nose" && noseCfg.view_mode !== "mounted") {
+      const csStart = performance.now();
+      const bladeCtx = getNoseConeBladeContext(design, latestNoseBladeMeshInput);
+      const noseBundle = buildNoseConeMeshes(noseCfg, bladeCtx);
+      const totalElapsed = elapsed + (performance.now() - csStart);
+      updateNosePanelUi(design, noseBundle.metrics);
+
+      errorBanner.style.display = "none";
+      errorBanner.textContent = "";
+      viewportHeatmapLegend.classList.remove("visible");
+      viewportHeatmapLegend.setAttribute("aria-hidden", "true");
+
+      if (rotorGroup !== null) {
+        disposeObject3D(rotorGroup);
+        scene.remove(rotorGroup);
+      }
+      rotorGroup = new THREE.Group();
+      rotorGroup.userData.isNoseGroup = true;
+
+      const slideRaw = noseCfg.assembly_slide_pct / 100;
+      const slideRear = noseCfg.view_mode === "rear_fit" && slideRaw === 0 ? 0.35 : slideRaw;
+      const hubFrontY = effNoseHubLen / 2 + hubYOffset;
+      const bCount = Math.max(1, bladeCtx.blade_count);
+      const effHubDia =
+        noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+          ? noseCfg.hub_diameter_mm
+          : Math.max(24, design.hub.diameter_mm);
+      const cuffSlideMm = slideRaw * 65;
+
+      if (noseCfg.view_mode === "cone_only") {
+        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
+        const alignedCone = wrapAlignedNoseGroup(coneGrp);
+        alignedCone.position.y = 0;
+        rotorGroup.add(alignedCone);
+
+        if (noseBundle.cuff_submeshes.length > 0) {
+          const cuffGrp = buildRadialCuffInstances(
+            noseBundle.cuff_submeshes,
+            bCount,
+            effHubDia,
+            effNoseHubLen,
+            cuffSlideMm,
+            wireframeMode,
+          );
+          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
+          alignedCuffs.position.y = 0;
+          rotorGroup.add(alignedCuffs);
+        }
+      } else {
+        const hubGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.84);
+        const alignedHub = wrapAlignedNoseGroup(hubGrp);
+        alignedHub.position.y = hubFrontY;
+        rotorGroup.add(alignedHub);
+
+        const axialSep =
+          noseCfg.wrap_style === "closed" || noseCfg.wrap_style === "cuff"
+            ? slideRear * 48
+            : slideRear * 58;
+        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
+        const alignedCone = wrapAlignedNoseGroup(coneGrp);
+        alignedCone.position.y = hubFrontY + axialSep;
+        rotorGroup.add(alignedCone);
+
+        if (noseBundle.cuff_submeshes.length > 0) {
+          const cuffGrp = buildRadialCuffInstances(
+            noseBundle.cuff_submeshes,
+            bCount,
+            effHubDia,
+            effNoseHubLen,
+            cuffSlideMm,
+            wireframeMode,
+          );
+          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
+          alignedCuffs.position.y = hubFrontY + axialSep;
+          rotorGroup.add(alignedCuffs);
+        }
+      }
+
+      scene.add(rotorGroup);
+      updateStats(totalElapsed, {
+        triangle_count: noseBundle.metrics.total_triangles,
+        volume_mm3: Math.round(noseBundle.metrics.volume_cm3 * 1000),
+        span_min_mm: -noseBundle.metrics.skirt_length_mm,
+        span_max_mm: noseCfg.cone_length_mm,
+      });
+      return;
+    }
 
     if (rotorGroup !== null) {
       disposeObject3D(rotorGroup);
       scene.remove(rotorGroup);
     }
     rotorGroup = new THREE.Group();
-
-    const wingletCfg = readCurrentWingletConfig();
-    applyWingletToBladeGeometry(posCopy, design, wingletCfg);
 
     const bladeGeo = buildCleanBladeGeometry(posCopy, idxCopy, 32);
     const posAttr = bladeGeo.getAttribute("position") as THREE.BufferAttribute;
@@ -1917,7 +1961,7 @@ function rebuild3D(design: Design) {
       ? new THREE.LineBasicMaterial({
           color: 0x0f172a,
           transparent: true,
-          opacity: activeUiStyle === "atelier" ? 0.42 : 0.36,
+          opacity: activeUiStyle === "atelier" ? 0.36 : 0.30,
         })
       : null;
 
@@ -1949,11 +1993,13 @@ function rebuild3D(design: Design) {
       viewportHeatmapLegend.setAttribute("aria-hidden", "true");
     }
 
-    const bladeMaterial = new THREE.MeshStandardMaterial({
-      color: useHeatmap ? 0xffffff : activeUiStyle === "atelier" ? 0x2563eb : 0x3b82f6,
+    const bladeMaterial = new THREE.MeshPhysicalMaterial({
+      color: useHeatmap ? 0xffffff : activeUiStyle === "atelier" ? 0x2563eb : 0x60a5fa,
       vertexColors: useHeatmap,
-      metalness: 0.16,
-      roughness: 0.38,
+      metalness: 0.18,
+      roughness: 0.30,
+      clearcoat: 0.38,
+      clearcoatRoughness: 0.24,
       wireframe: wireframeMode,
       transparent: showRod,
       opacity: showRod ? 0.86 : 1.0,
@@ -1963,9 +2009,6 @@ function rebuild3D(design: Design) {
       polygonOffsetUnits: 1,
     });
 
-    const stationRows = resolveStationsPreview(design);
-    const rootChord = stationRows[0]?.effective_chord_mm ?? 70;
-    const pivotX = design.rotor.pitch_axis_ratio * rootChord;
     const axisPoints = stationRows.map(
       (r) =>
         new THREE.Vector3(
@@ -1983,9 +2026,6 @@ function rebuild3D(design: Design) {
     const holeDepth = Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240);
     const holeOx = Number.parseFloat(inputSparHoleOffsetX.value) || 0;
     const holeOy = Number.parseFloat(inputSparHoleOffsetY.value) || 0;
-
-    // Center the blade pitch axis on X = 0 in both Single Blade and Full Rotor modes
-    const pivotShift = -pivotX;
 
     // Hoist shared spar rod geometry & material outside the per-blade loop
     let sharedRodGeo: THREE.CylinderGeometry | null = null;
@@ -2081,15 +2121,13 @@ function rebuild3D(design: Design) {
     }
 
     if (viewMode === "rotor") {
-      const rootCoreY = tubeAxis && tubeAxis.length >= 7 ? tubeAxis[1]! : 0;
-      const hubYOffset = bladeFlipped ? -rootCoreY : rootCoreY;
-      const bladeCtx = getNoseConeBladeContext(design);
+      const bladeCtx = getNoseConeBladeContext(design, latestNoseBladeMeshInput);
 
       if (studioMode === "nose") {
-        const effHubLen =
-          noseCfg.hub_fit_mode === "kidwind4_lockrev4" ? 20 : Math.max(10, design.hub.length_mm);
+        const effHubLen = effNoseHubLen;
         const hubFrontY = effHubLen / 2 + hubYOffset;
         const noseBundle = buildNoseConeMeshes(noseCfg, bladeCtx);
+        updateNosePanelUi(design, noseBundle.metrics);
 
         const ghostGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.85);
         const alignedGhost = wrapAlignedNoseGroup(ghostGrp);
@@ -2165,10 +2203,15 @@ function rebuild3D(design: Design) {
         }
 
         if (noseCfg.enabled) {
+          const autoSkirtMm = Math.max(
+            noseCfg.skirt_length_mm,
+            Math.min(hubLen, Math.round(hubLen * 0.5 + 14)),
+          );
           const rotorMatchedCfg: NoseConeConfig = {
             ...noseCfg,
             hub_fit_mode:
               Math.abs(hubOuterR * 2 - 60) > 1 ? "match_design" : noseCfg.hub_fit_mode,
+            skirt_length_mm: autoSkirtMm,
             cutaway_mode: false,
             assembly_slide_pct: 0,
           };
@@ -3543,7 +3586,7 @@ btnTbNoseSpin?.addEventListener("click", () => {
 
 function exportNoseConeTargetStl(target: "cone" | "cuff") {
   const cfg = readCurrentNoseConeConfig();
-  const bladeCtx = getNoseConeBladeContext(workingDesign);
+  const bladeCtx = getNoseConeBladeContext(workingDesign, latestNoseBladeMeshInput);
   const bytes = exportNoseConeStlBytes(cfg, bladeCtx, target);
   const effDia =
     cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;

@@ -62,6 +62,7 @@ import {
   buildGearboxMeshes,
   exportGearStlBytes,
   defaultNoseConeConfig,
+  initNoseConeKernel,
   computeNoseConeMetrics,
   buildNoseConeMeshes,
   exportNoseConeStlBytes,
@@ -1783,19 +1784,75 @@ test("Task 9: Nose Cone parametric metrics, Kidwind4-LockRev4 defaults, and stud
   assert.equal(parsed.workbench.nosecone?.assembly_slide_pct, 40);
 });
 
-test("Task 9: Nose Cone watertight manifold meshes across all 16 profile×wrap combinations & binary STL export", () => {
+test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile×wrap combos + real blade-wasm slicing & STL verification", async () => {
+  await initNoseConeKernel();
   const def = defaultNoseConeConfig();
-  const bladeCtx = {
+
+  // Build actual live 3D blade geometry via blade-wasm just as the UI does
+  const gluePath = path.resolve(__dirname, "../../target/glue-node/blade_wasm.js");
+  const req = createRequire(import.meta.url);
+  const { build_mesh } = req(gluePath);
+  const wasmMesh = build_mesh(JSON.stringify(initialDesign), "{}");
+  const bladeMeshInput = {
+    positions: new Float32Array(wasmMesh.positions),
+    indices: new Uint32Array(wasmMesh.indices),
+    pivot_shift_mm: -initialDesign.rotor.pitch_axis_ratio * 70,
+    rot_z_rad: Math.PI,
+    hub_front_y_mm: 25,
+    radial_shift_mm: 0,
+  };
+  wasmMesh.free();
+
+  const bladeCtxMatch = {
+    blade_count: 3,
+    hub_diameter_mm: 120,
+    hub_length_mm: 50,
+    hub_bore_mm: 12,
+    root_chord_mm: 70,
+    root_twist_deg: 20,
+    collective_pitch_deg: 0,
+    blade_mesh: bladeMeshInput,
+  };
+  const bladeCtxKid = {
     blade_count: 3,
     hub_diameter_mm: 60,
     hub_length_mm: 20,
     hub_bore_mm: 5.3,
-    root_chord_mm: 70,
+    root_chord_mm: 48,
     root_twist_deg: 20,
     collective_pitch_deg: 0,
   };
 
-  function assertWatertightPositive(submeshes, comboLabel) {
+  function countConnectedComponents(numVerts, indices) {
+    const parent = new Int32Array(numVerts);
+    for (let i = 0; i < numVerts; i++) parent[i] = i;
+    const find = (x) => {
+      while (parent[x] !== x) {
+        parent[x] = parent[parent[x]];
+        x = parent[x];
+      }
+      return x;
+    };
+    const unite = (a, b) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent[rb] = ra;
+    };
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+      unite(a, b);
+      unite(b, c);
+    }
+    const usedRoots = new Set();
+    for (let i = 0; i < indices.length; i++) {
+      usedRoots.add(find(indices[i]));
+    }
+    return usedRoots.size;
+  }
+
+  function assertWatertightPositive(submeshes, comboLabel, requireSingleSolid = false) {
     assert.ok(submeshes.length > 0, `${comboLabel}: expected at least 1 submesh`);
     for (const sub of submeshes) {
       const { positions, indices } = sub;
@@ -1846,6 +1903,10 @@ test("Task 9: Nose Cone watertight manifold meshes across all 16 profile×wrap c
       assert.equal(boundary, 0, `${comboLabel}/${sub.id}: boundary edges=${boundary}`);
       assert.equal(nonManifold, 0, `${comboLabel}/${sub.id}: non-manifold edges=${nonManifold}`);
       assert.ok(signedVol6 > 0, `${comboLabel}/${sub.id}: expected positive signed volume, got ${signedVol6 / 6}`);
+      if (requireSingleSolid) {
+        const comps = countConnectedComponents(positions.length / 3, indices);
+        assert.equal(comps, 1, `${comboLabel}/${sub.id}: expected 1 connected solid component, got ${comps}`);
+      }
     }
   }
 
@@ -1854,38 +1915,83 @@ test("Task 9: Nose Cone watertight manifold meshes across all 16 profile×wrap c
   for (const aero_profile of profiles) {
     for (const wrap_style of wraps) {
       const cfg = { ...def, aero_profile, wrap_style, cutaway_mode: false };
-      const bundle = buildNoseConeMeshes(cfg, bladeCtx);
-      const label = `${aero_profile}/${wrap_style}`;
-      assertWatertightPositive(bundle.submeshes, label);
-      assertWatertightPositive(bundle.ghost_hub_submeshes, `${label}/ghost`);
+      const bundle = buildNoseConeMeshes(cfg, bladeCtxKid);
+      const label = `kid/${aero_profile}/${wrap_style}`;
+      assert.equal(bundle.submeshes.length, 1, `${label}: nose cone must be 1 unified CSG solid`);
+      assert.equal(bundle.submeshes[0].id, "nose-cone-solid");
+      assert.equal(bundle.metrics.is_watertight, true);
+      assert.equal(bundle.metrics.is_single_solid, true);
+      assert.ok(bundle.metrics.volume_cm3 > 2);
+      assertWatertightPositive(bundle.submeshes, label, true);
+      assertWatertightPositive(bundle.ghost_hub_submeshes, `${label}/ghost`, false);
       if (wrap_style === "cuff") {
         assert.equal(bundle.cuff_submeshes.length, 1);
         assert.equal(bundle.cuff_submeshes[0].id, "blade-rotating-cuff");
-        assertWatertightPositive(bundle.cuff_submeshes, `${label}/cuff`);
+        assertWatertightPositive(bundle.cuff_submeshes, `${label}/cuff`, true);
       } else {
         assert.equal(bundle.cuff_submeshes.length, 0);
       }
     }
   }
 
-  // Binary STL export (must remain full watertight even when cutaway_mode is toggled on in viewport)
-  const coneFullBundle = buildNoseConeMeshes({ ...def, cutaway_mode: false }, bladeCtx);
-  const expectedConeTris = coneFullBundle.submeshes.reduce((n, s) => n + s.indices.length / 3, 0);
-  const coneStl = exportNoseConeStlBytes({ ...def, cutaway_mode: true }, bladeCtx, "cone");
+  // Verify live blade-wasm mesh slicing in Auto-Match hub mode + cutaway preview
+  for (const wrap_style of wraps) {
+    for (const cutaway_mode of [false, true]) {
+      const bundle = buildNoseConeMeshes(
+        {
+          ...def,
+          hub_fit_mode: "match_design",
+          wrap_style,
+          cutaway_mode,
+          skirt_length_mm: 30,
+          cone_length_mm: 85,
+        },
+        bladeCtxMatch,
+      );
+      const label = `match_wasm/${wrap_style}/cut=${cutaway_mode}`;
+      assert.equal(bundle.submeshes.length, 1);
+      assert.equal(bundle.metrics.is_watertight, true);
+      assertWatertightPositive(bundle.submeshes, label, true);
+    }
+  }
+
+  // Binary STL export (must remain full watertight 1-solid even when cutaway_mode is toggled on)
+  const coneFullBundle = buildNoseConeMeshes({ ...def, cutaway_mode: false }, bladeCtxKid);
+  const expectedConeTris = coneFullBundle.submeshes[0].indices.length / 3;
+  const coneStl = exportNoseConeStlBytes({ ...def, cutaway_mode: true }, bladeCtxKid, "cone");
   const coneView = new DataView(coneStl.buffer, coneStl.byteOffset, coneStl.byteLength);
   const coneTriCount = coneView.getUint32(80, true);
   assert.equal(coneTriCount, expectedConeTris, "exportNoseConeStlBytes must ignore cutaway_mode and export full cone");
   assert.equal(coneStl.byteLength, 84 + coneTriCount * 50);
   let minZ = Infinity;
+  const vMap = new Map();
+  const stlPositions = [];
+  const stlIndices = [];
   for (let t = 0; t < coneTriCount; t++) {
     for (let v = 0; v < 3; v++) {
-      const z = coneView.getFloat32(84 + t * 50 + 12 + v * 12 + 8, true);
+      const base = 84 + t * 50 + 12 + v * 12;
+      const x = coneView.getFloat32(base, true);
+      const y = coneView.getFloat32(base + 4, true);
+      const z = coneView.getFloat32(base + 8, true);
       if (z < minZ) minZ = z;
+      const k = `${Math.round(x * 1e4)}_${Math.round(y * 1e4)}_${Math.round(z * 1e4)}`;
+      let idx = vMap.get(k);
+      if (idx === undefined) {
+        idx = stlPositions.length / 3;
+        vMap.set(k, idx);
+        stlPositions.push(x, y, z);
+      }
+      stlIndices.push(idx);
     }
   }
   assert.ok(minZ >= -1e-4, `STL must sit flat on build plate z >= 0, got minZ=${minZ}`);
+  assertWatertightPositive(
+    [{ id: "exported-stl", positions: new Float32Array(stlPositions), indices: new Uint32Array(stlIndices) }],
+    "exported-cone-stl",
+    true,
+  );
 
-  const cuffStl = exportNoseConeStlBytes({ ...def, wrap_style: "cuff" }, bladeCtx, "cuff");
+  const cuffStl = exportNoseConeStlBytes({ ...def, wrap_style: "cuff" }, bladeCtxKid, "cuff");
   const cuffView = new DataView(cuffStl.buffer, cuffStl.byteOffset, cuffStl.byteLength);
   const cuffTris = cuffView.getUint32(80, true);
   assert.ok(cuffTris > 100);

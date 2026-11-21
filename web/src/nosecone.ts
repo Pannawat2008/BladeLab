@@ -1,6 +1,16 @@
 // Parametric Aerodynamic Nose Cone & Kidwind4-LockRev4 Hub Fit Builder (T-105)
-// Pure TypeScript geometry, binary STL exporter, and 2D blueprint canvas renderer.
-// Watertight manifold shell + self-centering 3-lobe trefoil pocket + blind M3 bosses.
+// Powered by Manifold-3D C++ CSG WASM kernel for guaranteed single-solid watertight printable STL meshes.
+// Carves exact cutouts by slicing the live 3D blade-wasm geometry, with 45-deg self-supporting
+// blind M3 bosses, chamfered 3-lobe trefoil pocket, and self-supporting conical lightening dome.
+
+import Module, {
+  type CrossSection,
+  type Manifold,
+  type ManifoldToplevel,
+  type Mesh as ManifoldMesh,
+  type Polygons,
+  type Vec2,
+} from "manifold-3d";
 
 export type NoseConeAeroProfile = "adaptive" | "vonkarman" | "elliptical" | "bell";
 export type NoseConeWrapStyle = "saddle" | "closed" | "cuff" | "flush";
@@ -28,6 +38,16 @@ export interface NoseConeConfig {
   trefoil_depth_mm: number;
 }
 
+export interface NoseBladeMeshInput {
+  positions: Float32Array;
+  indices: Uint32Array;
+  pivot_shift_mm: number;
+  rot_z_rad: number;
+  hub_front_y_mm: number;
+  radial_shift_mm: number;
+  spar_radius_mm?: number;
+}
+
 export interface NoseConeBladeContext {
   blade_count: number;
   hub_diameter_mm: number;
@@ -36,6 +56,7 @@ export interface NoseConeBladeContext {
   root_chord_mm: number;
   root_twist_deg: number;
   collective_pitch_deg: number;
+  blade_mesh?: NoseBladeMeshInput;
 }
 
 export interface NoseConeSubMesh {
@@ -52,7 +73,11 @@ export interface NoseConeMetrics {
   nose_cd: number;
   root_flow_boost_pct: number;
   est_mass_g: number;
+  volume_cm3: number;
   total_triangles: number;
+  is_watertight: boolean;
+  is_single_solid: boolean;
+  print_status: string;
   hardware_label: string;
   fit_note: string;
 }
@@ -62,6 +87,37 @@ export interface NoseConeMeshBundle {
   cuff_submeshes: NoseConeSubMesh[];
   ghost_hub_submeshes: NoseConeSubMesh[];
   metrics: NoseConeMetrics;
+}
+
+let manifoldModPromise: Promise<ManifoldToplevel> | null = null;
+let manifoldModInstance: ManifoldToplevel | null = null;
+
+/**
+ * Initializes the Manifold-3D WASM kernel (idempotent across Browser & Node tests).
+ * Pass `wasmUrl` (e.g. `?url` asset in Vite) when bundling for browser deployment.
+ */
+export async function initNoseConeKernel(wasmUrl?: string): Promise<void> {
+  if (manifoldModInstance) return;
+  if (!manifoldModPromise) {
+    manifoldModPromise = (async () => {
+      const m = await Module(wasmUrl ? { locateFile: () => wasmUrl } : undefined);
+      m.setup();
+      manifoldModInstance = m;
+      return m;
+    })();
+  }
+  await manifoldModPromise;
+}
+
+export function isNoseConeKernelReady(): boolean {
+  return manifoldModInstance !== null;
+}
+
+function requireManifoldKernel(): ManifoldToplevel {
+  if (!manifoldModInstance) {
+    throw new Error("Nose Cone Manifold-3D kernel not initialized; call await initNoseConeKernel() first.");
+  }
+  return manifoldModInstance;
 }
 
 export function defaultNoseConeConfig(): NoseConeConfig {
@@ -125,11 +181,11 @@ export function evalNoseProfileRadius(
     // Blade-Adaptive: Von Kármán nose core + sculpted root ramp aligned with blade stations
     const theta = Math.acos(clamp(1 - 2 * c, -1, 1));
     const vk = Math.sqrt(Math.max(0, (theta - 0.5 * Math.sin(2 * theta)) / Math.PI));
-    const rampMask = Math.exp(-(minDeltaTheta * minDeltaTheta) / (0.34 * 0.34));
+    const rampMask = Math.exp(-(minDeltaTheta * minDeltaTheta) / (0.36 * 0.36));
     const pitchBoost = clamp((effPitchDeg - 6) / 28, 0, 1.2);
     const chordBoost = clamp((rootChordMm - 30) / 65, 0, 1.2);
     const adaptiveAdd =
-      Math.pow(c, 2.4) * (0.9 + 2.4 * rampMask * (0.55 + 0.3 * chordBoost + 0.25 * pitchBoost));
+      Math.pow(c, 2.2) * (0.75 + 2.5 * rampMask * (0.55 + 0.3 * chordBoost + 0.25 * pitchBoost));
     r = baseR * vk + adaptiveAdd;
   }
 
@@ -167,703 +223,1070 @@ export function evalTrefoilRadius(
   return best + clearanceMm;
 }
 
+function polygonSignedArea2D(poly: readonly Vec2[]): number {
+  let area2 = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x0, y0] = poly[i]!;
+    const [x1, y1] = poly[(i + 1) % poly.length]!;
+    area2 += x0 * y1 - x1 * y0;
+  }
+  return 0.5 * area2;
+}
+
+function ensureCCW2D(poly: Vec2[]): Vec2[] {
+  return polygonSignedArea2D(poly) >= 0 ? poly : [...poly].reverse();
+}
+
 /**
- * Computes root-section NACA 4412 signed distance approximation (mm) in `(ds = baseR * dTheta, dz = z - zBlade)`
- * for clean skirt cutout masking.
+ * Slices a 3D blade mesh by radial plane `nx = sliceX` and returns closed 2D `(ny, nz)` outer contours.
  */
-function airfoilCutoutNormalizedDist(
-  dsMm: number,
-  dzMm: number,
-  rootChordMm: number,
-  pitchDeg: number,
-  clearanceMm: number,
-): number {
-  // Clamp visual/skirt root neck chord inside reasonable printable socket bounds on a Ø60 hub
-  const neckChord = clamp(rootChordMm * 0.44, 18, 38);
-  const halfC = neckChord * 0.5;
-  const rad = (clamp(pitchDeg, -35, 55) * Math.PI) / 180;
-  const cosP = Math.cos(rad);
-  const sinP = Math.sin(rad);
+function sliceBladeMeshAtRadialPlane(
+  blade: NoseBladeMeshInput,
+  sliceX: number,
+): Vec2[][] {
+  const pos = blade.positions;
+  const idx = blade.indices;
+  const cosR = Math.cos(blade.rot_z_rad);
+  const sinR = Math.sin(blade.rot_z_rad);
+  const nVerts = (pos.length / 3) | 0;
 
-  // Rotate (dz = axial chord axis, ds = thickness direction) into airfoil frame
-  const xcLocal = dzMm * cosP + dsMm * sinP;
-  const ytLocal = -dzMm * sinP + dsMm * cosP;
-
-  // Normalized chord u in [-0.42, 0.58] (centered near 0.38c pitch axis)
-  const u = (xcLocal + 0.38 * neckChord) / neckChord;
-  if (u >= 0 && u <= 1) {
-    const t = 0.145;
-    const halfThick =
-      5 * t * (0.2969 * Math.sqrt(Math.max(1e-5, u)) - 0.126 * u - 0.3516 * u * u + 0.2843 * u * u * u - 0.1015 * u * u * u * u) * neckChord;
-    const allowY = Math.max(2.6, halfThick + clearanceMm);
-    const dyRatio = Math.abs(ytLocal) / allowY;
-    const dxEdge = Math.min(u, 1 - u) * neckChord;
-    if (dxEdge < clearanceMm) {
-      return Math.hypot(clearanceMm - dxEdge, Math.max(0, Math.abs(ytLocal) - halfThick)) / Math.max(0.5, clearanceMm);
-    }
-    return dyRatio;
+  // Transform all blade vertices once into nose cone local (nx, ny, nz)
+  const nxArr = new Float64Array(nVerts);
+  const nyArr = new Float64Array(nVerts);
+  const nzArr = new Float64Array(nVerts);
+  for (let v = 0; v < nVerts; v++) {
+    const vx = pos[3 * v]! + blade.pivot_shift_mm;
+    const vy = pos[3 * v + 1]!;
+    const vz = pos[3 * v + 2]!;
+    const bx = vx * cosR - vy * sinR;
+    const by = vx * sinR + vy * cosR;
+    nxArr[v] = vz + blade.radial_shift_mm;
+    nyArr[v] = bx;
+    nzArr[v] = by - blade.hub_front_y_mm;
   }
 
-  const endDist = u < 0 ? -u * neckChord : (u - 1) * neckChord;
-  const baseThick = u < 0 ? 1.8 : 0.9;
-  const radialOut = Math.hypot(endDist, Math.max(0, Math.abs(ytLocal) - baseThick));
-  return radialOut / Math.max(2.5, clearanceMm + 2.2);
+  interface EdgeSeg {
+    aKey: string;
+    bKey: string;
+    ax: number;
+    ay: number;
+    bx: number;
+    by: number;
+    used: boolean;
+  }
+
+  const quantKey = (x: number, y: number) => `${Math.round(x * 1e4)}_${Math.round(y * 1e4)}`;
+  const segs: EdgeSeg[] = [];
+  const adj = new Map<string, number[]>();
+  const nTris = (idx.length / 3) | 0;
+
+  for (let t = 0; t < nTris; t++) {
+    const i0 = idx[3 * t]!;
+    const i1 = idx[3 * t + 1]!;
+    const i2 = idx[3 * t + 2]!;
+    const vs = [i0, i1, i2];
+    // Perturb exact hits slightly so every crossing triangle produces exactly 2 edge intersections
+    const ds = vs.map((vi) => {
+      const d = nxArr[vi]! - sliceX;
+      return d === 0 ? 1e-5 : d;
+    });
+    const hits: [number, number][] = [];
+    for (let e = 0; e < 3; e++) {
+      const a = vs[e]!;
+      const b = vs[(e + 1) % 3]!;
+      const da = ds[e]!;
+      const db = ds[(e + 1) % 3]!;
+      if ((da > 0 && db < 0) || (da < 0 && db > 0)) {
+        const alpha = da / (da - db);
+        const hy = nyArr[a]! + alpha * (nyArr[b]! - nyArr[a]!);
+        const hz = nzArr[a]! + alpha * (nzArr[b]! - nzArr[a]!);
+        hits.push([hy, hz]);
+      }
+    }
+    if (hits.length === 2) {
+      const [ax, ay] = hits[0]!;
+      const [bx, by] = hits[1]!;
+      if (Math.hypot(bx - ax, by - ay) < 1e-5) continue;
+      const aKey = quantKey(ax, ay);
+      const bKey = quantKey(bx, by);
+      if (aKey === bKey) continue;
+      const segIdx = segs.length;
+      segs.push({ aKey, bKey, ax, ay, bx, by, used: false });
+      const listA = adj.get(aKey) ?? [];
+      listA.push(segIdx);
+      adj.set(aKey, listA);
+      const listB = adj.get(bKey) ?? [];
+      listB.push(segIdx);
+      adj.set(bKey, listB);
+    }
+  }
+
+  const loops: { poly: Vec2[]; absArea: number }[] = [];
+  for (let s = 0; s < segs.length; s++) {
+    if (segs[s]!.used) continue;
+    const seg = segs[s]!;
+    seg.used = true;
+    const pts: Vec2[] = [
+      [seg.ax, seg.ay],
+      [seg.bx, seg.by],
+    ];
+    let currKey = seg.bKey;
+    const startKey = seg.aKey;
+    let guard = 0;
+    while (currKey !== startKey && guard++ < segs.length + 4) {
+      const candidates = adj.get(currKey) ?? [];
+      let nextIdx = -1;
+      for (const c of candidates) {
+        if (!segs[c]!.used) {
+          nextIdx = c;
+          break;
+        }
+      }
+      if (nextIdx < 0) break;
+      const nextSeg = segs[nextIdx]!;
+      nextSeg.used = true;
+      if (nextSeg.aKey === currKey) {
+        currKey = nextSeg.bKey;
+        pts.push([nextSeg.bx, nextSeg.by]);
+      } else {
+        currKey = nextSeg.aKey;
+        pts.push([nextSeg.ax, nextSeg.ay]);
+      }
+    }
+    if (currKey === startKey && pts.length >= 4) {
+      pts.pop(); // remove duplicate closing endpoint
+      const absArea = Math.abs(polygonSignedArea2D(pts));
+      if (absArea > 1.5) {
+        loops.push({ poly: ensureCCW2D(pts), absArea });
+      }
+    }
+  }
+
+  if (loops.length === 0) return [];
+  // Keep largest outer skin loop (ignores internal spar holes inside the blade root)
+  loops.sort((a, b) => b.absArea - a.absArea);
+  return [loops[0]!.poly];
 }
 
-interface SubMeshBuilder {
-  positions: number[];
-  indices: number[];
-  addVert(x: number, y: number, z: number): number;
-  addTri(a: number, b: number, c: number): void;
+/**
+ * Fallback analytical NACA 4412 airfoil 2D polygon in `(ny, nz)` frame when no 3D blade mesh is supplied.
+ */
+function fallbackNacaAirfoil2D(bladeCtx: NoseConeBladeContext, zBlade: number): Vec2[] {
+  const chord = clamp(bladeCtx.root_chord_mm, 14, 120);
+  const pitchRad = (clamp(bladeCtx.root_twist_deg + bladeCtx.collective_pitch_deg, -45, 55) * Math.PI) / 180;
+  const cosP = Math.cos(pitchRad);
+  const sinP = Math.sin(pitchRad);
+  const m = 0.04;
+  const p = 0.4;
+  const t = 0.14;
+  const samples = 28;
+  const upper: Vec2[] = [];
+  const lower: Vec2[] = [];
+
+  for (let i = 0; i <= samples; i++) {
+    const xc = 0.5 * (1 - Math.cos((Math.PI * i) / samples));
+    const yt =
+      5 *
+      t *
+      (0.2969 * Math.sqrt(Math.max(1e-6, xc)) -
+        0.126 * xc -
+        0.3516 * xc * xc +
+        0.2843 * xc * xc * xc -
+        0.1015 * xc * xc * xc * xc);
+    const yc =
+      xc < p
+        ? (m / (p * p)) * (2 * p * xc - xc * xc)
+        : (m / ((1 - p) * (1 - p))) * (1 - 2 * p + 2 * p * xc - xc * xc);
+    const lx = -(xc - 0.25) * chord;
+    const yu = yc + yt;
+    const yl = yc - yt;
+    upper.push([lx * cosP - yu * chord * sinP, zBlade + lx * sinP + yu * chord * cosP]);
+    lower.push([lx * cosP - yl * chord * sinP, zBlade + lx * sinP + yl * chord * cosP]);
+  }
+  const poly = upper.concat(lower.slice(1, -1).reverse());
+  return ensureCCW2D(poly);
 }
 
-function createSubMeshBuilder(): SubMeshBuilder {
-  const positions: number[] = [];
-  const indices: number[] = [];
-  return {
-    positions,
-    indices,
-    addVert(x: number, y: number, z: number): number {
-      const idx = positions.length / 3;
-      positions.push(x, y, z);
-      return idx;
-    },
-    addTri(a: number, b: number, c: number): void {
-      if (a === b || b === c || a === c) return;
-      indices.push(a, b, c);
-    },
-  };
+/**
+ * Extracts a smooth offset 2D CrossSection of the actual blade root in nose-local `(ny, nz)` coords.
+ */
+function buildBladeCutCrossSection(
+  mk: ManifoldToplevel,
+  bladeCtx: NoseConeBladeContext,
+  baseR: number,
+  wall: number,
+  effHubLen: number,
+  clearanceMm: number,
+  track: { delete(): void }[],
+): { cut2D: CrossSection; rawPolys: Vec2[][] } {
+  const zBlade = -effHubLen * 0.5;
+  let slicedPolys: Vec2[][] = [];
+
+  if (bladeCtx.blade_mesh && bladeCtx.blade_mesh.positions.length >= 9) {
+    const bm = bladeCtx.blade_mesh;
+    // Measure blade radial bounds once
+    let minNx = Infinity;
+    let maxNx = -Infinity;
+    const nVerts = (bm.positions.length / 3) | 0;
+    for (let v = 0; v < nVerts; v++) {
+      const nx = bm.positions[3 * v + 2]! + bm.radial_shift_mm;
+      if (nx < minNx) minNx = nx;
+      if (nx > maxNx) maxNx = nx;
+    }
+
+    const rLow = clamp(baseR + 0.15, minNx + 0.4, maxNx - 0.5);
+    const rMid = clamp(baseR + wall * 0.85, minNx + 0.4, maxNx - 0.5);
+    const rHigh = clamp(baseR + wall + 3.0, minNx + 0.4, maxNx - 0.5);
+    const sliceSet: number[] = [];
+    for (const rS of [rLow, rMid, rHigh]) {
+      if (Number.isFinite(rS) && rS > minNx + 0.2 && rS < maxNx - 0.2) {
+        if (!sliceSet.some((prev) => Math.abs(prev - rS) < 0.25)) {
+          sliceSet.push(rS);
+        }
+      }
+    }
+
+    for (const rS of sliceSet) {
+      const polys = sliceBladeMeshAtRadialPlane(bm, rS);
+      for (const p of polys) slicedPolys.push(p);
+    }
+  }
+
+  let base2D: CrossSection;
+  if (slicedPolys.length > 0) {
+    const csList = slicedPolys.map((p) => {
+      const c = new mk.CrossSection([p], "Positive");
+      track.push(c);
+      return c;
+    });
+    base2D = csList.length === 1 ? csList[0]! : mk.CrossSection.union(csList);
+    if (csList.length > 1) track.push(base2D);
+  } else {
+    const fb = fallbackNacaAirfoil2D(bladeCtx, zBlade);
+    slicedPolys = [fb];
+    base2D = new mk.CrossSection([fb], "Positive");
+    track.push(base2D);
+  }
+
+  const offset = base2D.offset(Math.max(0.15, clearanceMm), "Round", 2, 16);
+  track.push(offset);
+  const cleaned = offset.simplify(0.04);
+  track.push(cleaned);
+  return { cut2D: cleaned, rawPolys: slicedPolys };
 }
 
-function buildMaskedThickShell(
+/**
+ * Converts a closed blade CrossSection into an axially slide-on saddle CrossSection by sweeping
+ * its exact smooth upper airfoil contour vertically downward to `zMin`.
+ */
+function buildDownwardSaddleCrossSection(
+  mk: ManifoldToplevel,
+  bladeCut2D: CrossSection,
+  zMin: number,
+  track: { delete(): void }[],
+): CrossSection {
+  const polys = bladeCut2D.toPolygons();
+  if (polys.length === 0) return bladeCut2D;
+
+  // Build one saddle per polygon component and union cleanly
+  const components: CrossSection[] = [];
+  for (const poly of polys) {
+    if (poly.length < 3) continue;
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    for (const [x] of poly) {
+      if (x < xMin) xMin = x;
+      if (x > xMax) xMax = x;
+    }
+    if (xMax - xMin < 0.5) continue;
+
+    // Sample uniform x-grid + original vertices to trace the exact upper envelope zTop(x)
+    const sampleSet: number[] = [xMin, xMax];
+    const N_SAMP = 56;
+    for (let k = 1; k < N_SAMP; k++) {
+      sampleSet.push(xMin + ((xMax - xMin) * k) / N_SAMP);
+    }
+    for (const [x] of poly) sampleSet.push(x);
+    sampleSet.sort((a, b) => a - b);
+
+    const xs: number[] = [];
+    for (const x of sampleSet) {
+      if (xs.length === 0 || x - xs[xs.length - 1]! > 0.04) xs.push(x);
+    }
+    if (xs[xs.length - 1]! < xMax - 1e-4) xs.push(xMax);
+
+    const topPts: Vec2[] = [];
+    for (const x of xs) {
+      let maxZ = -Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const [x0, z0] = poly[i]!;
+        const [x1, z1] = poly[(i + 1) % poly.length]!;
+        if ((x0 <= x && x1 >= x) || (x1 <= x && x0 >= x)) {
+          const dx = x1 - x0;
+          if (Math.abs(dx) < 1e-8) {
+            maxZ = Math.max(maxZ, z0, z1);
+          } else {
+            const t = clamp((x - x0) / dx, 0, 1);
+            maxZ = Math.max(maxZ, z0 + t * (z1 - z0));
+          }
+        }
+      }
+      if (Number.isFinite(maxZ) && maxZ > zMin + 0.4) {
+        topPts.push([x, maxZ]);
+      }
+    }
+
+    if (topPts.length < 2) continue;
+    const leftX = topPts[0]![0];
+    const rightX = topPts[topPts.length - 1]![0];
+    const loop: Vec2[] = [[leftX, zMin], [rightX, zMin]];
+    for (let i = topPts.length - 1; i >= 0; i--) {
+      loop.push(topPts[i]!);
+    }
+    const cs = new mk.CrossSection([ensureCCW2D(loop)], "Positive");
+    track.push(cs);
+    components.push(cs);
+  }
+
+  if (components.length === 0) return bladeCut2D;
+  if (components.length === 1) return components[0]!;
+  const u = mk.CrossSection.union(components);
+  track.push(u);
+  return u;
+}
+
+/**
+ * Builds the closed watertight outer aerodynamic Nose Cone Manifold solid (no internal hollows yet).
+ */
+function buildOuterAeroSolid(
+  mk: ManifoldToplevel,
   cfg: NoseConeConfig,
   bladeCtx: NoseConeBladeContext,
-  effHubDiameterMm: number,
-): NoseConeSubMesh {
-  const baseR = effHubDiameterMm * 0.5;
-  const effSkirtLen = cfg.wrap_style === "flush" ? 0 : clamp(cfg.skirt_length_mm, 8, Math.max(10, bladeCtx.hub_length_mm + 2));
-  const coneLen = clamp(cfg.cone_length_mm, 30, 140);
-  const wall = clamp(cfg.wall_thickness_mm, 1.2, 5.0);
+  baseR: number,
+  wall: number,
+  effSkirtLen: number,
+  coneLen: number,
+  track: { delete(): void }[],
+): Manifold {
   const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
-  const clearance = clamp(cfg.blade_clearance_mm, 0.2, 1.5);
   const effPitch = bladeCtx.root_twist_deg + bladeCtx.collective_pitch_deg;
+  const maxOuterBaseR = baseR + 0.25 + wall;
 
-  const NA = 120;
-  const N_SKIRT = cfg.wrap_style === "flush" ? 0 : 16;
-  const N_NOSE = 26;
-  const NZ = N_SKIRT + N_NOSE; // total vertex rings; grid quads = (NZ - 1) x NA
+  // Axisymmetric profiles can use Manifold's exact Revolved CrossSection directly!
+  if (cfg.aero_profile !== "adaptive") {
+    const prof: Vec2[] = [];
+    const zBot = -effSkirtLen;
+    prof.push([0, zBot]);
+    if (effSkirtLen > 0) {
+      prof.push([maxOuterBaseR, zBot]);
+      prof.push([maxOuterBaseR, 0]);
+    } else {
+      prof.push([maxOuterBaseR, 0]);
+    }
+    const N_NOSE = 42;
+    for (let i = 1; i < N_NOSE; i++) {
+      // Cluster rings smoothly near z=0 base & near apex where curvature changes fastest
+      const frac = i / N_NOSE;
+      const z = frac * coneLen;
+      const r = evalNoseProfileRadius(
+        cfg.aero_profile,
+        1 - frac,
+        maxOuterBaseR,
+        Math.PI,
+        bladeCtx.root_chord_mm,
+        effPitch,
+      );
+      if (r > 0.05) {
+        prof.push([r, z]);
+      }
+    }
+    prof.push([0, coneLen]);
+    const cs = new mk.CrossSection([ensureCCW2D(prof)], "Positive");
+    track.push(cs);
+    const rev = cs.revolve(96);
+    track.push(rev);
+    return rev;
+  }
 
-  // Build monotonic z levels: row 0 = -effSkirtLen .. row N_SKIRT = 0 .. row NZ-1 = near apex
+  // Adaptive profile varies smoothly with azimuth theta -> welded closed mesh loft
+  const NA = 96;
+  const N_SKIRT = effSkirtLen > 0 ? 8 : 0;
+  const N_NOSE = 36;
   const zVals: number[] = [];
   for (let i = 0; i < N_SKIRT; i++) {
     zVals.push(-effSkirtLen + (i / N_SKIRT) * effSkirtLen);
   }
   for (let i = 0; i < N_NOSE; i++) {
-    // Last vertex ring sits cleanly near the apex so apex fan has finite triangle span
-    const t = (i / N_NOSE) * 0.96;
+    // End ring at t=0.985 before apex pole
+    const t = (i / N_NOSE) * 0.985;
     zVals.push(t * coneLen);
   }
-
-  // Locate blade radial axis along hub midpoint (z = -hubLen/2 in local coords -> z_hub = 10mm)
-  const effHubLen = cfg.hub_fit_mode === "kidwind4_lockrev4" ? 20.0 : bladeCtx.hub_length_mm;
-  const zBlade = -clamp(effHubLen * 0.5, 4, Math.max(4.5, effSkirtLen - 3));
-  const cuffHoleR = clamp(bladeCtx.root_chord_mm * 0.22, 9, 15.5) + clearance;
-
-  const qZ = NZ - 1;
-  const active: boolean[][] = Array.from({ length: qZ }, () => Array<boolean>(NA).fill(true));
-  const filletBoost: number[][] = Array.from({ length: NZ }, () => Array<number>(NA).fill(0));
 
   const bladeAngles: number[] = [];
   for (let k = 0; k < bCount; k++) {
     bladeAngles.push((k * 2 * Math.PI) / bCount);
   }
 
-  const evalCellDist = (zMid: number, thetaMid: number) => {
-    let minNorm = Infinity;
-    let minDelta = Math.PI;
+  const cosArr: number[] = [];
+  const sinArr: number[] = [];
+  const minDeltaArr: number[] = [];
+  for (let j = 0; j < NA; j++) {
+    const theta = (j * 2 * Math.PI) / NA;
+    cosArr.push(Math.cos(theta));
+    sinArr.push(Math.sin(theta));
+    let md = Math.PI;
     for (const ba of bladeAngles) {
-      const dTheta = shortestAngleDiff(thetaMid, ba);
-      minDelta = Math.min(minDelta, Math.abs(dTheta));
-      if (Math.abs(dTheta) < 1.15) {
-        const dsMm = baseR * dTheta;
-        const dzMm = zMid - zBlade;
-        if (cfg.wrap_style === "cuff") {
-          const rDist = Math.hypot(dsMm, dzMm);
-          minNorm = Math.min(minNorm, rDist / Math.max(4, cuffHoleR));
-        } else if (cfg.wrap_style === "closed" || cfg.wrap_style === "saddle") {
-          const nd = airfoilCutoutNormalizedDist(dsMm, dzMm, bladeCtx.root_chord_mm, effPitch, clearance);
-          minNorm = Math.min(minNorm, nd);
-        }
-      }
+      md = Math.min(md, Math.abs(shortestAngleDiff(theta, ba)));
     }
-    return { minNorm, minDelta };
+    minDeltaArr.push(md);
+  }
+
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const addVert = (x: number, y: number, z: number) => {
+    const vi = pos.length / 3;
+    pos.push(x, y, z);
+    return vi;
+  };
+  const addTri = (a: number, b: number, c: number) => {
+    if (a !== b && b !== c && a !== c) idx.push(a, b, c);
   };
 
-  if (cfg.wrap_style !== "flush") {
-    // First pass: mark airfoil / socket cutouts (strictly leaving top nose cap rows solid)
-    for (let i = 0; i < qZ - 4; i++) {
-      const zMid = 0.5 * (zVals[i]! + zVals[i + 1]!);
-      if (zMid > 3.5) continue; // Keep forward windward dome untouched!
-      for (let j = 0; j < NA; j++) {
-        const thetaMid = ((j + 0.5) * 2 * Math.PI) / NA;
-        const { minNorm } = evalCellDist(zMid, thetaMid);
-        if (minNorm < 1.0) {
-          active[i]![j] = false;
-        }
-      }
-    }
-
-    // Rear-Open Saddle: sweep any cutout column straight open down to the back edge (i = 0)
-    if (cfg.wrap_style === "saddle") {
-      for (let j = 0; j < NA; j++) {
-        let highestCutRow = -1;
-        for (let i = 0; i < N_SKIRT; i++) {
-          if (!active[i]![j]) highestCutRow = Math.max(highestCutRow, i);
-        }
-        if (highestCutRow >= 0) {
-          for (let i = 0; i <= highestCutRow; i++) {
-            active[i]![j] = false;
-          }
-        }
-      }
-    }
-
-    // Eliminate diagonal checkerboards ([T,F; F,T] or [F,T; T,F]) and single-cell islands for guaranteed manifold topology
-    let changed = true;
-    let passes = 0;
-    while (changed && passes < 16) {
-      changed = false;
-      passes++;
-      for (let i = 0; i < qZ - 1; i++) {
-        for (let j = 0; j < NA; j++) {
-          const jNext = (j + 1) % NA;
-          const a = active[i]![j]!;
-          const b = active[i]![jNext]!;
-          const c = active[i + 1]![j]!;
-          const d = active[i + 1]![jNext]!;
-          if (a === d && b === c && a !== b) {
-            // Fill the false diagonal cell so boundary loops remain strictly disjoint simple cycles
-            if (!a) active[i]![j] = true;
-            else active[i]![jNext] = true;
-            changed = true;
-          }
-        }
-      }
-    }
-  }
-
-  // Compute vertex-level fillet boost for Closed Window + Blade-Adaptive blend
-  for (let i = 0; i < NZ; i++) {
+  const rings: number[][] = [];
+  for (let i = 0; i < zVals.length; i++) {
     const z = zVals[i]!;
+    const row: number[] = [];
     for (let j = 0; j < NA; j++) {
-      const theta = (j * 2 * Math.PI) / NA;
-      const { minNorm } = evalCellDist(z, theta);
-      if (cfg.wrap_style === "closed" && minNorm >= 0.95 && minNorm < 1.65) {
-        const w = 1 - (minNorm - 0.95) / 0.7;
-        filletBoost[i]![j] = 2.2 * Math.sin(clamp(w, 0, 1) * Math.PI * 0.5);
-      }
-    }
-  }
-
-  const builder = createSubMeshBuilder();
-  const outerVert: number[][] = Array.from({ length: NZ }, () => Array<number>(NA).fill(-1));
-  const innerVert: number[][] = Array.from({ length: NZ }, () => Array<number>(NA).fill(-1));
-
-  for (let i = 0; i < NZ; i++) {
-    const z = zVals[i]!;
-    const cosArr: number[] = [];
-    const sinArr: number[] = [];
-    for (let j = 0; j < NA; j++) {
-      const theta = (j * 2 * Math.PI) / NA;
-      cosArr.push(Math.cos(theta));
-      sinArr.push(Math.sin(theta));
-    }
-
-    for (let j = 0; j < NA; j++) {
-      const theta = (j * 2 * Math.PI) / NA;
-      let minDelta = Math.PI;
-      for (const ba of bladeAngles) {
-        minDelta = Math.min(minDelta, Math.abs(shortestAngleDiff(theta, ba)));
-      }
-
-      let rOut = baseR + wall;
-      let rIn = baseR + 0.25;
-
+      let r: number;
       if (z < 0) {
-        // Skirt region wrapping over hub (smooth outer blend from baseR+wall at z=0 down slightly toward rear edge)
         const rearFrac = Math.abs(z) / Math.max(1, effSkirtLen);
-        let adaptiveSkirtAdd = 0;
-        if (cfg.aero_profile === "adaptive") {
-          const ramp = Math.exp(-(minDelta * minDelta) / (0.34 * 0.34));
-          const pitchBoost = clamp((effPitch - 6) / 28, 0, 1.2);
-          const chordBoost = clamp((bladeCtx.root_chord_mm - 30) / 65, 0, 1.2);
-          adaptiveSkirtAdd = (0.9 + 2.4 * ramp * (0.55 + 0.3 * chordBoost + 0.25 * pitchBoost)) * (1 - 0.35 * rearFrac);
-        }
-        rIn = baseR + 0.25;
-        rOut = rIn + wall + adaptiveSkirtAdd + filletBoost[i]![j]!;
+        const ramp = Math.exp(-(minDeltaArr[j]! * minDeltaArr[j]!) / (0.36 * 0.36));
+        const pitchBoost = clamp((effPitch - 6) / 28, 0, 1.2);
+        const chordBoost = clamp((bladeCtx.root_chord_mm - 30) / 65, 0, 1.2);
+        const addR = (0.75 + 2.5 * ramp * (0.55 + 0.3 * chordBoost + 0.25 * pitchBoost)) * (1 - 0.35 * rearFrac);
+        r = maxOuterBaseR + addR;
       } else {
-        // Forward aerodynamic cone region (t in [0..0.96], vertex i = NZ-1 matches t = 0.96!)
-        const cNose = clamp(1 - z / coneLen, 0, 1); // 1 at base z=0, 0.04 near apex
-        const rSurface = evalNoseProfileRadius(
-          cfg.aero_profile,
-          cNose,
-          baseR + 0.25 + wall,
-          minDelta,
+        r = evalNoseProfileRadius(
+          "adaptive",
+          clamp(1 - z / coneLen, 0, 1),
+          maxOuterBaseR,
+          minDeltaArr[j]!,
           bladeCtx.root_chord_mm,
           effPitch,
         );
-        rOut = rSurface + filletBoost[i]![j]!;
-        const innerWallR = z < 1.5 ? baseR + 0.25 : Math.max(0.9, rOut - wall);
-        rIn = Math.min(rOut - 0.85, innerWallR);
-        // Shrink last ring smoothly just short of apex
-        if (i === NZ - 1) {
-          rOut = Math.max(2.6, rOut);
-          rIn = Math.max(0.7, rOut - wall * 0.72);
-        }
+        if (i === zVals.length - 1) r = Math.max(0.75, r);
       }
-
-      outerVert[i]![j] = builder.addVert(rOut * cosArr[j]!, rOut * sinArr[j]!, z);
-      innerVert[i]![j] = builder.addVert(rIn * cosArr[j]!, rIn * sinArr[j]!, z);
+      row.push(addVert(r * cosArr[j]!, r * sinArr[j]!, z));
     }
+    rings.push(row);
   }
 
-  const outerApexIdx = builder.addVert(0, 0, coneLen);
-  const innerApexIdx = builder.addVert(0, 0, Math.max(4.0, coneLen - Math.max(wall, 2.6)));
+  const zBot = effSkirtLen > 0 ? -effSkirtLen : 0;
+  const botPole = addVert(0, 0, zBot);
+  const topPole = addVert(0, 0, coneLen);
 
-  // 1. Emit active outer & inner quads + exposed boundary walls
-  for (let i = 0; i < qZ; i++) {
+  // Side quads (+R outward)
+  for (let i = 0; i < rings.length - 1; i++) {
+    const r0 = rings[i]!;
+    const r1 = rings[i + 1]!;
     for (let j = 0; j < NA; j++) {
-      if (!active[i]![j]) continue;
       const jNext = (j + 1) % NA;
-
-      const o00 = outerVert[i]![j]!;
-      const o01 = outerVert[i]![jNext]!;
-      const o11 = outerVert[i + 1]![jNext]!;
-      const o10 = outerVert[i + 1]![j]!;
-
-      const i00 = innerVert[i]![j]!;
-      const i01 = innerVert[i]![jNext]!;
-      const i11 = innerVert[i + 1]![jNext]!;
-      const i10 = innerVert[i + 1]![j]!;
-
-      // Outer face (+R outward): o00 -> o01 -> o11, o00 -> o11 -> o10
-      builder.addTri(o00, o01, o11);
-      builder.addTri(o00, o11, o10);
-
-      // Inner face (-R outward): reversed winding
-      builder.addTri(i00, i11, i01);
-      builder.addTri(i00, i10, i11);
-
-      // Helper to emit a watertight boundary side-wall quad for outer directed edge (a -> b)
-      const capBoundary = (oa: number, ob: number, ia: number, ib: number) => {
-        builder.addTri(oa, ib, ob);
-        builder.addTri(oa, ia, ib);
-      };
-
-      // Bottom edge (o00 -> o01)
-      if (i === 0 || !active[i - 1]![j]) {
-        capBoundary(o00, o01, i00, i01);
-      }
-      // Top edge (o11 -> o10)
-      if (i + 1 < qZ && !active[i + 1]![j]) {
-        capBoundary(o11, o10, i11, i10);
-      }
-      // Right edge (o01 -> o11)
-      if (!active[i]![jNext]) {
-        capBoundary(o01, o11, i01, i11);
-      }
-      // Left edge (o10 -> o00)
-      const jPrev = (j - 1 + NA) % NA;
-      if (!active[i]![jPrev]) {
-        capBoundary(o10, o00, i10, i00);
-      }
+      addTri(r0[j]!, r0[jNext]!, r1[jNext]!);
+      addTri(r0[j]!, r1[jNext]!, r1[j]!);
     }
   }
-
-  // 2. Cap outer & inner nose apex fans (all cells in top row qZ - 1 are strictly active)
-  const topRow = NZ - 1;
+  // Bottom cap (-Z outward)
   for (let j = 0; j < NA; j++) {
     const jNext = (j + 1) % NA;
-    builder.addTri(outerVert[topRow]![j]!, outerVert[topRow]![jNext]!, outerApexIdx);
-    builder.addTri(innerVert[topRow]![j]!, innerApexIdx, innerVert[topRow]![jNext]!);
+    addTri(botPole, rings[0]![jNext]!, rings[0]![j]!);
+  }
+  // Top apex cap (+Z outward)
+  const lastRow = rings[rings.length - 1]!;
+  for (let j = 0; j < NA; j++) {
+    const jNext = (j + 1) % NA;
+    addTri(lastRow[j]!, lastRow[jNext]!, topPole);
   }
 
-  return {
-    id: "nose-shell",
-    color_hex: 0x2563eb,
-    positions: new Float32Array(builder.positions),
-    indices: new Uint32Array(builder.indices),
-  };
+  const mMesh: ManifoldMesh = new mk.Mesh({
+    numProp: 3,
+    vertProperties: new Float32Array(pos),
+    triVerts: new Uint32Array(idx),
+  });
+  mMesh.merge();
+  const man = new mk.Manifold(mMesh);
+  track.push(man);
+  return man;
 }
 
 /**
- * Watertight 3-lobe trefoil alignment sleeve seated flush inside `z = 0..trefoilDepth + 1.4mm`
- * so the nose cone self-centers onto `Kidwind4-LockRev4.step`'s front chamfered trefoil boss.
+ * Carves the full printable Nose Cone single solid with Manifold-3D CSG operations.
  */
-function buildTrefoilCollarMesh(
+function buildPrintableNoseManifold(
+  mk: ManifoldToplevel,
+  cfg: NoseConeConfig,
+  bladeCtx: NoseConeBladeContext,
+): {
+  manifold: Manifold;
+  metricsExtra: {
+    volume_cm3: number;
+    is_watertight: boolean;
+    is_single_solid: boolean;
+    print_status: string;
+    chord_fit_warning: string | null;
+  };
+  submesh: NoseConeSubMesh;
+} {
+  const track: { delete(): void }[] = [];
+  const effHubDia = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
+  const effHubLen = cfg.hub_fit_mode === "kidwind4_lockrev4" ? 20.0 : clamp(bladeCtx.hub_length_mm, 8, 80);
+  const baseR = effHubDia * 0.5;
+  const effSkirtLen = cfg.wrap_style === "flush" ? 0 : clamp(cfg.skirt_length_mm, 8, Math.max(10, effHubLen + 4));
+  const coneLen = clamp(cfg.cone_length_mm, 35, 150);
+  const wall = clamp(cfg.wall_thickness_mm, 1.4, 5.0);
+  const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
+  const boreR = Math.max(2.65, bladeCtx.hub_bore_mm * 0.5);
+  const clearance = clamp(cfg.blade_clearance_mm, 0.2, 2.5);
+  const effPitch = bladeCtx.root_twist_deg + bladeCtx.collective_pitch_deg;
+
+  try {
+    // 1. Base outer aerodynamic solid
+    let solid = buildOuterAeroSolid(mk, cfg, bladeCtx, baseR, wall, effSkirtLen, coneLen, track);
+
+    const subtractList: Manifold[] = [];
+
+    // 2. Hub skirt bore + 0.5mm x 45-deg bottom lead-in bevel
+    if (effSkirtLen > 0) {
+      const hubSlipR = baseR + 0.25;
+      const bevelR = hubSlipR + 0.55;
+      const hubCavityProfile: Vec2[] = [
+        [0, -effSkirtLen - 2.0],
+        [bevelR, -effSkirtLen - 2.0],
+        [bevelR, -effSkirtLen],
+        [hubSlipR, -effSkirtLen + 0.55],
+        [hubSlipR, 0.15],
+        [0, 0.15],
+      ];
+      const hubCs = new mk.CrossSection([ensureCCW2D(hubCavityProfile)], "Positive");
+      track.push(hubCs);
+      const hubCavity = hubCs.revolve(96);
+      track.push(hubCavity);
+      subtractList.push(hubCavity);
+    }
+
+    // 3. Carved 3-lobe chamfered Trefoil Pocket (z = 0..trefoilDepth+0.35mm) or shaft step
+    if (cfg.hub_fit_mode === "kidwind4_lockrev4") {
+      const tDepth = cfg.trefoil_depth_mm + 0.35;
+      const trefPts: Vec2[] = [];
+      const NA = 96;
+      for (let j = 0; j < NA; j++) {
+        const theta = (j * 2 * Math.PI) / NA;
+        const r = Math.min(
+          baseR - 1.2,
+          evalTrefoilRadius(
+            theta,
+            cfg.trefoil_center_r_mm,
+            cfg.trefoil_lobe_r_mm,
+            cfg.bolt_circle_mm * 0.5,
+            bCount,
+            cfg.trefoil_clearance_mm,
+          ),
+        );
+        trefPts.push([r * Math.cos(theta), r * Math.sin(theta)]);
+      }
+      const trefCs = new mk.CrossSection([ensureCCW2D(trefPts)], "Positive");
+      track.push(trefCs);
+      const trefExt = trefCs.extrude(tDepth + 0.4).translate([0, 0, -0.4]);
+      track.push(trefExt);
+      subtractList.push(trefExt);
+
+      // Lead-in 45-deg trefoil bevel at z = -0.3 .. +0.55
+      const trefLeadCs = trefCs.offset(0.6, "Round", 2, 8);
+      track.push(trefLeadCs);
+      const trefLeadCone = trefLeadCs.extrude(0.85, 1, 0, [baseR > 20 ? 0.96 : 0.92, baseR > 20 ? 0.96 : 0.92]).translate([0, 0, -0.3]);
+      track.push(trefLeadCone);
+      subtractList.push(trefLeadCone);
+    } else {
+      // Auto-Match Hub: clean chamfered shaft pilot bore
+      const pilotR = Math.min(baseR * 0.65, boreR + cfg.trefoil_clearance_mm + 0.4);
+      const pDepth = clamp(cfg.trefoil_depth_mm + 2.0, 2.0, 5.0);
+      const pilotProf: Vec2[] = [
+        [0, -0.5],
+        [pilotR + 0.6, -0.5],
+        [pilotR + 0.6, 0.0],
+        [pilotR, 0.6],
+        [pilotR, pDepth],
+        [0, pDepth + 0.4],
+      ];
+      const pCs = new mk.CrossSection([ensureCCW2D(pilotProf)], "Positive");
+      track.push(pCs);
+      const pMan = pCs.revolve(64);
+      track.push(pMan);
+      subtractList.push(pMan);
+    }
+
+    // 4. Carved 3x Rear Blind M3 Screw Holes with 45-deg self-supporting conical roofs
+    const boltR =
+      cfg.hub_fit_mode === "kidwind4_lockrev4"
+        ? cfg.bolt_circle_mm * 0.5
+        : clamp(effHubDia * 0.31, 6, effHubDia * 0.38);
+    const blindDepth = clamp(coneLen * 0.16, 7.5, 10.5);
+    const m3Prof: Vec2[] = [
+      [0, -0.6],
+      [2.1, -0.6],
+      [2.1, 0.0],
+      [1.5, 0.6],
+      [1.5, blindDepth],
+      [0, blindDepth + 1.5], // 45-deg self-supporting conical drill-point roof!
+    ];
+    const m3Cs = new mk.CrossSection([ensureCCW2D(m3Prof)], "Positive");
+    track.push(m3Cs);
+    const m3Proto = m3Cs.revolve(36);
+    track.push(m3Proto);
+    for (let k = 0; k < bCount; k++) {
+      const ang = ((k + 0.5) * 2 * Math.PI) / bCount;
+      const cx = boltR * Math.cos(ang);
+      const cy = boltR * Math.sin(ang);
+      const hole = m3Proto.translate([cx, cy, 0]);
+      track.push(hole);
+      subtractList.push(hole);
+    }
+
+    // 5. Compute true blade root cutouts + track max blade height so internal cavity stays cleanly clear
+    let bladeMaxZ = -Infinity;
+    let bladeNYMin = 0;
+    let bladeNYMax = 0;
+    if (cfg.wrap_style !== "flush") {
+      const { cut2D, rawPolys } = buildBladeCutCrossSection(
+        mk,
+        bladeCtx,
+        baseR,
+        wall,
+        effHubLen,
+        clearance,
+        track,
+      );
+
+      for (const p of rawPolys) {
+        for (const [py, pz] of p) {
+          if (pz > bladeMaxZ) bladeMaxZ = pz;
+          if (py < bladeNYMin) bladeNYMin = py;
+          if (py > bladeNYMax) bladeNYMax = py;
+        }
+      }
+      const cutBounds = cut2D.bounds();
+      bladeMaxZ = Math.max(bladeMaxZ, cutBounds.max[1]);
+
+      // Build sector safety clip so adjacent 120-deg blades can NEVER merge and detach skirt segments,
+      // and radial start r >= baseR - 0.6 never breaches internal trefoil/M3 hub core.
+      const sectorHalfRad = Math.PI / bCount;
+      const pierHalfRad = Math.min(0.16, sectorHalfRad * 0.25);
+      const maxAngle = Math.max(0.15, sectorHalfRad - pierHalfRad);
+      const rCutIn = Math.max(boltR + 3.5, baseR - 0.7);
+      const rCutOut = baseR + wall + 36;
+      const wedgePts: Vec2[] = [];
+      const nArc = 16;
+      for (let i = 0; i <= nArc; i++) {
+        const a = -maxAngle + ((2 * maxAngle) * i) / nArc;
+        wedgePts.push([rCutOut * Math.cos(a), rCutOut * Math.sin(a)]);
+      }
+      for (let i = nArc; i >= 0; i--) {
+        const a = -maxAngle + ((2 * maxAngle) * i) / nArc;
+        wedgePts.push([rCutIn * Math.cos(a), rCutIn * Math.sin(a)]);
+      }
+      const wedgeCs = new mk.CrossSection([ensureCCW2D(wedgePts)], "Positive");
+      track.push(wedgeCs);
+      const wedgeHeight = coneLen + effSkirtLen + 20;
+      const wedgeSolid = wedgeCs.extrude(wedgeHeight).translate([0, 0, -effSkirtLen - 8]);
+      track.push(wedgeSolid);
+
+      let blade0Cutter: Manifold;
+      if (cfg.wrap_style === "cuff") {
+        const cuffHoleR =
+          clamp(
+            Math.min(effSkirtLen * 0.44, baseR * Math.sin(maxAngle) - 1.2),
+            6.5,
+            13.5,
+          ) + clearance;
+        const zBlade = -clamp(effHubLen * 0.5, 4.5, Math.max(5.0, effSkirtLen - 2.5));
+        const cyl = mk.Manifold.cylinder(rCutOut + 4, cuffHoleR, cuffHoleR, 64, false);
+        track.push(cyl);
+        const rawCuff = cyl.rotate([0, 90, 0]).translate([0, 0, zBlade]);
+        track.push(rawCuff);
+        blade0Cutter = rawCuff.intersect(wedgeSolid);
+        track.push(blade0Cutter);
+      } else {
+        let profile2D = cut2D;
+        if (cfg.wrap_style === "saddle") {
+          profile2D = buildDownwardSaddleCrossSection(mk, cut2D, -effSkirtLen - 4.0, track);
+        }
+        // Check non-empty crossSection before extrude
+        const b = profile2D.bounds();
+        const padW = b.max[0] - b.min[0];
+        const padH = b.max[1] - b.min[1];
+        if (!profile2D.isEmpty() && padW > 0.2 && padH > 0.2) {
+          const extLen = rCutOut + 4;
+          // rotate([90, 0, 90]) maps (u=ny, v=nz, t in [0..extLen]) -> (+t, ny, nz) from r=0 through rCutOut
+          const rawExtrude = profile2D.extrude(extLen).rotate([90, 0, 90]);
+          track.push(rawExtrude);
+          blade0Cutter = rawExtrude.intersect(wedgeSolid);
+          track.push(blade0Cutter);
+        } else {
+          blade0Cutter = mk.Manifold.cube([0.1, 0.1, 0.1]).translate([9999, 9999, 9999]);
+          track.push(blade0Cutter);
+        }
+      }
+
+      if (!blade0Cutter.isEmpty()) {
+        for (let k = 0; k < bCount; k++) {
+          const deg = (k * 360) / bCount;
+          const rotCut = deg === 0 ? blade0Cutter : blade0Cutter.rotate([0, 0, deg]);
+          if (deg !== 0) track.push(rotCut);
+          subtractList.push(rotCut);
+        }
+      }
+    }
+
+    // 6. Carve central nut-clearance shaft + self-supporting <=45-deg internal lightening dome
+    const deckTopZ = clamp(
+      Math.max(blindDepth + wall + 1.8, (Number.isFinite(bladeMaxZ) ? bladeMaxZ : 0) + wall + 1.2),
+      11.5,
+      Math.max(12.5, coneLen * 0.45),
+    );
+    const nutClearR = clamp(boreR + 2.5, 4.5, Math.max(5.5, boltR - 4.5));
+    const maxCavityTipZ = coneLen - Math.max(wall * 1.4, 3.2);
+
+    const domeProf: Vec2[] = [[0, -0.5], [nutClearR, -0.5], [nutClearR, deckTopZ]];
+    if (maxCavityTipZ > deckTopZ + 8.0) {
+      // Check available radius inside nose wall at mid-cone; flare <= 40 deg from nutClearR
+      const rFlareMax = (z: number) => nutClearR + (z - deckTopZ) * 0.84;
+      const rInnerAt = (z: number) => {
+        const c = clamp(1 - z / coneLen, 0, 1);
+        const rOutMin = evalNoseProfileRadius(
+          cfg.aero_profile,
+          c,
+          baseR + wall + 0.25,
+          Math.PI,
+          bladeCtx.root_chord_mm,
+          effPitch,
+        );
+        return Math.max(0, Math.min(rFlareMax(z), rOutMin - wall));
+      };
+      const N_CAV = 24;
+      for (let i = 1; i <= N_CAV; i++) {
+        const frac = i / N_CAV;
+        const z = deckTopZ + frac * (maxCavityTipZ - deckTopZ);
+        const r = rInnerAt(z);
+        if (r > 0.2) {
+          domeProf.push([r, z]);
+        }
+      }
+      domeProf.push([0, maxCavityTipZ]);
+    } else {
+      domeProf.push([0, deckTopZ + nutClearR]);
+    }
+
+    const domeCs = new mk.CrossSection([ensureCCW2D(domeProf)], "Positive");
+    track.push(domeCs);
+    const domeRev = domeCs.revolve(72);
+    track.push(domeRev);
+    subtractList.push(domeRev);
+
+    // Execute batch Boolean difference
+    const carved = solid.subtract(mk.Manifold.union(subtractList));
+    track.push(carved);
+
+    // Decompose and keep single largest solid component (eliminating any tiny detached corner fragments)
+    const decomposed = carved.decompose();
+    for (const part of decomposed) track.push(part);
+
+    let singleSolid = carved;
+    if (decomposed.length > 1) {
+      let bestVol = -1;
+      for (const part of decomposed) {
+        const v = part.volume();
+        if (v > bestVol) {
+          bestVol = v;
+          singleSolid = part;
+        }
+      }
+    } else if (decomposed.length === 1) {
+      singleSolid = decomposed[0]!;
+    }
+
+    // Measure full un-cutaway printable solid volume before optional viewport cutaway
+    const volumeCm3 = Math.max(0.1, singleSolid.volume() / 1000);
+    const statusOk = singleSolid.status() === "NoError";
+
+    // Optional viewport-only 90-deg solid quarter-cutaway (faces front-right camera)
+    let displaySolid = singleSolid;
+    if (cfg.cutaway_mode) {
+      const cutBox = mk.Manifold.cube([baseR + 40, baseR + 40, coneLen + effSkirtLen + 20], false).translate([
+        0,
+        0,
+        -effSkirtLen - 6,
+      ]);
+      track.push(cutBox);
+      displaySolid = singleSolid.subtract(cutBox);
+      track.push(displaySolid);
+    }
+
+    const outMesh = displaySolid.getMesh();
+    const nVerts = outMesh.numVert;
+    const positions = new Float32Array(nVerts * 3);
+    const numProp = outMesh.numProp;
+    for (let v = 0; v < nVerts; v++) {
+      positions[3 * v] = outMesh.vertProperties[numProp * v]!;
+      positions[3 * v + 1] = outMesh.vertProperties[numProp * v + 1]!;
+      positions[3 * v + 2] = outMesh.vertProperties[numProp * v + 2]!;
+    }
+    const indices = new Uint32Array(outMesh.triVerts);
+
+    const chordLimitHalfW = baseR * Math.sin(Math.max(0.2, Math.PI / bCount - 0.16));
+    const chordFitWarning =
+      Math.max(Math.abs(bladeNYMin), Math.abs(bladeNYMax)) > chordLimitHalfW + 1.5 && cfg.wrap_style !== "flush" && cfg.wrap_style !== "cuff"
+        ? cfg.hub_fit_mode === "kidwind4_lockrev4"
+          ? `Blade root spans wider than Ø${effHubDia.toFixed(0)}mm pier spacing — switch Hub Fit to Auto-Match or reduce root chord`
+          : `Blade root (${(bladeNYMax - bladeNYMin).toFixed(0)}mm) nears Ø${effHubDia.toFixed(0)}mm pier spacing — increase Hub Dia or reduce root chord`
+        : null;
+
+    return {
+      manifold: displaySolid,
+      metricsExtra: {
+        volume_cm3: Number(volumeCm3.toFixed(2)),
+        is_watertight: statusOk,
+        is_single_solid: true,
+        print_status: statusOk ? "1 Solid · Watertight · Printable" : `Mesh Error (${singleSolid.status()})`,
+        chord_fit_warning: chordFitWarning,
+      },
+      submesh: {
+        id: "nose-cone-solid",
+        color_hex: 0x2563eb,
+        positions,
+        indices,
+      },
+    };
+  } finally {
+    for (const item of track) {
+      try {
+        item.delete();
+      } catch {
+        // already deleted or moved
+      }
+    }
+  }
+}
+
+/**
+ * Watertight rotating blade-base cuff (`wrap_style === "cuff"`), built via Manifold-3D CSG
+ * with real blade airfoil/dowel slot subtracted cleanly through the center.
+ */
+function buildBladeCuffManifolds(
+  mk: ManifoldToplevel,
   cfg: NoseConeConfig,
   bladeCtx: NoseConeBladeContext,
   effHubDiameterMm: number,
-): NoseConeSubMesh {
-  const baseR = effHubDiameterMm * 0.5;
-  const builder = createSubMeshBuilder();
-  const NA = 120;
-  const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
-  const depth = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.trefoil_depth_mm : Math.min(3.5, cfg.trefoil_depth_mm);
-  const topZ = depth + 1.5;
-  const outerR = baseR + 0.35; // cleanly overlaps inner wall of nose shell
+  effHubLen: number,
+): NoseConeSubMesh[] {
+  if (cfg.wrap_style !== "cuff") return [];
+  const track: { delete(): void }[] = [];
+  try {
+    const baseR = effHubDiameterMm * 0.5;
+    const effSkirtLen = clamp(cfg.skirt_length_mm, 8, Math.max(10, effHubLen + 4));
+    const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
+    const sectorHalfRad = Math.PI / bCount;
+    const maxAngle = Math.max(0.15, sectorHalfRad - 0.16);
+    const cuffR = clamp(Math.min(effSkirtLen * 0.44, baseR * Math.sin(maxAngle) - 1.2), 6.5, 13.5);
+    const flangeR = cuffR + 1.2;
+    const wallT = clamp(cfg.wall_thickness_mm + 1.4, 2.8, 5.2);
 
-  const zRings = [0, 0.55, topZ];
-  const outerIdx: number[][] = [];
-  const innerIdx: number[][] = [];
+    // Outer stepped collar cylinder (flange sits inside spinner rim, main boss seats flush in circular aperture)
+    const flange = mk.Manifold.cylinder(1.2, flangeR, flangeR, 64, false);
+    track.push(flange);
+    const collar = mk.Manifold.cylinder(wallT - 1.0, cuffR, cuffR, 64, false).translate([0, 0, 1.2]);
+    track.push(collar);
+    let solid = flange.add(collar);
+    track.push(solid);
 
-  for (let rz = 0; rz < zRings.length; rz++) {
-    const z = zRings[rz]!;
-    const oRow: number[] = [];
-    const iRow: number[] = [];
-    const chamferAdd = rz === 0 ? 0.55 : 0;
-    for (let j = 0; j < NA; j++) {
-      const theta = (j * 2 * Math.PI) / NA;
-      const cosT = Math.cos(theta);
-      const sinT = Math.sin(theta);
+    // Carve dowel center bore + airfoil-shaped shallow entry socket on outer face
+    const bore = mk.Manifold.cylinder(wallT + 2.0, 2.6, 2.6, 36, false).translate([0, 0, -0.5]);
+    track.push(bore);
+    solid = solid.subtract(bore);
+    track.push(solid);
 
-      let rPocket = baseR * 0.45;
-      if (cfg.hub_fit_mode === "kidwind4_lockrev4") {
-        rPocket = evalTrefoilRadius(
+    // Optional blade-shaped key pocket inside the cuff (clipped strictly inside cuffR - 1.5mm rim wall)
+    const { cut2D } = buildBladeCutCrossSection(
+      mk,
+      bladeCtx,
+      baseR,
+      cfg.wall_thickness_mm,
+      effHubLen,
+      cfg.blade_clearance_mm * 0.6,
+      track,
+    );
+    const bounds = cut2D.bounds();
+    const cuX = 0.5 * (bounds.min[0] + bounds.max[0]);
+    const cuY = 0.5 * (bounds.min[1] + bounds.max[1]);
+    const centeredCut = cut2D.translate([-cuX, -cuY]);
+    track.push(centeredCut);
+    const rimLimit = mk.CrossSection.circle(Math.max(3.5, cuffR - 1.6), 48);
+    track.push(rimLimit);
+    const safePocket = centeredCut.intersect(rimLimit);
+    track.push(safePocket);
+    if (!safePocket.isEmpty()) {
+      const pocketExt = safePocket.extrude(wallT + 2.0).translate([0, 0, -0.5]);
+      track.push(pocketExt);
+      solid = solid.subtract(pocketExt);
+      track.push(solid);
+    }
+
+    const parts = solid.decompose();
+    for (const p of parts) track.push(p);
+    let mainCuff = solid;
+    if (parts.length > 1) {
+      mainCuff = parts.reduce((a, b) => (a.volume() >= b.volume() ? a : b));
+    }
+
+    const m = mainCuff.getMesh();
+    const nVerts = m.numVert;
+    const positions = new Float32Array(nVerts * 3);
+    for (let v = 0; v < nVerts; v++) {
+      positions[3 * v] = m.vertProperties[m.numProp * v]!;
+      positions[3 * v + 1] = m.vertProperties[m.numProp * v + 1]!;
+      positions[3 * v + 2] = m.vertProperties[m.numProp * v + 2]!;
+    }
+    return [
+      {
+        id: "blade-rotating-cuff",
+        color_hex: 0xf59e0b,
+        positions,
+        indices: new Uint32Array(m.triVerts),
+      },
+    ];
+  } finally {
+    for (const item of track) {
+      try {
+        item.delete();
+      } catch {}
+    }
+  }
+}
+
+/**
+ * Visual-only reference hub + trefoil boss + 3x rear blind M3 bolts matching `Kidwind4-LockRev4.step`
+ * (`z = -20..0` hub, `z = 0..+2` trefoil boss, `z = -23..+8` M3 screws).
+ */
+function buildGhostHubMeshes(
+  mk: ManifoldToplevel,
+  cfg: NoseConeConfig,
+  bladeCtx: NoseConeBladeContext,
+): NoseConeSubMesh[] {
+  const track: { delete(): void }[] = [];
+  const meshToSub = (id: string, color_hex: number, man: Manifold): NoseConeSubMesh => {
+    const m = man.getMesh();
+    const positions = new Float32Array(m.numVert * 3);
+    for (let v = 0; v < m.numVert; v++) {
+      positions[3 * v] = m.vertProperties[m.numProp * v]!;
+      positions[3 * v + 1] = m.vertProperties[m.numProp * v + 1]!;
+      positions[3 * v + 2] = m.vertProperties[m.numProp * v + 2]!;
+    }
+    return { id, color_hex, positions, indices: new Uint32Array(m.triVerts) };
+  };
+
+  try {
+    const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
+    const effHubDia = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
+    const effHubLen = cfg.hub_fit_mode === "kidwind4_lockrev4" ? 20.0 : clamp(bladeCtx.hub_length_mm, 8, 80);
+    const hubR = effHubDia * 0.5;
+    const boreR = Math.max(2.65, bladeCtx.hub_bore_mm * 0.5);
+
+    // 1. Hub cylinder with bore
+    const hubProf: Vec2[] = [
+      [boreR, -effHubLen],
+      [hubR, -effHubLen],
+      [hubR, 0],
+      [boreR, 0],
+    ];
+    const hubCs = new mk.CrossSection([ensureCCW2D(hubProf)], "Positive");
+    track.push(hubCs);
+    const hubMan = hubCs.revolve(64);
+    track.push(hubMan);
+
+    const out: NoseConeSubMesh[] = [meshToSub("ghost-hub-body", 0x64748b, hubMan)];
+
+    // 2. Front chamfered Trefoil Boss on z = 0..+2mm
+    if (cfg.hub_fit_mode === "kidwind4_lockrev4") {
+      const trefPts: Vec2[] = [];
+      const NA = 84;
+      for (let j = 0; j < NA; j++) {
+        const theta = (j * 2 * Math.PI) / NA;
+        const r = evalTrefoilRadius(
           theta,
           cfg.trefoil_center_r_mm,
           cfg.trefoil_lobe_r_mm,
           cfg.bolt_circle_mm * 0.5,
           bCount,
-          cfg.trefoil_clearance_mm + chamferAdd,
+          0,
         );
-      } else {
-        rPocket = Math.max(3.0, bladeCtx.hub_bore_mm * 0.5 + cfg.trefoil_clearance_mm + chamferAdd);
+        trefPts.push([r * Math.cos(theta), r * Math.sin(theta)]);
       }
-      rPocket = Math.min(outerR - 1.5, rPocket);
-
-      oRow.push(builder.addVert(outerR * cosT, outerR * sinT, z));
-      iRow.push(builder.addVert(rPocket * cosT, rPocket * sinT, z));
-    }
-    outerIdx.push(oRow);
-    innerIdx.push(iRow);
-  }
-
-  for (let rz = 0; rz < zRings.length - 1; rz++) {
-    for (let j = 0; j < NA; j++) {
-      const jNext = (j + 1) % NA;
-      // Outer surface (+R)
-      builder.addTri(outerIdx[rz]![j]!, outerIdx[rz]![jNext]!, outerIdx[rz + 1]![jNext]!);
-      builder.addTri(outerIdx[rz]![j]!, outerIdx[rz + 1]![jNext]!, outerIdx[rz + 1]![j]!);
-      // Inner pocket surface (-R)
-      builder.addTri(innerIdx[rz]![j]!, innerIdx[rz + 1]![jNext]!, innerIdx[rz]![jNext]!);
-      builder.addTri(innerIdx[rz]![j]!, innerIdx[rz + 1]![j]!, innerIdx[rz + 1]![jNext]!);
-    }
-  }
-
-  const lastZ = zRings.length - 1;
-  for (let j = 0; j < NA; j++) {
-    const jNext = (j + 1) % NA;
-    // Bottom face (-Z normal)
-    builder.addTri(innerIdx[0]![j]!, innerIdx[0]![jNext]!, outerIdx[0]![jNext]!);
-    builder.addTri(innerIdx[0]![j]!, outerIdx[0]![jNext]!, outerIdx[0]![j]!);
-    // Top face (+Z normal)
-    builder.addTri(innerIdx[lastZ]![j]!, outerIdx[lastZ]![jNext]!, innerIdx[lastZ]![jNext]!);
-    builder.addTri(innerIdx[lastZ]![j]!, outerIdx[lastZ]![j]!, outerIdx[lastZ]![jNext]!);
-  }
-
-  return {
-    id: "trefoil-pocket-ring",
-    color_hex: 0xf59e0b,
-    positions: new Float32Array(builder.positions),
-    indices: new Uint32Array(builder.indices),
-  };
-}
-
-/**
- * Builds watertight captive blind M3 nut-boss towers inside the spinner (`60°` offset from blades)
- * so M3 socket screws enter from the rear of the hub with ZERO windward fastener holes.
- */
-function buildBlindM3Bosses(
-  cfg: NoseConeConfig,
-  bladeCtx: NoseConeBladeContext,
-  effHubDiameterMm: number,
-): NoseConeSubMesh {
-  const builder = createSubMeshBuilder();
-  const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
-  const boltR =
-    cfg.hub_fit_mode === "kidwind4_lockrev4"
-      ? cfg.bolt_circle_mm * 0.5
-      : clamp(effHubDiameterMm * 0.31, 6, effHubDiameterMm * 0.38);
-  const segs = 20;
-  const maxBossH = clamp(cfg.cone_length_mm * 0.42, 8.5, 14.5);
-  const startZ = 0.05;
-  const blindTopZ = maxBossH - 2.6;
-  const bossOutR = 4.5;
-  const threadR = 1.48; // Ø2.96mm M3 tap / captive M3 heat-insert / nut step
-
-  // Closed axisymmetric cross-section: outer wall bottom->top -> top pole -> inner blind ceiling -> inner bore bottom->base
-  const prof: [number, number][] = [
-    [threadR, startZ],
-    [bossOutR, startZ],
-    [bossOutR, maxBossH],
-    [0, maxBossH], // top outer pole
-    [0, blindTopZ], // inner blind roof pole
-    [threadR, blindTopZ],
-  ];
-
-  for (let k = 0; k < bCount; k++) {
-    const ang = ((k + 0.5) * 2 * Math.PI) / bCount;
-    const cx = boltR * Math.cos(ang);
-    const cy = boltR * Math.sin(ang);
-
-    const ringIdx: number[][] = [];
-    let topPoleIdx = -1;
-    let blindPoleIdx = -1;
-
-    for (let pi = 0; pi < prof.length; pi++) {
-      const [pr, pz] = prof[pi]!;
-      if (pr === 0) {
-        if (pi === 3) topPoleIdx = builder.addVert(cx, cy, pz);
-        else blindPoleIdx = builder.addVert(cx, cy, pz);
-        ringIdx.push([]);
-      } else {
-        const row: number[] = [];
-        for (let s = 0; s < segs; s++) {
-          const a = (s * 2 * Math.PI) / segs;
-          row.push(builder.addVert(cx + pr * Math.cos(a), cy + pr * Math.sin(a), pz));
-        }
-        ringIdx.push(row);
-      }
+      const trefCs = new mk.CrossSection([ensureCCW2D(trefPts)], "Positive");
+      track.push(trefCs);
+      const boreCircle = mk.CrossSection.circle(boreR, 32);
+      track.push(boreCircle);
+      const ringCs = trefCs.subtract(boreCircle);
+      track.push(ringCs);
+      const bossMan = ringCs.extrude(cfg.trefoil_depth_mm, 1, 0, [0.95, 0.95]);
+      track.push(bossMan);
+      out.push(meshToSub("ghost-hub-trefoil", 0x94a3b8, bossMan));
     }
 
-    // Bottom cap (ring 0 [threadR] -> ring 1 [bossOutR], normal -Z)
-    for (let s = 0; s < segs; s++) {
-      const sNext = (s + 1) % segs;
-      builder.addTri(ringIdx[0]![s]!, ringIdx[0]![sNext]!, ringIdx[1]![sNext]!);
-      builder.addTri(ringIdx[0]![s]!, ringIdx[1]![sNext]!, ringIdx[1]![s]!);
+    // 3. 3x M3 Rear Blind Socket Cap Bolts
+    const boltR = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.bolt_circle_mm * 0.5 : clamp(hubR * 0.62, 6, hubR * 0.76);
+    const boltProf: Vec2[] = [
+      [0, -effHubLen - 3.0],
+      [2.7, -effHubLen - 3.0],
+      [2.7, -effHubLen],
+      [1.45, -effHubLen],
+      [1.45, 8.0],
+      [0, 8.0],
+    ];
+    const boltCs = new mk.CrossSection([ensureCCW2D(boltProf)], "Positive");
+    track.push(boltCs);
+    const boltProto = boltCs.revolve(20);
+    track.push(boltProto);
 
-      // Outer boss wall (ring 1 -> ring 2, normal +R)
-      builder.addTri(ringIdx[1]![s]!, ringIdx[1]![sNext]!, ringIdx[2]![sNext]!);
-      builder.addTri(ringIdx[1]![s]!, ringIdx[2]![sNext]!, ringIdx[2]![s]!);
+    const boltsList: Manifold[] = [];
+    for (let k = 0; k < bCount; k++) {
+      const ang = ((k + 0.5) * 2 * Math.PI) / bCount;
+      const b = boltProto.translate([boltR * Math.cos(ang), boltR * Math.sin(ang), 0]);
+      track.push(b);
+      boltsList.push(b);
+    }
+    const boltsMan = mk.Manifold.union(boltsList);
+    track.push(boltsMan);
+    out.push(meshToSub("ghost-hub-bolts", 0xe8451e, boltsMan));
 
-      // Top boss cap fan (ring 2 -> topPoleIdx, normal +Z)
-      builder.addTri(ringIdx[2]![s]!, ringIdx[2]![sNext]!, topPoleIdx);
-
-      // Inner blind ceiling fan (ring 5 -> blindPoleIdx, normal -Z pointing into blind hole)
-      builder.addTri(ringIdx[5]![s]!, blindPoleIdx, ringIdx[5]![sNext]!);
-
-      // Inner M3 pilot bore wall (ring 0 [startZ] -> ring 5 [blindTopZ], normal -R pointing inward)
-      builder.addTri(ringIdx[0]![s]!, ringIdx[5]![sNext]!, ringIdx[0]![sNext]!);
-      builder.addTri(ringIdx[0]![s]!, ringIdx[5]![s]!, ringIdx[5]![sNext]!);
+    return out;
+  } finally {
+    for (const item of track) {
+      try {
+        item.delete();
+      } catch {}
     }
   }
-
-  return {
-    id: "m3-blind-bosses",
-    color_hex: 0x0ea5e9,
-    positions: new Float32Array(builder.positions),
-    indices: new Uint32Array(builder.indices),
-  };
-}
-
-/**
- * Watertight circular rotating blade-base cuffs for `wrap_style === "cuff"`,
- * sized to nest cleanly inside the circular spinner socket openings with `blade_clearance_mm`.
- */
-function buildBladeCuffMeshes(
-  cfg: NoseConeConfig,
-  bladeCtx: NoseConeBladeContext,
-): NoseConeSubMesh[] {
-  if (cfg.wrap_style !== "cuff") return [];
-  const builder = createSubMeshBuilder();
-  const cuffR = clamp(bladeCtx.root_chord_mm * 0.22, 9, 15.5);
-  const dowelHoleR = 2.55; // Ø5.1mm slip fit over Ø4.9-5.0mm blade root dowel
-  const thickness = clamp(cfg.wall_thickness_mm + 1.4, 2.8, 5.2);
-  const segs = 28;
-
-  const botIn: number[] = [];
-  const botOut: number[] = [];
-  const topOut: number[] = [];
-  const topIn: number[] = [];
-
-  for (let s = 0; s < segs; s++) {
-    const a = (s * 2 * Math.PI) / segs;
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    botIn.push(builder.addVert(dowelHoleR * ca, dowelHoleR * sa, 0));
-    botOut.push(builder.addVert(cuffR * ca, cuffR * sa, 0));
-    topOut.push(builder.addVert(cuffR * ca, cuffR * sa, thickness));
-    topIn.push(builder.addVert(dowelHoleR * ca, dowelHoleR * sa, thickness));
-  }
-
-  for (let s = 0; s < segs; s++) {
-    const sNext = (s + 1) % segs;
-    builder.addTri(botOut[s]!, botOut[sNext]!, topOut[sNext]!);
-    builder.addTri(botOut[s]!, topOut[sNext]!, topOut[s]!);
-    builder.addTri(botIn[s]!, topIn[sNext]!, botIn[sNext]!);
-    builder.addTri(botIn[s]!, topIn[s]!, topIn[sNext]!);
-    builder.addTri(botIn[s]!, botIn[sNext]!, botOut[sNext]!);
-    builder.addTri(botIn[s]!, botOut[sNext]!, botOut[s]!);
-    builder.addTri(topIn[s]!, topOut[sNext]!, topIn[sNext]!);
-    builder.addTri(topIn[s]!, topOut[s]!, topOut[sNext]!);
-  }
-
-  return [
-    {
-      id: "blade-rotating-cuff",
-      color_hex: 0xf59e0b,
-      positions: new Float32Array(builder.positions),
-      indices: new Uint32Array(builder.indices),
-    },
-  ];
-}
-
-/**
- * Visual-only reference hub + trefoil boss + 3x rear blind M3 bolts matching `Kidwind4-LockRev4.step`
- * (`z = -20..0` hub, `z = 0..+2` trefoil boss, `z = -24..-10` M3 screws).
- */
-function buildGhostHubMeshes(cfg: NoseConeConfig, bladeCtx: NoseConeBladeContext): NoseConeSubMesh[] {
-  const bCount = Math.max(1, Math.round(bladeCtx.blade_count));
-  const effHubDia = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
-  const effHubLen = cfg.hub_fit_mode === "kidwind4_lockrev4" ? 20.0 : bladeCtx.hub_length_mm;
-  const hubR = effHubDia * 0.5;
-  const boreR = Math.max(2.65, bladeCtx.hub_bore_mm * 0.5);
-  const segs = 48;
-
-  // 1. Main Ø60 Hub Cylinder with center bore
-  const hubB = createSubMeshBuilder();
-  const botIn: number[] = [];
-  const botOut: number[] = [];
-  const topOut: number[] = [];
-  const topIn: number[] = [];
-  for (let s = 0; s < segs; s++) {
-    const a = (s * 2 * Math.PI) / segs;
-    const c = Math.cos(a);
-    const sn = Math.sin(a);
-    botIn.push(hubB.addVert(boreR * c, boreR * sn, -effHubLen));
-    botOut.push(hubB.addVert(hubR * c, hubR * sn, -effHubLen));
-    topOut.push(hubB.addVert(hubR * c, hubR * sn, 0));
-    topIn.push(hubB.addVert(boreR * c, boreR * sn, 0));
-  }
-  for (let s = 0; s < segs; s++) {
-    const sNext = (s + 1) % segs;
-    hubB.addTri(botOut[s]!, botOut[sNext]!, topOut[sNext]!);
-    hubB.addTri(botOut[s]!, topOut[sNext]!, topOut[s]!);
-    hubB.addTri(botIn[s]!, topIn[sNext]!, botIn[sNext]!);
-    hubB.addTri(botIn[s]!, topIn[s]!, topIn[sNext]!);
-    hubB.addTri(botIn[s]!, botIn[sNext]!, botOut[sNext]!);
-    hubB.addTri(botIn[s]!, botOut[sNext]!, botOut[s]!);
-    hubB.addTri(topIn[s]!, topOut[sNext]!, topIn[sNext]!);
-    hubB.addTri(topIn[s]!, topOut[s]!, topOut[sNext]!);
-  }
-
-  const meshes: NoseConeSubMesh[] = [
-    {
-      id: "ghost-hub-body",
-      color_hex: 0x64748b,
-      positions: new Float32Array(hubB.positions),
-      indices: new Uint32Array(hubB.indices),
-    },
-  ];
-
-  // 2. Front 2mm 45-deg Chamfered Trefoil Boss on z = 0..+2mm (for Kidwind4-LockRev4)
-  if (cfg.hub_fit_mode === "kidwind4_lockrev4") {
-    const bossB = createSubMeshBuilder();
-    const NA = 96;
-    const bBotIn: number[] = [];
-    const bBotOut: number[] = [];
-    const bTopOut: number[] = [];
-    const bTopIn: number[] = [];
-    for (let j = 0; j < NA; j++) {
-      const theta = (j * 2 * Math.PI) / NA;
-      const rB = evalTrefoilRadius(
-        theta,
-        cfg.trefoil_center_r_mm,
-        cfg.trefoil_lobe_r_mm,
-        cfg.bolt_circle_mm * 0.5,
-        bCount,
-        0,
-      );
-      const rChamfer = Math.max(boreR + 1.0, rB - 1.2);
-      const c = Math.cos(theta);
-      const sn = Math.sin(theta);
-      bBotIn.push(bossB.addVert(boreR * c, boreR * sn, 0));
-      bBotOut.push(bossB.addVert(rB * c, rB * sn, 0));
-      bTopOut.push(bossB.addVert(rChamfer * c, rChamfer * sn, cfg.trefoil_depth_mm));
-      bTopIn.push(bossB.addVert(boreR * c, boreR * sn, cfg.trefoil_depth_mm));
-    }
-    for (let j = 0; j < NA; j++) {
-      const jNext = (j + 1) % NA;
-      bossB.addTri(bBotOut[j]!, bBotOut[jNext]!, bTopOut[jNext]!);
-      bossB.addTri(bBotOut[j]!, bTopOut[jNext]!, bTopOut[j]!);
-      bossB.addTri(bBotIn[j]!, bTopIn[jNext]!, bBotIn[jNext]!);
-      bossB.addTri(bBotIn[j]!, bTopIn[j]!, bTopIn[jNext]!);
-      bossB.addTri(bBotIn[j]!, bBotIn[jNext]!, bBotOut[jNext]!);
-      bossB.addTri(bBotIn[j]!, bBotOut[jNext]!, bBotOut[j]!);
-      bossB.addTri(bTopIn[j]!, bTopOut[jNext]!, bTopIn[jNext]!);
-      bossB.addTri(bTopIn[j]!, bTopOut[j]!, bTopOut[jNext]!);
-    }
-    meshes.push({
-      id: "ghost-hub-trefoil",
-      color_hex: 0x94a3b8,
-      positions: new Float32Array(bossB.positions),
-      indices: new Uint32Array(bossB.indices),
-    });
-  }
-
-  // 3. 3x M3 Rear Blind Socket Cap Bolts
-  const boltB = createSubMeshBuilder();
-  const boltR = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.bolt_circle_mm * 0.5 : clamp(hubR * 0.62, 6, hubR * 0.76);
-  const bSegs = 14;
-  for (let k = 0; k < bCount; k++) {
-    const ang = ((k + 0.5) * 2 * Math.PI) / bCount;
-    const cx = boltR * Math.cos(ang);
-    const cy = boltR * Math.sin(ang);
-    const zHeadBot = -effHubLen - 3.0;
-    const zHeadTop = -effHubLen;
-    const zShankTip = 8.0;
-    const headPoleBot = boltB.addVert(cx, cy, zHeadBot);
-    const shankPoleTop = boltB.addVert(cx, cy, zShankTip);
-    const rHeadOutBot: number[] = [];
-    const rHeadOutTop: number[] = [];
-    const rShankBot: number[] = [];
-    const rShankTop: number[] = [];
-    for (let s = 0; s < bSegs; s++) {
-      const a = (s * 2 * Math.PI) / bSegs;
-      const c = Math.cos(a);
-      const sn = Math.sin(a);
-      rHeadOutBot.push(boltB.addVert(cx + 2.7 * c, cy + 2.7 * sn, zHeadBot));
-      rHeadOutTop.push(boltB.addVert(cx + 2.7 * c, cy + 2.7 * sn, zHeadTop));
-      rShankBot.push(boltB.addVert(cx + 1.45 * c, cy + 1.45 * sn, zHeadTop));
-      rShankTop.push(boltB.addVert(cx + 1.45 * c, cy + 1.45 * sn, zShankTip));
-    }
-    for (let s = 0; s < bSegs; s++) {
-      const sNext = (s + 1) % bSegs;
-      boltB.addTri(headPoleBot, rHeadOutBot[sNext]!, rHeadOutBot[s]!);
-      boltB.addTri(rHeadOutBot[s]!, rHeadOutBot[sNext]!, rHeadOutTop[sNext]!);
-      boltB.addTri(rHeadOutBot[s]!, rHeadOutTop[sNext]!, rHeadOutTop[s]!);
-      boltB.addTri(rShankBot[s]!, rHeadOutTop[s]!, rHeadOutTop[sNext]!);
-      boltB.addTri(rShankBot[s]!, rHeadOutTop[sNext]!, rShankBot[sNext]!);
-      boltB.addTri(rShankBot[s]!, rShankBot[sNext]!, rShankTop[sNext]!);
-      boltB.addTri(rShankBot[s]!, rShankTop[sNext]!, rShankTop[s]!);
-      boltB.addTri(rShankTop[s]!, rShankTop[sNext]!, shankPoleTop);
-    }
-  }
-  meshes.push({
-    id: "ghost-hub-bolts",
-    color_hex: 0xe8451e,
-    positions: new Float32Array(boltB.positions),
-    indices: new Uint32Array(boltB.indices),
-  });
-
-  return meshes;
 }
 
 export function computeNoseConeMetrics(
   cfg: NoseConeConfig,
   bladeCtx: NoseConeBladeContext,
-  totalTriangles = 0,
+  overrides?: Partial<{
+    totalTriangles: number;
+    volumeCm3: number;
+    isWatertight: boolean;
+    isSingleSolid: boolean;
+    printStatus: string;
+    chordFitWarning: string | null;
+  }>,
 ): NoseConeMetrics {
   const effHubDia = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
   const effSkirt = cfg.wrap_style === "flush" ? 0 : cfg.skirt_length_mm;
@@ -889,15 +1312,24 @@ export function computeNoseConeMetrics(
     4,
     Math.round(base.boost + wrapBonus[cfg.wrap_style] * 0.6 + (effPitch - 14) * 0.12 + (bladeCtx.root_chord_mm - 60) * 0.06),
   );
-  const r = effHubDia * 0.5;
-  const slantArea = Math.PI * r * Math.sqrt(r * r + cfg.cone_length_mm * cfg.cone_length_mm) * 0.72 + Math.PI * effHubDia * effSkirt * 0.78;
-  const volCm3 = (slantArea * cfg.wall_thickness_mm + bCount * 1150 + 2100) / 1000;
-  const massG = volCm3 * 1.27; // PETG density
 
-  const fitNote =
+  let volCm3 = overrides?.volumeCm3;
+  if (volCm3 === undefined) {
+    const r = effHubDia * 0.5;
+    const slantArea =
+      Math.PI * r * Math.sqrt(r * r + cfg.cone_length_mm * cfg.cone_length_mm) * 0.72 +
+      Math.PI * effHubDia * effSkirt * 0.78;
+    volCm3 = Number(((slantArea * cfg.wall_thickness_mm + bCount * 1150 + 2100) / 1000).toFixed(2));
+  }
+  const massG = volCm3 * 1.27; // PETG / Tough PLA density
+
+  const fitNoteBase =
     cfg.hub_fit_mode === "kidwind4_lockrev4"
-      ? `Fits Kidwind4-LockRev4.step: Ø${effHubDia.toFixed(0)}mm · +${cfg.trefoil_clearance_mm.toFixed(2)}mm Trefoil slip · 60° blade-bolt clearance`
-      : `Auto-matched to current Rotor Hub Ø${effHubDia.toFixed(0)}mm (${bCount} blades)`;
+      ? `Kidwind4-LockRev4 Ø${effHubDia.toFixed(0)}mm · +${cfg.trefoil_clearance_mm.toFixed(2)}mm Trefoil slip`
+      : `Auto-matched Rotor Hub Ø${effHubDia.toFixed(0)}mm (${bCount} blades)`;
+  const fitNote = overrides?.chordFitWarning
+    ? `${fitNoteBase} · Notice: ${overrides.chordFitWarning}`
+    : `${fitNoteBase} · ${overrides?.printStatus ?? "1 Solid · Watertight · Printable"}`;
 
   return {
     hub_diameter_mm: effHubDia,
@@ -906,62 +1338,84 @@ export function computeNoseConeMetrics(
     nose_cd: Number(cd.toFixed(2)),
     root_flow_boost_pct: boost,
     est_mass_g: Number(massG.toFixed(1)),
-    total_triangles: totalTriangles,
+    volume_cm3: volCm3,
+    total_triangles: overrides?.totalTriangles ?? 0,
+    is_watertight: overrides?.isWatertight ?? true,
+    is_single_solid: overrides?.isSingleSolid ?? true,
+    print_status: overrides?.printStatus ?? "1 Solid · Watertight · Printable",
     hardware_label: `${bCount}× M3×30 Blind`,
     fit_note: fitNote,
   };
 }
 
 /**
- * Generates watertight 3D nose cone meshes (+ optional rotating cuffs and visual reference hub).
+ * Generates a single unified watertight CSG-printable Nose Cone solid via Manifold-3D WASM
+ * (+ optional rotating blade cuffs and visual reference Kidwind4 hub).
  */
 export function buildNoseConeMeshes(
   cfg: NoseConeConfig,
   bladeCtx: NoseConeBladeContext,
 ): NoseConeMeshBundle {
+  const mk = requireManifoldKernel();
   const effHubDia = cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
-  const shell = buildMaskedThickShell(cfg, bladeCtx, effHubDia);
-  const trefoil = buildTrefoilCollarMesh(cfg, bladeCtx, effHubDia);
-  const bosses = buildBlindM3Bosses(cfg, bladeCtx, effHubDia);
-  const cuffs = buildBladeCuffMeshes(cfg, bladeCtx);
-  const ghostHub = buildGhostHubMeshes(cfg, bladeCtx);
+  const effHubLen = cfg.hub_fit_mode === "kidwind4_lockrev4" ? 20.0 : clamp(bladeCtx.hub_length_mm, 8, 80);
 
-  const submeshes = [shell, trefoil, bosses];
-  const totalTriangles = submeshes.reduce((acc, s) => acc + Math.floor(s.indices.length / 3), 0);
+  const built = buildPrintableNoseManifold(mk, cfg, bladeCtx);
+  const cuffs = buildBladeCuffManifolds(mk, cfg, bladeCtx, effHubDia, effHubLen);
+  const ghostHub = buildGhostHubMeshes(mk, cfg, bladeCtx);
+
+  const submeshes = [built.submesh];
+  const totalTriangles = Math.floor(built.submesh.indices.length / 3);
 
   return {
     submeshes,
     cuff_submeshes: cuffs,
     ghost_hub_submeshes: ghostHub,
-    metrics: computeNoseConeMetrics(cfg, bladeCtx, totalTriangles),
+    metrics: computeNoseConeMetrics(cfg, bladeCtx, {
+      totalTriangles,
+      volumeCm3: built.metricsExtra.volume_cm3,
+      isWatertight: built.metricsExtra.is_watertight,
+      isSingleSolid: built.metricsExtra.is_single_solid,
+      printStatus: built.metricsExtra.print_status,
+      chordFitWarning: built.metricsExtra.chord_fit_warning,
+    }),
   };
 }
 
 /**
- * Exports either the complete printable Nose Cone (`shell + trefoil ring + M3 blind bosses`)
- * or the Rotating Blade Cuffs (`B` copies side-by-side) as a binary STL placed flat at `z >= 0`.
+ * Exports either the single-solid printable Nose Cone (with `cutaway_mode` forced false)
+ * or the Rotating Blade Cuffs (`B` copies side-by-side) as binary `.STL` placed flat on `z >= 0`.
  */
 export function exportNoseConeStlBytes(
   cfg: NoseConeConfig,
   bladeCtx: NoseConeBladeContext,
   target: "cone" | "cuff" = "cone",
 ): Uint8Array {
+  const mk = requireManifoldKernel();
   const exportCfg: NoseConeConfig = { ...cfg, cutaway_mode: false };
-  const bundle = buildNoseConeMeshes(exportCfg, bladeCtx);
   const parts: { positions: Float32Array; indices: Uint32Array; offsetX: number; offsetY: number }[] = [];
+  let metrics: NoseConeMetrics;
 
   if (target === "cuff") {
-    const cuffSrc = bundle.cuff_submeshes[0] ?? buildBladeCuffMeshes({ ...cfg, wrap_style: "cuff" }, bladeCtx)[0]!;
+    const effHubDia =
+      exportCfg.hub_fit_mode === "kidwind4_lockrev4" ? exportCfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
+    const effHubLen =
+      exportCfg.hub_fit_mode === "kidwind4_lockrev4" ? 20.0 : clamp(bladeCtx.hub_length_mm, 8, 80);
+    const cuffs = buildBladeCuffManifolds(mk, { ...exportCfg, wrap_style: "cuff" }, bladeCtx, effHubDia, effHubLen);
+    const cuffSrc = cuffs[0]!;
     const count = Math.max(1, Math.round(bladeCtx.blade_count));
     for (let k = 0; k < count; k++) {
       parts.push({
         positions: cuffSrc.positions,
         indices: cuffSrc.indices,
-        offsetX: k * 38,
+        offsetX: k * 34,
         offsetY: 0,
       });
     }
+    metrics = computeNoseConeMetrics(exportCfg, bladeCtx);
   } else {
+    const bundle = buildNoseConeMeshes(exportCfg, bladeCtx);
+    metrics = bundle.metrics;
     for (const s of bundle.submeshes) {
       parts.push({ positions: s.positions, indices: s.indices, offsetX: 0, offsetY: 0 });
     }
@@ -980,7 +1434,7 @@ export function exportNoseConeStlBytes(
 
   const buf = new ArrayBuffer(84 + triCount * 50);
   const view = new DataView(buf);
-  const header = `BladeLab NoseCone ${cfg.aero_profile}/${cfg.wrap_style} D=${bundle.metrics.hub_diameter_mm.toFixed(0)}mm`;
+  const header = `BladeLab NoseCone ${cfg.aero_profile}/${cfg.wrap_style} D=${metrics.hub_diameter_mm.toFixed(0)}mm 1Solid`;
   for (let i = 0; i < Math.min(80, header.length); i++) {
     view.setUint8(i, header.charCodeAt(i));
   }
@@ -1041,7 +1495,7 @@ export function exportNoseConeStlBytes(
 }
 
 /**
- * Computes NACA 4412 upper & lower points in local frame (for the live 2D cutout blueprint canvas).
+ * Computes NACA 4412 upper & lower points in local frame (for fallback 2D cutout preview).
  */
 function nacaContourParts2D(chord: number, pitchRad: number, cx: number, cy: number, growPx = 0) {
   const samples = 24;
@@ -1085,7 +1539,7 @@ export function drawNoseConeBlueprint2D(
   if (!ctx) return;
   const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
   const w = canvas.clientWidth || 340;
-  const h = canvas.clientHeight || 196;
+  const h = canvas.clientHeight || 172;
   if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
@@ -1139,7 +1593,7 @@ export function drawNoseConeBlueprint2D(
   ctx.fillRect(z0X, cy - hubR, hubW, hubR * 2);
   ctx.strokeRect(z0X, cy - hubR, hubW, hubR * 2);
   if (cfg.hub_fit_mode === "kidwind4_lockrev4") {
-    ctx.fillRect(z0X - 2 * s, cy - 26 * s, 2 * s, 52 * s);
+    ctx.fillRect(z0X - 2 * s, cy - 24 * s, 2 * s, 48 * s);
   }
 
   // Rear M3 Blind Bolt
@@ -1150,7 +1604,7 @@ export function drawNoseConeBlueprint2D(
   // Nose + Skirt Envelope
   const noseCurve = (xPos: number) => {
     const tNose = clamp((xPos - coneNoseX) / Math.max(1, cfg.cone_length_mm * s), 0, 1);
-    return (evalNoseProfileRadius(cfg.aero_profile, tNose, effHubR + cfg.wall_thickness_mm, 0, bladeCtx.root_chord_mm, effPitchDeg)) * s;
+    return evalNoseProfileRadius(cfg.aero_profile, tNose, effHubR + cfg.wall_thickness_mm, 0, bladeCtx.root_chord_mm, effPitchDeg) * s;
   };
   ctx.fillStyle = isLight ? "rgba(29,78,216,0.16)" : "rgba(34,211,238,0.16)";
   ctx.strokeStyle = cTheme.primary;

@@ -17,6 +17,7 @@
     "bench": "node scripts/bench.cjs"
   },
   "dependencies": {
+    "manifold-3d": "^3.5.5",
     "three": "^0.187.0"
   },
   "devDependencies": {
