@@ -95,7 +95,7 @@ impl Default for ExportCache {
 
 #[derive(Debug)]
 struct CacheInner {
-    entries: HashMap<String, Arc<Vec<u8>>>,
+    entries: HashMap<String, Bytes>,
     order: VecDeque<String>,
     total_bytes: usize,
     max_entries: usize,
@@ -132,7 +132,7 @@ impl ExportCache {
 
     /// Looks up `digest` in the cache, incrementing `hits` or `misses`.
     #[must_use]
-    pub fn get(&self, digest: &str) -> Option<Arc<Vec<u8>>> {
+    pub fn get(&self, digest: &str) -> Option<Bytes> {
         let guard = self
             .inner
             .read()
@@ -147,7 +147,8 @@ impl ExportCache {
     }
 
     /// Stores `payload` under its `blake3` hex `digest`, evicting oldest entries as needed.
-    pub fn insert(&self, digest: String, payload: Arc<Vec<u8>>) {
+    pub fn insert(&self, digest: String, payload: impl Into<Bytes>) {
+        let payload = payload.into();
         let mut guard = self
             .inner
             .write()
@@ -557,12 +558,7 @@ async fn handle_export(
                 return Ok(response);
             }
         }
-        return Ok(build_binary_response(
-            (*cached).clone(),
-            format,
-            &etag_value,
-            "HIT",
-        ));
+        return Ok(build_binary_response(cached, format, &etag_value, "HIT"));
     }
 
     let _permit = state
@@ -592,10 +588,10 @@ async fn handle_export(
         }
     };
 
-    let shared = Arc::new(bytes.clone());
-    state.cache.insert(digest, shared);
+    let payload = Bytes::from(bytes);
+    state.cache.insert(digest, payload.clone());
 
-    Ok(build_binary_response(bytes, format, &etag_value, "MISS"))
+    Ok(build_binary_response(payload, format, &etag_value, "MISS"))
 }
 
 fn parse_export_request(
@@ -661,7 +657,7 @@ pub fn compute_blake3_key(
 }
 
 fn build_binary_response(
-    bytes: Vec<u8>,
+    bytes: Bytes,
     format: ExportFormat,
     etag: &str,
     cache_status: &'static str,

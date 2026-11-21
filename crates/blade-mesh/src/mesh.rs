@@ -232,6 +232,7 @@ pub fn check_mesh(mesh: &Mesh) -> MeshReport {
     // (min, max) edge -> (uses, winding balance).
     let mut edges: HashMap<(u32, u32), (usize, i32)> = HashMap::new();
     let mut out_of_range_triangles = 0;
+    let mut non_finite_triangles = 0;
     let mut degenerate_triangles = 0;
     let mut min_edge_mm = f64::INFINITY;
     let mut min_triangle_altitude_mm = f64::INFINITY;
@@ -242,6 +243,7 @@ pub fn check_mesh(mesh: &Mesh) -> MeshReport {
             continue;
         };
         if !(finite(a) && finite(b) && finite(c)) {
+            non_finite_triangles += 1;
             continue;
         }
 
@@ -316,7 +318,9 @@ pub fn check_mesh(mesh: &Mesh) -> MeshReport {
             && boundary_edges == 0
             && non_manifold_edges == 0
             && inconsistent_edges == 0
-            && out_of_range_triangles == 0,
+            && out_of_range_triangles == 0
+            && non_finite_triangles == 0
+            && non_finite_vertices == 0,
     }
 }
 
@@ -362,5 +366,41 @@ trait Magnitude {
 impl Magnitude for Point3 {
     fn magnitude(self) -> f64 {
         dot(self, self).sqrt()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_mesh_marks_non_finite_triangles_not_watertight() {
+        let mesh = Mesh {
+            vertices: vec![
+                Point3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                Point3 {
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                Point3 {
+                    x: f64::NAN,
+                    y: 1.0,
+                    z: 0.0,
+                },
+            ],
+            triangles: vec![Triangle::new(0, 1, 2)],
+        };
+        let report = check_mesh(&mesh);
+        assert!(
+            !report.watertight,
+            "mesh with NaN vertex triangle must not be watertight"
+        );
+        assert_eq!(report.out_of_range_triangles, 0);
+        assert_eq!(report.non_finite_vertices, 1);
     }
 }

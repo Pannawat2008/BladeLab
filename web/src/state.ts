@@ -2730,7 +2730,6 @@ export function computeVertexHeatmapColors(
   const colors = new Float32Array(vCount * 3);
   const r0 = design.rotor.hub_radius_mm;
   const rTip = Math.max(r0 + 10, design.rotor.radius_mm);
-  const spanLen = rTip - r0;
   const stations = bundle?.design_point.stations ?? [];
 
   let title = "Angle of Attack α & Stall Margin";
@@ -2934,11 +2933,17 @@ export function applyWingletToBladeGeometry(
   winglet: WingletConfig,
 ): void {
   if (!winglet.enabled) return;
+  const vCount = Math.floor(positions.length / 3);
   const rTip = design.rotor.radius_mm;
+  let zTip = rTip;
+  for (let i = 0; i < vCount; i++) {
+    const z = positions[i * 3 + 2]!;
+    if (z > zTip) zTip = z;
+  }
   const rawBlend = Number.isFinite(winglet.blend_radius_mm) ? winglet.blend_radius_mm : 15;
   const blendR = Math.max(5, Math.min(80, rawBlend));
-  const zStart = rTip - blendR;
-  const len = rTip - zStart;
+  const zStart = zTip - blendR;
+  const len = zTip - zStart;
   if (len <= 0) return;
 
   const rawCant = Number.isFinite(winglet.cant_angle_deg) ? winglet.cant_angle_deg : 50;
@@ -2950,7 +2955,6 @@ export function applyWingletToBladeGeometry(
   const height = Math.max(2, Math.min(100, rawHeight));
   const absCant = Math.abs(cantRad);
 
-  const vCount = Math.floor(positions.length / 3);
   for (let i = 0; i < vCount; i++) {
     const z = positions[i * 3 + 2]!;
     if (z > zStart) {

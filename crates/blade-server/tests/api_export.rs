@@ -5,7 +5,6 @@ use axum::http::{header, Method, Request, StatusCode};
 use axum::routing::get;
 use axum::Router;
 use blade_server::{build_router, AppState, CatchPanicLayer, ExportCache};
-use std::sync::Arc;
 use tower::ServiceExt;
 
 const LINEAR_FIXTURE: &str = include_str!("../../../fixtures/naca4412-linear.json");
@@ -213,9 +212,9 @@ async fn panics_are_caught_and_do_not_crash_the_server() {
 async fn export_cache_bounds_memory_and_cold_if_none_match_checks_cache() {
     // 1. Bounded cache evicts oldest entries when capacity is reached.
     let cache = ExportCache::with_limits(2, 1024);
-    cache.insert("k1".into(), Arc::new(vec![1; 100]));
-    cache.insert("k2".into(), Arc::new(vec![2; 100]));
-    cache.insert("k3".into(), Arc::new(vec![3; 100]));
+    cache.insert("k1".into(), vec![1; 100]);
+    cache.insert("k2".into(), vec![2; 100]);
+    cache.insert("k3".into(), vec![3; 100]);
     assert_eq!(cache.stats().entry_count, 2);
     assert!(cache.get("k1").is_none(), "oldest entry evicted");
     assert!(cache.get("k3").is_some(), "newest entry retained");

@@ -277,7 +277,11 @@ pub fn synthesize_naca4_polar(
     aspect_ratio: f64,
 ) -> Result<PolarTable, AeroError> {
     let m_pct = (max_camber * 100.0).round() as i32;
-    let p_tenth = (camber_position * 10.0).round() as i32;
+    let p_tenth = if m_pct == 0 {
+        0
+    } else {
+        (camber_position * 10.0).round() as i32
+    };
     let t_pct = (thickness_ratio * 100.0).round() as i32;
     let code = format!("NACA{}{}{:02}", m_pct.abs(), p_tenth.abs(), t_pct.abs());
     let features = features_from_naca4(max_camber, camber_position, thickness_ratio);
@@ -418,5 +422,9 @@ mod tests {
             "Lednicer chord jump corrupted camber_position: got {}",
             feat.camber_position
         );
+
+        // 3. Symmetric NACA with non-zero camber_position must canonicalize to NACA00xx (not NACA04xx)
+        let sym_polar = synthesize_naca4_polar(0.0, 0.4, 0.15, 10.0).expect("NACA0015");
+        assert_eq!(sym_polar.name(), "NACA0015");
     }
 }

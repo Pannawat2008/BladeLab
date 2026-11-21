@@ -1575,6 +1575,47 @@ test("Task 6: CSS design tokens/classes, hub diameter sync, WASM fabricated STEP
   );
   assert.ok(!mainTs.includes("export_all_split_step"), "main.ts must not import unused export_all_split_step");
   assert.ok(mainTs.includes("activeGistId"), "main.ts must track activeGistId for PATCH updates");
+
+  // 5. Exploded winglet preserves monotonic Z across split gap without pancaking at z >= rTip
+  const wingletCfg = {
+    enabled: true,
+    cant_angle_deg: 55,
+    height_mm: 25,
+    sweep_angle_deg: 10,
+    blend_radius_mm: 25,
+  };
+  const explodedPts = new Float32Array([
+    0, 0, 580,
+    0, 0, 600,
+    0, 0, 610,
+    0, 0, 620,
+    0, 0, 630,
+  ]);
+  applyWingletToBladeGeometry(explodedPts, initialDesign, wingletCfg);
+  for (let i = 1; i < 5; i++) {
+    assert.ok(
+      explodedPts[i * 3 + 2] > explodedPts[(i - 1) * 3 + 2] + 1.0,
+      `exploded winglet must stay strictly increasing in z without flat collapse: z[${i - 1}]=${explodedPts[(i - 1) * 3 + 2]}, z[${i}]=${explodedPts[i * 3 + 2]}`,
+    );
+  }
+  assert.equal(explodedPts[0], 0, "vertices below zTip - blendR remain unbent");
+  assert.ok(explodedPts[13] > 15, "exploded tip y bends upward smoothly");
+
+  // Isolated root segment (active_part = 0, z <= 330 < rTip = 600) must remain untouched
+  const rootOnly = new Float32Array([0, 0, 60, 0, 0, 330]);
+  applyWingletToBladeGeometry(rootOnly, initialDesign, wingletCfg);
+  assert.deepEqual(Array.from(rootOnly), [0, 0, 60, 0, 0, 330], "isolated root segment must not be bent by winglet");
+
+  // 6. main.ts restores lockedSpanRatios when slider returns to start & clears activeGistId on local JSON/slot load
+  assert.match(
+    mainTs,
+    /const changed = Math\.abs\(newHub - oldHub\) > RATIO_EPS;[\s\S]*?: bladeLenDragBaseLocked\[i\]!/,
+    "sliderBladeLength must restore bladeLenDragBaseLocked[i]! when returned to initial length",
+  );
+  assert.ok(
+    (mainTs.match(/activeGistId = null;\s*activeGistName = null;/g) || []).length >= 6,
+    "activeGistId/Name must be cleared on disconnect, auth rejection, delete, reset, local JSON load, and local slot load",
+  );
 });
 
 

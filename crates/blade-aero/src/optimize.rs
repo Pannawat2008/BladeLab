@@ -313,6 +313,7 @@ pub fn optimize_blade(
     if !config.min_chord_mm.is_finite()
         || !config.max_chord_mm.is_finite()
         || config.min_chord_mm < 0.0
+        || config.max_chord_mm < 0.0
         || (config.max_chord_mm > 0.0 && config.min_chord_mm > config.max_chord_mm)
     {
         return Err(AeroError::InvalidOperatingPoint(
@@ -725,6 +726,18 @@ mod tests {
         assert!(
             optimize_blade(&linear, &polars, &nan_cfg).is_err(),
             "NaN min_chord_mm must return Err instead of panicking"
+        );
+
+        let neg_max_cfg = OptimizerConfig {
+            max_chord_mm: -10.0,
+            ..OptimizerConfig::default()
+        };
+        assert!(
+            matches!(
+                optimize_blade(&linear, &polars, &neg_max_cfg),
+                Err(AeroError::InvalidOperatingPoint(_))
+            ),
+            "negative max_chord_mm must return InvalidOperatingPoint"
         );
 
         // Non-integer locked station on Schmitz fixture must not drift by 0.01 rounding

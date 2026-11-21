@@ -64,36 +64,37 @@ def main(argv):
     }
 
     path = None
-    flags = []
-    for token in argv:
-        if token == "--pass":
-            continue
-        if path is None and not token.startswith("-"):
-            if os.path.abspath(token) not in ignore:
-                path = token
-                continue
-        flags.append(token)
-    if path is None:
-        path = os.environ.get("BLADELAB_STEP")
-
     expect_solids = os.environ.get("BLADELAB_EXPECT_SOLIDS")
     z_min = os.environ.get("BLADELAB_Z_MIN")
     z_max = os.environ.get("BLADELAB_Z_MAX")
 
-    while flags:
-        flag = flags.pop(0)
-        if flag in ("--solids", "--z-min", "--z-max"):
-            if not flags:
-                die("missing value for flag %r" % flag)
-            val = flags.pop(0)
-            if flag == "--solids":
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        i += 1
+        if token == "--pass":
+            continue
+        if token in ("--solids", "--z-min", "--z-max"):
+            if i >= len(argv):
+                die("missing value for flag %r" % token)
+            val = argv[i]
+            i += 1
+            if token == "--solids":
                 expect_solids = val
-            elif flag == "--z-min":
+            elif token == "--z-min":
                 z_min = val
             else:
                 z_max = val
+        elif token.startswith("-"):
+            die("unknown flag %r" % token)
+        elif path is None:
+            if os.path.abspath(token) not in ignore:
+                path = token
         else:
-            die("unknown flag %r" % flag)
+            die("unexpected extra positional argument %r" % token)
+
+    if path is None:
+        path = os.environ.get("BLADELAB_STEP")
 
     if not path:
         die("no STEP path given (pass an existing file or set BLADELAB_STEP)")

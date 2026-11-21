@@ -384,3 +384,30 @@ fn narrow_span_and_root_boundary_overrides_do_not_collapse_or_fail_airfoil() {
     let nan_val = blade_model::eval_bezier(&pts, f64::NAN);
     assert_eq!(nan_val, 70.0);
 }
+
+#[test]
+fn schmitz_validates_override_stations_and_resolve_enforces_finite_bounds() {
+    use blade_model::validate;
+
+    let mut design = typical();
+    design.rotor.station_count = 2;
+    design.rotor.hub_radius_mm = 1.0;
+    design.rotor.radius_mm = 1e305;
+    design.rotor.design_tsr = 10.0;
+    design.distributions.chord_mm = CurveSource::Schmitz {
+        design_cl: Some(1e-4),
+        design_alpha_deg: None,
+    };
+    design.overrides = vec![blade_model::StationOverride {
+        span_ratio: 0.5,
+        chord_mm: None,
+        twist_deg: Some(10.0),
+        airfoil: None,
+    }];
+    let issues = validate(&design).expect_err("Schmitz overflow must fail validation");
+    assert!(!issues.is_empty());
+    assert!(
+        resolve(&design).is_err(),
+        "resolve must reject non-finite Schmitz chord"
+    );
+}

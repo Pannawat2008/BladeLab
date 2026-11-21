@@ -99,47 +99,46 @@ pub fn resolve(design: &Design) -> Result<ResolvedBlade, ModelError> {
         let chord_mm = if let Some(chord) = matching_override.and_then(|o| o.chord_mm) {
             chord
         } else if let crate::CurveSource::Formula { expr } = &design.distributions.chord_mm {
-            let val = crate::curve::eval_formula(expr, &design.rotor, ratio, s).map_err(|msg| {
+            crate::curve::eval_formula(expr, &design.rotor, ratio, s).map_err(|msg| {
                 ModelError::Invalid(vec![crate::ValidationIssue::new(
                     "distributions.chord_mm.expr",
                     msg,
                 )])
-            })?;
-            if !val.is_finite() || val <= 0.0 {
-                return Err(ModelError::Invalid(vec![crate::ValidationIssue::new(
-                    "distributions.chord_mm.expr",
-                    format!("formula evaluated to invalid chord {val} at x = {ratio:.4}"),
-                )]));
-            }
-            val
+            })?
         } else {
             design
                 .distributions
                 .chord_mm
                 .eval_chord(&design.rotor, ratio, s)
         };
+        if !chord_mm.is_finite() || chord_mm <= 0.0 {
+            return Err(ModelError::Invalid(vec![crate::ValidationIssue::new(
+                "distributions.chord_mm",
+                format!("evaluated to invalid chord {chord_mm} mm at x = {ratio:.4}"),
+            )]));
+        }
+
         let twist_deg = if let Some(twist) = matching_override.and_then(|o| o.twist_deg) {
             twist
         } else if let crate::CurveSource::Formula { expr } = &design.distributions.twist_deg {
-            let val = crate::curve::eval_formula(expr, &design.rotor, ratio, s).map_err(|msg| {
+            crate::curve::eval_formula(expr, &design.rotor, ratio, s).map_err(|msg| {
                 ModelError::Invalid(vec![crate::ValidationIssue::new(
                     "distributions.twist_deg.expr",
                     msg,
                 )])
-            })?;
-            if !val.is_finite() || val.abs() > 90.0 {
-                return Err(ModelError::Invalid(vec![crate::ValidationIssue::new(
-                    "distributions.twist_deg.expr",
-                    format!("formula evaluated to invalid twist {val} at x = {ratio:.4}"),
-                )]));
-            }
-            val
+            })?
         } else {
             design
                 .distributions
                 .twist_deg
                 .eval_twist(&design.rotor, ratio, s)
         };
+        if !twist_deg.is_finite() || twist_deg.abs() > 90.0 {
+            return Err(ModelError::Invalid(vec![crate::ValidationIssue::new(
+                "distributions.twist_deg",
+                format!("evaluated to invalid twist {twist_deg} deg at x = {ratio:.4}"),
+            )]));
+        }
         let spec = if let Some(airfoil) = matching_override.and_then(|o| o.airfoil.as_ref()) {
             airfoil
         } else {

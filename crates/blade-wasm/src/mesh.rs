@@ -386,8 +386,7 @@ pub fn export_step_with_overrides(
     let wants_unsplit_features = matches!(
         overrides.step_mode.as_deref(),
         Some("features" | "fabricated")
-    ) && (fab_spec.spar_hole.is_some()
-        || fab_spec.alignment.is_some());
+    ) && fab_spec.spar_hole.is_some();
 
     let bodies = match part_norm.as_str() {
         "hub" => vec![kernel.hub_solid(&resolved.hub).map_err(as_string)?],
@@ -775,6 +774,20 @@ mod tests {
         assert!(
             step_unsplit.matches("PLANE").count() > 500,
             "unsplit blade with step_mode=features and spar hole must include fabricated bore faces"
+        );
+
+        // Unsplit blade with align_shape alone (no spar hole, split_parts = 1) has no split plane, so use smooth B-spline
+        let unsplit_align_only = Overrides {
+            split_parts: Some(1),
+            align_shape: Some("round".to_string()),
+            step_mode: Some("features".to_string()),
+            ..Overrides::default()
+        };
+        let step_align_only =
+            export_step_with_overrides(FIXTURE, &unsplit_align_only, "blade").expect("smooth STEP");
+        assert!(
+            step_align_only.contains("B_SPLINE_SURFACE_WITH_KNOTS"),
+            "unsplit blade without spar hole should export smooth B-spline NURBS"
         );
 
         // 2. Multi-solid fabricated STEP with explode_gap_mm=50 must shift Part 1 beyond z=640 mm

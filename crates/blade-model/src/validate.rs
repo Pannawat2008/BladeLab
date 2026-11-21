@@ -102,6 +102,46 @@ fn check_rotor(design: &Design, issues: &mut Vec<ValidationIssue>) {
     }
 }
 
+fn sample_eval_points(design: &Design, is_twist: bool) -> Vec<(f64, f64)> {
+    let hub_ratio = if positive(design.rotor.radius_mm)
+        && finite(design.rotor.hub_radius_mm)
+        && design.rotor.hub_radius_mm >= 0.0
+        && design.rotor.hub_radius_mm < design.rotor.radius_mm
+    {
+        design.rotor.hub_radius_mm / design.rotor.radius_mm
+    } else {
+        0.1
+    };
+    let span = (1.0 - hub_ratio).max(RATIO_EPS);
+    let samples = design.rotor.station_count.clamp(2, 200);
+    let mut eval_points: Vec<(f64, f64)> = (0..samples)
+        .map(|idx| {
+            let s = f64::from(idx) / f64::from(samples - 1);
+            let span_ratio = if idx == 0 {
+                hub_ratio
+            } else if idx + 1 == samples {
+                1.0
+            } else {
+                hub_ratio + (1.0 - hub_ratio) * s
+            };
+            (span_ratio, s)
+        })
+        .collect();
+    for over in &design.overrides {
+        let overridden = if is_twist {
+            over.twist_deg.is_some()
+        } else {
+            over.chord_mm.is_some()
+        };
+        if !overridden && finite(over.span_ratio) {
+            let clamped_r = over.span_ratio.clamp(hub_ratio, 1.0);
+            let s = ((clamped_r - hub_ratio) / span).clamp(0.0, 1.0);
+            eval_points.push((clamped_r, s));
+        }
+    }
+    eval_points
+}
+
 fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
     let valid_rotor_for_eval = positive(design.rotor.radius_mm)
         && finite(design.rotor.hub_radius_mm)
@@ -130,17 +170,7 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
                 && positive(design.rotor.hub_radius_mm)
                 && design_cl.is_some_and(positive)
             {
-                let hub_ratio = design.rotor.hub_radius_mm / design.rotor.radius_mm;
-                let samples = design.rotor.station_count.clamp(2, 200);
-                for idx in 0..samples {
-                    let s = f64::from(idx) / f64::from(samples - 1);
-                    let ratio = if idx == 0 {
-                        hub_ratio
-                    } else if idx + 1 == samples {
-                        1.0
-                    } else {
-                        hub_ratio + (1.0 - hub_ratio) * s
-                    };
+                for (ratio, s) in sample_eval_points(design, false) {
                     let val = design
                         .distributions
                         .chord_mm
@@ -181,17 +211,7 @@ fn check_distributions(design: &Design, issues: &mut Vec<ValidationIssue>) {
                 ));
             }
             if valid_rotor_for_eval && valid_alpha {
-                let hub_ratio = design.rotor.hub_radius_mm / design.rotor.radius_mm;
-                let samples = design.rotor.station_count.clamp(2, 200);
-                for idx in 0..samples {
-                    let s = f64::from(idx) / f64::from(samples - 1);
-                    let ratio = if idx == 0 {
-                        hub_ratio
-                    } else if idx + 1 == samples {
-                        1.0
-                    } else {
-                        hub_ratio + (1.0 - hub_ratio) * s
-                    };
+                for (ratio, s) in sample_eval_points(design, true) {
                     let val = design
                         .distributions
                         .twist_deg
@@ -287,43 +307,7 @@ fn check_curve(
             }
         }
         CurveSource::Formula { expr } => {
-            let hub_ratio = if positive(design.rotor.radius_mm)
-                && finite(design.rotor.hub_radius_mm)
-                && design.rotor.hub_radius_mm >= 0.0
-                && design.rotor.hub_radius_mm < design.rotor.radius_mm
-            {
-                design.rotor.hub_radius_mm / design.rotor.radius_mm
-            } else {
-                0.1
-            };
-            let span = (1.0 - hub_ratio).max(RATIO_EPS);
-            let samples = design.rotor.station_count.clamp(2, 200);
-            let mut eval_points: Vec<(f64, f64)> = (0..samples)
-                .map(|idx| {
-                    let s = f64::from(idx) / f64::from(samples - 1);
-                    let span_ratio = if idx == 0 {
-                        hub_ratio
-                    } else if idx + 1 == samples {
-                        1.0
-                    } else {
-                        hub_ratio + (1.0 - hub_ratio) * s
-                    };
-                    (span_ratio, s)
-                })
-                .collect();
-            for over in &design.overrides {
-                let overridden = if is_twist {
-                    over.twist_deg.is_some()
-                } else {
-                    over.chord_mm.is_some()
-                };
-                if !overridden && finite(over.span_ratio) {
-                    let clamped_r = over.span_ratio.clamp(hub_ratio, 1.0);
-                    let s = ((clamped_r - hub_ratio) / span).clamp(0.0, 1.0);
-                    eval_points.push((clamped_r, s));
-                }
-            }
-            for (span_ratio, s) in eval_points {
+            for (span_ratio, s) in sample_eval_points(design, is_twist) {
                 match crate::curve::eval_formula(expr, &design.rotor, span_ratio, s) {
                     Ok(value) => {
                         if !accepts(value) {

@@ -3402,6 +3402,8 @@ inputLoadJsonFile.addEventListener("change", async () => {
     if (!snapshot.name) {
       snapshot.name = file.name.replace(/\.json$/i, "");
     }
+    activeGistId = null;
+    activeGistName = null;
     applyWorkbenchSnapshot(snapshot, { commitToHistory: true, badgePrefix: "Loaded" });
     exportStatus.textContent = `Loaded ${file.name}`;
     errorBanner.style.display = "none";
@@ -3527,6 +3529,8 @@ function renderSavedSlotsList() {
       try {
         const validated = parseLoadedProjectJson(JSON.stringify(entry.snapshot));
         validated.name = entry.name;
+        activeGistId = null;
+        activeGistName = null;
         applyWorkbenchSnapshot(validated, { commitToHistory: true, badgePrefix: "Loaded" });
         exportStatus.textContent = `Loaded slot "${entry.name}"`;
       } catch (err) {
@@ -3662,12 +3666,15 @@ sliderBladeLength.addEventListener("input", () => {
   const oldHub = baseDesign.rotor.hub_radius_mm / baseDesign.rotor.radius_mm;
   workingDesign = updateBladeLengthMm(baseDesign, len);
   const newHub = workingDesign.rotor.hub_radius_mm / workingDesign.rotor.radius_mm;
-  if (Math.abs(newHub - oldHub) > RATIO_EPS && bladeLenDragBaseLocked.length > 0) {
+  if (bladeLenDragBaseLocked.length > 0) {
+    const changed = Math.abs(newHub - oldHub) > RATIO_EPS;
     for (let i = 0; i < bladeLenDragBaseLocked.length; i++) {
-      lockedSpanRatios[i] = snapSpanRatioToGrid(
-        remapSpanRatio(bladeLenDragBaseLocked[i]!, oldHub, newHub),
-        workingDesign.rotor,
-      );
+      lockedSpanRatios[i] = changed
+        ? snapSpanRatioToGrid(
+            remapSpanRatio(bladeLenDragBaseLocked[i]!, oldHub, newHub),
+            workingDesign.rotor,
+          )
+        : bladeLenDragBaseLocked[i]!;
     }
   }
   inputRadius.value = String(workingDesign.rotor.radius_mm);
