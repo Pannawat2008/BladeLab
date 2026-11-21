@@ -57,6 +57,13 @@
         --panel-right-w: 336px;
         --top-dock-h: 48px;
         --dock-gap: 10px;
+
+        --slider-track-unfilled: rgba(255, 255, 255, 0.12);
+        --slider-thumb-border: #090b10;
+        --swatch-primary: #22d3ee;
+        --swatch-base: #7c879b;
+        --swatch-betz: #fbbf24;
+        --swatch-elec: #34d399;
       }
 
       *,
@@ -1367,6 +1374,10 @@
         border-radius: 50%;
         display: inline-block;
       }
+      .swatch-primary { background: var(--swatch-primary); }
+      .swatch-base { background: var(--swatch-base); }
+      .swatch-betz { background: var(--swatch-betz); }
+      .swatch-elec { background: var(--swatch-elec); }
 
       .chart-hover-readout {
         display: flex;
@@ -1457,8 +1468,8 @@
           to right,
           var(--accent-solid) 0%,
           var(--accent-solid) var(--fill, 50%),
-          rgba(255, 255, 255, 0.12) var(--fill, 50%),
-          rgba(255, 255, 255, 0.12) 100%
+          var(--slider-track-unfilled) var(--fill, 50%),
+          var(--slider-track-unfilled) 100%
         );
         border-radius: 999px;
         cursor: pointer;
@@ -1471,7 +1482,7 @@
         height: 13px;
         border-radius: 50%;
         background: var(--accent);
-        border: 2px solid #090b10;
+        border: 2px solid var(--slider-thumb-border);
         box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.4);
         cursor: grab;
         transition: transform 0.12s var(--ease), background-color 0.12s var(--ease);
@@ -1485,7 +1496,7 @@
         height: 13px;
         border-radius: 50%;
         background: var(--accent);
-        border: 2px solid #090b10;
+        border: 2px solid var(--slider-thumb-border);
         cursor: grab;
       }
 
@@ -2254,9 +2265,627 @@
           max-width: none;
         }
       }
+
+      /* ===============================================================
+         COMBINED UI STYLE: #1 Daylight Atelier x #3 Swiss Blueprint
+         - Warm Matte Stone Canvas (#F4F2EC) + Matte Charcoal Floating Dock
+         - Zero Left Sidebar -> Open Left CAD Canvas + Subtle Grid Vignette
+         - Single Right Swiss Blueprint Sheet (#FFFFFF / #F7F9FC / Cobalt #1D4ED8)
+         - 4-Step Guided Wizard (01 Wind -> 02 Shape -> 03 Aero -> 04 Print)
+         - Vermilion (#E8451E) Primary CTAs & Focal Telemetry
+         =============================================================== */
+      #atelier-canvas-hud,
+      #atelier-wizard-header,
+      #atelier-wizard-footer {
+        display: none;
+      }
+
+      body[data-ui-style="atelier"] {
+        color-scheme: light;
+        --bg-canvas: #f4f2ec;
+        --bg-deep: #f7f9fc;
+        --bg-panel: #ffffff;
+        --bg-card: #fafaf8;
+        --bg-raised: #ffffff;
+        --bg-raised-hover: #eff6ff;
+        --bg-hover: #eff6ff;
+        --border-hairline: #cbd5e1;
+        --border-strong: #93c5fd;
+        --top-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+
+        --text-primary: #18181b;
+        --text-secondary: #475569;
+        --text-muted: #64748b;
+        --fg: #18181b;
+
+        --accent: #1d4ed8;
+        --accent-solid: #1d4ed8;
+        --accent-dim: rgba(29, 78, 216, 0.08);
+        --accent-border: #1d4ed8;
+        --atelier-vermilion: #e8451e;
+
+        --datum: #e8451e;
+        --status-ok: #047857;
+        --status-err: #dc2626;
+
+        --slider-track-unfilled: #cbd5e1;
+        --slider-thumb-border: #ffffff;
+
+        --swatch-primary: #1d4ed8;
+        --swatch-base: #64748b;
+        --swatch-betz: #e8451e;
+        --swatch-elec: #047857;
+
+        --radius-panel: 4px;
+        --radius-card: 3px;
+        --radius-control: 2px;
+        --radius-sm: 2px;
+        --radius-tag: 2px;
+
+        --atelier-rail-w: 376px;
+        --atelier-wiz-head-h: 74px;
+        --atelier-wiz-foot-h: 44px;
+      }
+
+      body[data-ui-style="atelier"] ::selection {
+        background: rgba(29, 78, 216, 0.18);
+        color: #18181b;
+      }
+
+      /* Subtle Blueprint Drafting Frame around Left Studio Canvas */
+      body[data-ui-style="atelier"] #app::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 80px rgba(24, 24, 27, 0.05);
+      }
+
+      /* Daylight Top Command Bar */
+      body[data-ui-style="atelier"] #top-dock {
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(24, 24, 27, 0.08), var(--top-highlight);
+      }
+      body[data-ui-style="atelier"] .brand-mark {
+        background: rgba(232, 69, 30, 0.1);
+        border-color: rgba(232, 69, 30, 0.36);
+        color: #e8451e;
+        border-radius: 6px;
+      }
+      body[data-ui-style="atelier"] .studio-tabs,
+      body[data-ui-style="atelier"] .seg-pill,
+      body[data-ui-style="atelier"] #collective-pitch-toolbar-group {
+        background: #f4f2ec;
+        border-color: #d6d3c8;
+        border-radius: 6px;
+      }
+      body[data-ui-style="atelier"] .studio-tabs button,
+      body[data-ui-style="atelier"] .seg-pill > button.btn-mini {
+        border-radius: 4px;
+      }
+      body[data-ui-style="atelier"] .studio-tabs button.active,
+      body[data-ui-style="atelier"] .seg-pill > button.btn-mini.active {
+        background: #ffffff;
+        border-color: #93c5fd;
+        color: #1d4ed8;
+        box-shadow: 0 1px 3px rgba(24, 24, 27, 0.08);
+      }
+      body[data-ui-style="atelier"] .studio-tabs button#tab-studio-gearbox.active {
+        color: #e8451e;
+        border-color: rgba(232, 69, 30, 0.45);
+      }
+      body[data-ui-style="atelier"] #ui-style-switcher > button.active {
+        background: #18181b;
+        border-color: #18181b;
+        color: #ffffff;
+      }
+
+      /* Vermilion Primary CTAs & Crisp Cobalt Focus Rings */
+      body[data-ui-style="atelier"] button.btn-primary {
+        background: #e8451e;
+        border-color: #e8451e;
+        color: #ffffff;
+        box-shadow: 0 1px 2px rgba(232, 69, 30, 0.25);
+      }
+      body[data-ui-style="atelier"] button.btn-primary:hover:not(:disabled) {
+        background: #cf3815;
+        border-color: #cf3815;
+        color: #ffffff;
+      }
+      body[data-ui-style="atelier"] button.btn-secondary:hover:not(:disabled) {
+        background: #eff6ff;
+        border-color: #1d4ed8;
+        color: #18181b;
+      }
+      body[data-ui-style="atelier"] button.btn-accent-outline {
+        background: rgba(29, 78, 216, 0.08);
+        border-color: #1d4ed8;
+        color: #1d4ed8;
+      }
+      body[data-ui-style="atelier"] button.btn-accent-outline:hover:not(:disabled) {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+        color: #ffffff;
+      }
+      body[data-ui-style="atelier"] .btn-icon {
+        color: #475569;
+      }
+      body[data-ui-style="atelier"] .btn-icon:hover:not(:disabled) {
+        background: #eff6ff;
+        border-color: #cbd5e1;
+        color: #18181b;
+      }
+
+      /* Hide obsolete left/right sidebar toggles in Atelier mode (only Zen 3D Sheet remains) */
+      body[data-ui-style="atelier"] #btn-toggle-left,
+      body[data-ui-style="atelier"] #btn-toggle-right {
+        display: none;
+      }
+
+      /* Range Sliders, Switches & Presets */
+      body[data-ui-style="atelier"] input[type="range"]::-webkit-slider-thumb {
+        box-shadow: 0 1px 3px rgba(24, 24, 27, 0.35);
+      }
+      body[data-ui-style="atelier"] input[type="range"]::-webkit-slider-thumb:hover {
+        background: #2563eb;
+      }
+      body[data-ui-style="atelier"] input[type="checkbox"].switch-toggle {
+        background: #cbd5e1;
+        border-color: #94a3b8;
+      }
+      body[data-ui-style="atelier"] input[type="checkbox"].switch-toggle::after {
+        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(24, 24, 27, 0.25);
+      }
+      body[data-ui-style="atelier"] input[type="checkbox"].switch-toggle:checked {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+      }
+      body[data-ui-style="atelier"] input[type="checkbox"].switch-toggle:checked::after {
+        background: #ffffff;
+      }
+      body[data-ui-style="atelier"] .preset-strip button.btn-mini.active {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+        color: #ffffff;
+      }
+      body[data-ui-style="atelier"] .scrub-label {
+        border-bottom-color: rgba(29, 78, 216, 0.28);
+      }
+      body[data-ui-style="atelier"] .metric-card .scrub-label {
+        border-bottom: none;
+      }
+
+      /* Drafting Sheet Light Tables, Cards & Drawers */
+      body[data-ui-style="atelier"] .table-wrap {
+        max-height: calc(100vh - 305px);
+        background: #ffffff;
+      }
+      body[data-ui-style="atelier"] table.station-table tr:hover td {
+        background: rgba(29, 78, 216, 0.04);
+      }
+      body[data-ui-style="atelier"] table.station-table tr.overridden td:first-child {
+        background: #eff6ff;
+      }
+      body[data-ui-style="atelier"] details.smart-drawer > summary:hover {
+        background: rgba(29, 78, 216, 0.04);
+      }
+      body[data-ui-style="atelier"] .zone-root {
+        background: rgba(232, 69, 30, 0.12);
+        color: #c2410c;
+      }
+      body[data-ui-style="atelier"] .zone-mid {
+        background: rgba(29, 78, 216, 0.12);
+        color: #1d4ed8;
+      }
+      body[data-ui-style="atelier"] .zone-tip {
+        background: rgba(4, 120, 87, 0.12);
+        color: #047857;
+      }
+      body[data-ui-style="atelier"] .dot-root { background: #e8451e; }
+      body[data-ui-style="atelier"] .dot-mid { background: #1d4ed8; }
+      body[data-ui-style="atelier"] .dot-tip { background: #047857; }
+      body[data-ui-style="atelier"] .betz-meter-track {
+        background: #e2e8f0;
+      }
+      body[data-ui-style="atelier"] .telemetry-lead-val {
+        color: #e8451e;
+      }
+      body[data-ui-style="atelier"] .gear-card.card-selected {
+        background: rgba(29, 78, 216, 0.06) !important;
+        box-shadow: 0 4px 16px rgba(29, 78, 216, 0.14);
+      }
+      body[data-ui-style="atelier"] #projects-drawer,
+      body[data-ui-style="atelier"] .export-dropdown-menu {
+        background: #ffffff;
+        border-color: #93c5fd;
+        box-shadow: 0 20px 44px rgba(24, 24, 27, 0.16);
+      }
+      body[data-ui-style="atelier"] #export-status {
+        right: calc(var(--atelier-rail-w) + var(--dock-gap) * 2);
+        background: #ffffff;
+        border-color: #93c5fd;
+        color: #047857;
+        box-shadow: 0 8px 24px rgba(24, 24, 27, 0.12);
+      }
+
+      /* Daylight Atelier Top-Left Floating Canvas Pill (#atelier-canvas-hud) */
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #viewport-datum-hud {
+        display: none;
+      }
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-canvas-hud {
+        position: fixed;
+        top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
+        left: var(--dock-gap);
+        max-width: calc(100vw - var(--atelier-rail-w) - var(--dock-gap) * 3);
+        z-index: 10;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 13px;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        box-shadow: 0 8px 20px rgba(24, 24, 27, 0.08);
+        font: 500 11.5px/16px var(--font-sans);
+        color: #18181b;
+        white-space: nowrap;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      body[data-ui-style="atelier"] .atelier-hud-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #e8451e;
+        flex-shrink: 0;
+      }
+      body[data-ui-style="atelier"] .atelier-hud-dwg {
+        font: 600 11px/16px var(--font-mono);
+        color: #1d4ed8;
+        letter-spacing: 0.02em;
+        flex-shrink: 0;
+      }
+      body[data-ui-style="atelier"] .atelier-hud-sep {
+        width: 1px;
+        height: 12px;
+        background: #cbd5e1;
+        flex-shrink: 0;
+      }
+      body[data-ui-style="atelier"] #atelier-hud-spec,
+      body[data-ui-style="atelier"] #atelier-hud-power,
+      body[data-ui-style="atelier"] #atelier-hud-ms {
+        font: 400 11px/16px var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        color: #475569;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      body[data-ui-style="atelier"] .atelier-hud-cp-wrap {
+        font: 500 11.5px/16px var(--font-mono);
+        color: #18181b;
+        flex-shrink: 0;
+      }
+      body[data-ui-style="atelier"] #atelier-hud-cp {
+        color: #e8451e;
+        font-weight: 700;
+      }
+
+      /* Daylight Atelier Floating Matte-Charcoal Bottom Dock (#viewport-stage-bar) */
+      body[data-ui-style="atelier"] #viewport-stage-bar {
+        left: calc((100vw - var(--atelier-rail-w) - var(--dock-gap)) / 2);
+        max-width: calc(100vw - var(--atelier-rail-w) - var(--dock-gap) * 3);
+        background: #18181b;
+        border: 1px solid #27272a;
+        border-radius: 999px;
+        padding: 4px 8px;
+        box-shadow: 0 14px 32px rgba(24, 24, 27, 0.24);
+      }
+      body[data-ui-style="atelier"] #viewport-stage-bar .toolbar-divider {
+        background: rgba(255, 255, 255, 0.16);
+      }
+      body[data-ui-style="atelier"] #viewport-stage-bar .btn-mini {
+        color: #d4d4d8;
+        border-radius: 999px;
+      }
+      body[data-ui-style="atelier"] #viewport-stage-bar .btn-mini:hover:not(:disabled) {
+        background: #27272a;
+        color: #ffffff;
+      }
+      body[data-ui-style="atelier"] #viewport-stage-bar .btn-mini.active {
+        background: #e8451e;
+        border-color: #e8451e;
+        color: #ffffff;
+      }
+      body[data-ui-style="atelier"] #heatmap-mode {
+        background: #27272a;
+        border-color: #3f3f46;
+        color: #f4f4f5;
+        border-radius: 999px;
+        padding: 0 10px;
+      }
+      body[data-ui-style="atelier"] #viewport-heatmap-legend {
+        left: calc((100vw - var(--atelier-rail-w) - var(--dock-gap)) / 2);
+        max-width: calc(100vw - var(--atelier-rail-w) - var(--dock-gap) * 3);
+        background: #ffffff;
+        border-color: #93c5fd;
+        color: #18181b;
+        border-radius: 999px;
+        box-shadow: 0 8px 20px rgba(24, 24, 27, 0.12);
+      }
+      body[data-ui-style="atelier"].atelier-sheet-hidden #viewport-stage-bar,
+      body[data-ui-style="atelier"].atelier-sheet-hidden #viewport-heatmap-legend {
+        left: 50%;
+        max-width: calc(100vw - 24px);
+      }
+      body[data-ui-style="atelier"].atelier-sheet-hidden #atelier-canvas-hud {
+        max-width: calc(100vw - 24px);
+      }
+      body[data-ui-style="atelier"].atelier-sheet-hidden #export-status {
+        right: var(--dock-gap);
+      }
+      body[data-ui-style="atelier"].studio-gearbox-mode #viewport-datum-hud,
+      body[data-ui-style="atelier"].studio-gearbox-mode #viewport-stage-bar {
+        left: calc(372px + var(--dock-gap) + (100vw - 372px - var(--dock-gap)) / 2);
+        max-width: calc(100vw - 372px - var(--dock-gap) * 3);
+      }
+      body[data-ui-style="atelier"].studio-gearbox-mode #gearbox-inspector {
+        border-color: #93c5fd;
+        box-shadow: 0 18px 40px rgba(24, 24, 27, 0.14);
+      }
+
+      /* Single Right Swiss Blueprint Drafting Sheet + 4-Step Wizard Rail */
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-header {
+        position: fixed;
+        top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
+        right: var(--dock-gap);
+        width: var(--atelier-rail-w);
+        max-width: calc(100vw - 20px);
+        height: var(--atelier-wiz-head-h);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background: #ffffff;
+        border: 1px solid #93c5fd;
+        border-bottom: 1px solid #cbd5e1;
+        border-radius: 4px 4px 0 0;
+        box-shadow: 0 12px 32px rgba(24, 24, 27, 0.08);
+        overflow: hidden;
+        z-index: 16;
+        transition: transform 0.26s var(--ease), opacity 0.18s var(--ease);
+      }
+      .atelier-sheet-bar {
+        height: 26px;
+        padding: 0 12px;
+        background: #f7f9fc;
+        border-bottom: 1px solid #bfdbfe;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font: 600 10px/14px var(--font-mono);
+        color: #1d4ed8;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+      }
+      #atelier-step-title {
+        color: #18181b;
+      }
+      .atelier-wizard-steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border: 1px solid #1d4ed8;
+        margin: 8px 12px;
+        background: #f7f9fc;
+      }
+      .atelier-wizard-steps button.wizard-step-btn {
+        height: 30px;
+        border: none;
+        border-right: 1px solid #1d4ed8;
+        border-radius: 0;
+        background: #f7f9fc;
+        color: #1d4ed8;
+        padding: 0 4px;
+        font: 600 11px/16px var(--font-mono);
+        white-space: nowrap;
+        justify-content: center;
+      }
+      .atelier-wizard-steps button.wizard-step-btn:last-child {
+        border-right: none;
+      }
+      .atelier-wizard-steps button.wizard-step-btn:hover:not(.active) {
+        background: #eff6ff;
+        color: #1e40af;
+      }
+      .atelier-wizard-steps button.wizard-step-btn.active {
+        background: #1d4ed8;
+        color: #ffffff;
+      }
+
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-footer {
+        position: fixed;
+        right: var(--dock-gap);
+        bottom: var(--dock-gap);
+        width: var(--atelier-rail-w);
+        max-width: calc(100vw - 20px);
+        height: var(--atelier-wiz-foot-h);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 0 12px;
+        background: #f7f9fc;
+        border: 1px solid #93c5fd;
+        border-top: 1px solid #cbd5e1;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 14px 32px rgba(24, 24, 27, 0.08);
+        z-index: 16;
+        transition: transform 0.26s var(--ease), opacity 0.18s var(--ease);
+      }
+      #atelier-wizard-progress {
+        font: 600 10.5px/16px var(--font-mono);
+        color: #475569;
+        letter-spacing: 0.04em;
+      }
+      #btn-wizard-prev,
+      #btn-wizard-next {
+        height: 28px;
+        padding: 0 12px;
+        border-radius: 2px;
+        font: 600 11px/16px var(--font-mono);
+      }
+      #btn-wizard-next {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+        color: #ffffff;
+      }
+      #btn-wizard-next:hover:not(:disabled) {
+        background: #1e40af;
+        border-color: #1e40af;
+      }
+      #btn-wizard-next.is-export {
+        background: #e8451e;
+        border-color: #e8451e;
+      }
+      #btn-wizard-next.is-export:hover:not(:disabled) {
+        background: #cf3815;
+        border-color: #cf3815;
+      }
+
+      /* Merge #panel (Steps 1/2/4) & #aero-dock (Step 3) into the Single Right Drafting Rail */
+      body[data-ui-style="atelier"] #panel,
+      body[data-ui-style="atelier"] #aero-dock {
+        left: auto;
+        right: var(--dock-gap);
+        top: calc(var(--dock-gap) * 2 + var(--top-dock-h) + var(--atelier-wiz-head-h));
+        bottom: calc(var(--dock-gap) + var(--atelier-wiz-foot-h));
+        width: var(--atelier-rail-w);
+        max-width: calc(100vw - 20px);
+        background: #ffffff;
+        border: 1px solid #93c5fd;
+        border-top: none;
+        border-bottom: none;
+        border-radius: 0;
+        box-shadow: 0 18px 40px rgba(24, 24, 27, 0.08);
+      }
+
+      /* Step 1, 2, 4 -> #panel visible, #aero-dock hidden; Step 3 -> #aero-dock visible, #panel hidden */
+      body[data-ui-style="atelier"]:not(.atelier-sheet-hidden)[data-atelier-step="1"] #panel,
+      body[data-ui-style="atelier"]:not(.atelier-sheet-hidden)[data-atelier-step="2"] #panel,
+      body[data-ui-style="atelier"]:not(.atelier-sheet-hidden)[data-atelier-step="4"] #panel,
+      body[data-ui-style="atelier"]:not(.atelier-sheet-hidden)[data-atelier-step="3"] #aero-dock {
+        transform: none;
+        opacity: 1;
+        pointer-events: auto;
+      }
+      body[data-ui-style="atelier"][data-atelier-step="1"] #aero-dock,
+      body[data-ui-style="atelier"][data-atelier-step="2"] #aero-dock,
+      body[data-ui-style="atelier"][data-atelier-step="4"] #aero-dock {
+        transform: translateX(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
+      }
+      body[data-ui-style="atelier"][data-atelier-step="3"] #panel {
+        transform: translateX(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Step 1 (Wind) & Step 4 (Print) have zero sub-tabs; Step 2 (Shape) shows 4 drafting sub-tabs */
+      body[data-ui-style="atelier"][data-atelier-step="1"] #panel-section-nav,
+      body[data-ui-style="atelier"][data-atelier-step="4"] #panel-section-nav {
+        display: none;
+      }
+      body[data-ui-style="atelier"][data-atelier-step="2"] #panel-section-nav button[data-scroll-target="layer1-rotor"],
+      body[data-ui-style="atelier"][data-atelier-step="2"] #panel-section-nav button[data-scroll-target="layer-fabrication"] {
+        display: none;
+      }
+      body[data-ui-style="atelier"] .section-nav {
+        background: #f7f9fc;
+        border-bottom: 1px solid #cbd5e1;
+      }
+
+      /* Zen 3D / Sheet Toggle slides right drafting column cleanly off-screen */
+      body[data-ui-style="atelier"].atelier-sheet-hidden #atelier-wizard-header,
+      body[data-ui-style="atelier"].atelier-sheet-hidden #atelier-wizard-footer,
+      body[data-ui-style="atelier"].atelier-sheet-hidden #panel,
+      body[data-ui-style="atelier"].atelier-sheet-hidden #aero-dock {
+        transform: translateX(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Atelier Breakpoints */
+      @media (max-width: 1359px) {
+        body[data-ui-style="atelier"] {
+          --atelier-rail-w: 344px;
+        }
+        body[data-ui-style="atelier"] #ui-style-switcher > button.btn-mini {
+          padding: 0 7px;
+        }
+      }
+
+      @media (max-width: 1180px) {
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-header {
+          left: auto;
+          right: var(--dock-gap);
+          width: min(410px, calc(100vw - 16px));
+          max-width: none;
+        }
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-footer {
+          left: auto;
+          right: var(--dock-gap);
+          width: min(410px, calc(100vw - 16px));
+          max-width: none;
+          bottom: 56px;
+        }
+        body[data-ui-style="atelier"] #panel,
+        body[data-ui-style="atelier"] #aero-dock {
+          top: calc(var(--dock-gap) * 2 + var(--top-dock-h) + var(--atelier-wiz-head-h));
+          bottom: calc(56px + var(--atelier-wiz-foot-h));
+          width: min(410px, calc(100vw - 16px));
+          max-width: none;
+          right: var(--dock-gap);
+          left: auto;
+        }
+        body[data-ui-style="atelier"][data-mobile-pane="canvas"] #atelier-wizard-header,
+        body[data-ui-style="atelier"][data-mobile-pane="canvas"] #atelier-wizard-footer,
+        body[data-ui-style="atelier"][data-mobile-pane="canvas"][data-atelier-step] #panel,
+        body[data-ui-style="atelier"][data-mobile-pane="canvas"][data-atelier-step] #aero-dock {
+          transform: translateY(12px);
+          opacity: 0;
+          pointer-events: none;
+        }
+        body[data-ui-style="atelier"]:not([data-mobile-pane="canvas"]) #atelier-canvas-hud {
+          display: none;
+        }
+        body[data-ui-style="atelier"] #atelier-canvas-hud {
+          left: var(--dock-gap);
+          max-width: calc(100vw - 16px);
+        }
+        body[data-ui-style="atelier"] #viewport-stage-bar {
+          left: 50% !important;
+          max-width: calc(100vw - 16px) !important;
+          bottom: 58px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-header,
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-footer,
+        body[data-ui-style="atelier"] #panel,
+        body[data-ui-style="atelier"] #aero-dock {
+          left: 8px;
+          right: 8px;
+          width: auto;
+          max-width: none;
+        }
+      }
     </style>
   </head>
-  <body data-mobile-pane="cad">
+  <body data-ui-style="atelier" data-atelier-step="1" data-mobile-pane="cad">
     <div id="app"></div>
 
     <!-- Floating Export / Save Toast -->
@@ -2345,6 +2974,11 @@
       </div>
 
       <div class="toolbar" id="export-bar">
+        <div class="seg-pill" id="ui-style-switcher" role="group" aria-label="Interface Style">
+          <button id="btn-style-atelier" class="btn-mini active" type="button" aria-pressed="true" title="Daylight Atelier x Swiss Blueprint Guided Wizard">Atelier</button>
+          <button id="btn-style-dark" class="btn-mini" type="button" aria-pressed="false" title="Obsidian Dark Dual-Dock Workbench">Dark</button>
+        </div>
+
         <button id="autosave-badge" type="button" class="autosave-badge" aria-live="polite" title="Saved designs &amp; Cloud Gists">Saved</button>
 
         <div class="export-dropdown-wrapper">
@@ -3158,9 +3792,9 @@
         <section id="layer-aero" class="tab-active">
           <div class="chart-card">
             <div class="aero-legend">
-              <span><i class="swatch" style="background: #22d3ee"></i>Cp Curve</span>
-              <span><i class="swatch" style="background: #7c879b"></i>Base A</span>
-              <span><i class="swatch" style="background: #fbbf24"></i>Betz / Exp</span>
+              <span><i class="swatch swatch-primary"></i>Cp Curve</span>
+              <span><i class="swatch swatch-base"></i>Base A</span>
+              <span><i class="swatch swatch-betz"></i>Betz / Exp</span>
             </div>
             <svg id="cp-tsr-svg" viewBox="0 0 320 155" role="img" aria-label="Cp vs Tip-Speed Ratio Chart"></svg>
             <div id="cp-tsr-hover-readout" class="chart-hover-readout">Hover curve to inspect λ, Cp &amp; RPM</div>
@@ -3216,9 +3850,9 @@
 
           <div class="chart-card">
             <div class="aero-legend">
-              <span><i class="swatch" style="background: #22d3ee"></i>Mech Power</span>
-              <span><i class="swatch" style="background: #34d399"></i>Elec Output</span>
-              <span><i class="swatch" style="background: #fbbf24"></i>Cut-In</span>
+              <span><i class="swatch swatch-primary"></i>Mech Power</span>
+              <span><i class="swatch swatch-elec"></i>Elec Output</span>
+              <span><i class="swatch swatch-betz"></i>Cut-In</span>
             </div>
             <svg id="wind-power-svg" viewBox="0 0 320 148" role="img" aria-label="Power vs Wind Speed Curve"></svg>
             <div id="wind-power-hover-readout" class="chart-hover-readout">Hover curve to inspect V, Watts &amp; RPM</div>
@@ -3594,6 +4228,37 @@
     </aside>
 
     <!-- ZONE 4: Floating Center 3D Viewport HUD & Stage Capsule -->
+    <div id="atelier-canvas-hud" aria-hidden="true">
+      <span class="atelier-hud-dot"></span>
+      <span class="atelier-hud-dwg">DWG BL-04</span>
+      <span class="atelier-hud-sep"></span>
+      <span id="atelier-hud-spec">R 600 · L 540 mm · 3B</span>
+      <span class="atelier-hud-sep"></span>
+      <span class="atelier-hud-cp-wrap">Cp <strong id="atelier-hud-cp">–</strong></span>
+      <span id="atelier-hud-power">– W</span>
+      <span class="atelier-hud-sep"></span>
+      <span id="atelier-hud-ms">– ms</span>
+    </div>
+
+    <header id="atelier-wizard-header" aria-label="4-Step Blade Design Wizard">
+      <div class="atelier-sheet-bar">
+        <span>DWG BL-04 · ATELIER BLUEPRINT</span>
+        <span id="atelier-step-title">01 WIND</span>
+      </div>
+      <div class="atelier-wizard-steps" id="atelier-wizard-steps" role="tablist" aria-label="Wizard Steps">
+        <button id="btn-wiz-step-1" class="wizard-step-btn active" type="button" role="tab" aria-selected="true" data-wizard-step="1">01 Wind</button>
+        <button id="btn-wiz-step-2" class="wizard-step-btn" type="button" role="tab" aria-selected="false" data-wizard-step="2">02 Shape</button>
+        <button id="btn-wiz-step-3" class="wizard-step-btn" type="button" role="tab" aria-selected="false" data-wizard-step="3">03 Aero</button>
+        <button id="btn-wiz-step-4" class="wizard-step-btn" type="button" role="tab" aria-selected="false" data-wizard-step="4">04 Print</button>
+      </div>
+    </header>
+
+    <footer id="atelier-wizard-footer" aria-label="Wizard Navigation">
+      <button id="btn-wizard-prev" type="button" disabled>← BACK</button>
+      <span id="atelier-wizard-progress">STEP 1/4</span>
+      <button id="btn-wizard-next" type="button">NEXT →</button>
+    </footer>
+
     <div id="viewport-datum-hud" aria-hidden="true">
       <span id="hud-rotor-spec">R 600 · L 540 mm · 3B</span>
       <span class="datum-sep"></span>

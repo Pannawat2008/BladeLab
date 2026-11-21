@@ -928,14 +928,18 @@ export function airfoilShapeParams(spec: AirfoilSpec): {
 export function renderSectionStackSvgMarkup(
   sections: Record<SectionKey, SectionState>,
   active: SectionKey,
+  theme: UiStyleMode = "dark",
 ): string {
+  const isAtelier = theme === "atelier";
   const w = 320;
   const h = 150;
   const cx = 96;
   const cy = h / 2;
   const maxChord = Math.max(1, sections.root.chord_mm, sections.mid.chord_mm, sections.tip.chord_mm);
   const scale = 224 / maxChord;
-  const colors: Record<SectionKey, string> = { root: "#f6b94d", mid: "#8ea6ff", tip: "#6fd6a6" };
+  const colors: Record<SectionKey, string> = isAtelier
+    ? { root: "#e8451e", mid: "#1d4ed8", tip: "#047857" }
+    : { root: "#f6b94d", mid: "#8ea6ff", tip: "#6fd6a6" };
   const samples = 40;
 
   const outline = (key: SectionKey): string => {
@@ -968,14 +972,18 @@ export function renderSectionStackSvgMarkup(
   const polys = order
     .map((key) => {
       const on = key === active;
-      return `<polygon points="${outline(key)}" fill="${colors[key]}" fill-opacity="${on ? 0.34 : 0.12}" stroke="${colors[key]}" stroke-width="${on ? 1.8 : 1}" stroke-opacity="${on ? 1 : 0.7}" />`;
+      return `<polygon points="${outline(key)}" fill="${colors[key]}" fill-opacity="${on ? (isAtelier ? 0.24 : 0.34) : 0.12}" stroke="${colors[key]}" stroke-width="${on ? 1.8 : 1}" stroke-opacity="${on ? 1 : 0.7}" />`;
     })
     .join("");
-  return `<line x1="${cx}" y1="14" x2="${cx}" y2="${h - 14}" stroke="rgba(238,240,245,0.16)" stroke-dasharray="3 3" />
-<line x1="12" y1="${cy}" x2="${w - 12}" y2="${cy}" stroke="rgba(238,240,245,0.08)" />
+  const vGuide = isAtelier ? "rgba(29,78,216,0.22)" : "rgba(238,240,245,0.16)";
+  const hGuide = isAtelier ? "rgba(29,78,216,0.12)" : "rgba(238,240,245,0.08)";
+  const dotColor = isAtelier ? "#e8451e" : "#f59e0b";
+  const textColor = isAtelier ? "#475569" : "#8b93a7";
+  return `<line x1="${cx}" y1="14" x2="${cx}" y2="${h - 14}" stroke="${vGuide}" stroke-dasharray="3 3" />
+<line x1="12" y1="${cy}" x2="${w - 12}" y2="${cy}" stroke="${hGuide}" />
 ${polys}
-<circle cx="${cx}" cy="${cy}" r="2.5" fill="#f59e0b" />
-<text x="${cx + 6}" y="22" font-size="10" fill="#8b93a7" font-family="IBM Plex Mono, monospace">pitch axis 25% c</text>`;
+<circle cx="${cx}" cy="${cy}" r="2.5" fill="${dotColor}" />
+<text x="${cx + 6}" y="22" font-size="10" fill="${textColor}" font-family="IBM Plex Mono, monospace">pitch axis 25% c</text>`;
 }
 
 /**
@@ -1547,8 +1555,20 @@ export function renderCpTsrSvgMarkup(
     baselineASweep?: readonly TsrSweepPoint[] | null;
     experimentalPoints?: readonly ExperimentalDataPoint[];
     designTsr?: number;
+    theme?: UiStyleMode;
   } = {},
 ): string {
+  const isAtelier = options.theme === "atelier";
+  const axisColor = isAtelier ? "rgba(29,78,216,0.16)" : "rgba(148,163,184,0.16)";
+  const gridColor = isAtelier ? "rgba(29,78,216,0.10)" : "rgba(148,163,184,0.10)";
+  const labelColor = isAtelier ? "#475569" : "#7c879b";
+  const betzColor = isAtelier ? "#e8451e" : "#fbbf24";
+  const designTsrColor = isAtelier ? "rgba(29,78,216,0.32)" : "rgba(148,163,184,0.22)";
+  const baseAColor = isAtelier ? "#64748b" : "#7c879b";
+  const curveColor = isAtelier ? "#1d4ed8" : "#22d3ee";
+  const dotStroke = isAtelier ? "#ffffff" : "#090b10";
+  const chLineColor = isAtelier ? "#18181b" : "#f1f5f9";
+
   const w = 320;
   const h = 155;
   const padX = 28;
@@ -1573,37 +1593,37 @@ export function renderCpTsrSvgMarkup(
   const gridY30 = toY(0.3).toFixed(1);
   const gridY15 = toY(0.15).toFixed(1);
   const parts: string[] = [
-    `<line x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="rgba(148,163,184,0.16)" stroke-width="1" />`,
-    `<line x1="${padX}" y1="${h - padY}" x2="${w - padX}" y2="${h - padY}" stroke="rgba(148,163,184,0.16)" stroke-width="1" />`,
-    `<line x1="${padX}" y1="${gridY15}" x2="${w - padX}" y2="${gridY15}" stroke="rgba(148,163,184,0.10)" stroke-width="1" />`,
-    `<line x1="${padX}" y1="${gridY30}" x2="${w - padX}" y2="${gridY30}" stroke="rgba(148,163,184,0.10)" stroke-width="1" />`,
-    `<line x1="${padX}" y1="${gridY45}" x2="${w - padX}" y2="${gridY45}" stroke="rgba(148,163,184,0.10)" stroke-width="1" />`,
-    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="4 3" />`,
-    `<text x="${w - padX}" y="${Number(betzY) - 4}" text-anchor="end" fill="#fbbf24" font-size="9" font-family="'JetBrains Mono', monospace">Betz 0.593</text>`,
-    `<text x="${padX - 4}" y="${Number(gridY45) + 3}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">.45</text>`,
-    `<text x="${padX - 4}" y="${Number(gridY30) + 3}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">.30</text>`,
-    `<text x="${padX - 4}" y="${Number(gridY15) + 3}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">.15</text>`,
-    `<text x="${padX}" y="${h - 5}" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">λ 1</text>`,
-    `<text x="${toX(5).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">5</text>`,
-    `<text x="${w - padX}" y="${h - 5}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">9.5</text>`,
+    `<line x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="${axisColor}" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${h - padY}" x2="${w - padX}" y2="${h - padY}" stroke="${axisColor}" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${gridY15}" x2="${w - padX}" y2="${gridY15}" stroke="${gridColor}" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${gridY30}" x2="${w - padX}" y2="${gridY30}" stroke="${gridColor}" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${gridY45}" x2="${w - padX}" y2="${gridY45}" stroke="${gridColor}" stroke-width="1" />`,
+    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="${betzColor}" stroke-width="1.2" stroke-dasharray="4 3" />`,
+    `<text x="${w - padX}" y="${Number(betzY) - 4}" text-anchor="end" fill="${betzColor}" font-size="9" font-family="'JetBrains Mono', monospace">Betz 0.593</text>`,
+    `<text x="${padX - 4}" y="${Number(gridY45) + 3}" text-anchor="end" fill="${labelColor}" font-size="8.5" font-family="'JetBrains Mono', monospace">.45</text>`,
+    `<text x="${padX - 4}" y="${Number(gridY30) + 3}" text-anchor="end" fill="${labelColor}" font-size="8.5" font-family="'JetBrains Mono', monospace">.30</text>`,
+    `<text x="${padX - 4}" y="${Number(gridY15) + 3}" text-anchor="end" fill="${labelColor}" font-size="8.5" font-family="'JetBrains Mono', monospace">.15</text>`,
+    `<text x="${padX}" y="${h - 5}" fill="${labelColor}" font-size="8.5" font-family="'JetBrains Mono', monospace">λ 1</text>`,
+    `<text x="${toX(5).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="${labelColor}" font-size="8.5" font-family="'JetBrains Mono', monospace">5</text>`,
+    `<text x="${w - padX}" y="${h - 5}" text-anchor="end" fill="${labelColor}" font-size="8.5" font-family="'JetBrains Mono', monospace">9.5</text>`,
   ];
 
   if (options.designTsr !== undefined && Number.isFinite(options.designTsr)) {
     const dx = toX(options.designTsr).toFixed(1);
     parts.push(
-      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="rgba(148,163,184,0.22)" stroke-width="1" stroke-dasharray="2 2" />`,
+      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="${designTsrColor}" stroke-width="1" stroke-dasharray="2 2" />`,
     );
   }
 
   if (options.baselineASweep && options.baselineASweep.length > 0) {
     parts.push(
-      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="#7c879b" stroke-width="1.5" stroke-dasharray="4 3" />`,
+      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="${baseAColor}" stroke-width="1.5" stroke-dasharray="4 3" />`,
     );
   }
 
   if (currentSweep.length > 0) {
     parts.push(
-      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="#22d3ee" stroke-width="2.2" />`,
+      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="${curveColor}" stroke-width="2.2" />`,
     );
   }
 
@@ -1611,15 +1631,15 @@ export function renderCpTsrSvgMarkup(
     const cx = toX(exp.tsr).toFixed(1);
     const cy = toY(exp.cp).toFixed(1);
     parts.push(
-      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="3.5" fill="#fbbf24" stroke="#090b10" stroke-width="1.2" />`,
+      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="3.5" fill="${betzColor}" stroke="${dotStroke}" stroke-width="1.2" />`,
     );
   }
 
   parts.push(
     `<g class="chart-crosshair" style="display:none;pointer-events:none">` +
-      `<line class="ch-line" x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="#f1f5f9" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
-      `<circle class="ch-dot-secondary" cx="${padX}" cy="${h - padY}" r="3.2" fill="#7c879b" stroke="#090b10" stroke-width="1.2" style="display:none" />` +
-      `<circle class="ch-dot-primary" cx="${padX}" cy="${h - padY}" r="4" fill="#22d3ee" stroke="#090b10" stroke-width="1.5" />` +
+      `<line class="ch-line" x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="${chLineColor}" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
+      `<circle class="ch-dot-secondary" cx="${padX}" cy="${h - padY}" r="3.2" fill="${baseAColor}" stroke="${dotStroke}" stroke-width="1.2" style="display:none" />` +
+      `<circle class="ch-dot-primary" cx="${padX}" cy="${h - padY}" r="4" fill="${curveColor}" stroke="${dotStroke}" stroke-width="1.5" />` +
       `</g>`,
   );
 
@@ -1720,7 +1740,20 @@ function escapeHtml(raw: string): string {
 export function renderAirfoilSectionSvgMarkup(
   design: Design,
   holeSpec?: AirfoilPreviewHoleOptions,
+  theme: UiStyleMode = "dark",
 ): string {
+  const isAtelier = theme === "atelier";
+  const chordDatumColor = isAtelier ? "#cbd5e1" : "#262c3a";
+  const contourFill = isAtelier ? "rgba(29, 78, 216, 0.14)" : "rgba(56, 189, 248, 0.14)";
+  const contourStroke = isAtelier ? "#1d4ed8" : "#38bdf8";
+  const camberColor = isAtelier ? "#64748b" : "#7a8296";
+  const pitchColor = isAtelier ? "#e8451e" : "#f59e0b";
+  const boreFill = isAtelier ? "rgba(4, 120, 87, 0.18)" : "rgba(76, 195, 138, 0.22)";
+  const boreStroke = isAtelier ? "#047857" : "#4cc38a";
+  const jointFill = isAtelier ? "rgba(232, 69, 30, 0.22)" : "rgba(245, 158, 11, 0.28)";
+  const dotStroke = isAtelier ? "#ffffff" : "#07080d";
+  const labelColor = isAtelier ? "#1e293b" : "#7a8296";
+
   const w = 320;
   const h = 92;
   const padX = 22;
@@ -1806,10 +1839,10 @@ export function renderAirfoilSectionSvgMarkup(
   const pivotX = (padX + design.rotor.pitch_axis_ratio * scale).toFixed(1);
 
   const elements = [
-    `<line x1="${padX}" y1="${midY}" x2="${w - padX}" y2="${midY}" stroke="#262c3a" stroke-width="1" stroke-dasharray="3 3" />`,
-    `<polygon class="airfoil-contour" points="${contourPoly}" fill="rgba(56, 189, 248, 0.14)" stroke="#38bdf8" stroke-width="1.5" />`,
-    `<path class="airfoil-camber" d="${camberPts.join(" ")}" fill="none" stroke="#7a8296" stroke-width="1" stroke-dasharray="2 2" />`,
-    `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" />`,
+    `<line x1="${padX}" y1="${midY}" x2="${w - padX}" y2="${midY}" stroke="${chordDatumColor}" stroke-width="1" stroke-dasharray="3 3" />`,
+    `<polygon class="airfoil-contour" points="${contourPoly}" fill="${contourFill}" stroke="${contourStroke}" stroke-width="1.5" />`,
+    `<path class="airfoil-camber" d="${camberPts.join(" ")}" fill="none" stroke="${camberColor}" stroke-width="1" stroke-dasharray="2 2" />`,
+    `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="${pitchColor}" stroke-width="1" stroke-dasharray="2 2" />`,
   ];
 
   const rootChordMm = Math.max(resolveStationsPreview(design)[0]?.effective_chord_mm ?? 70, 5);
@@ -1828,7 +1861,7 @@ export function renderAirfoilSectionSvgMarkup(
     const holeCy = (midY - coreYc * scale * 1.35).toFixed(1);
     const holeR = Math.max(2.2, (effRadiusMm / rootChordMm) * scale * 1.35).toFixed(1);
     elements.push(
-      `<circle class="spar-hole-circle" cx="${holeCx}" cy="${holeCy}" r="${holeR}" fill="rgba(76, 195, 138, 0.22)" stroke="#4cc38a" stroke-width="1.5" />`,
+      `<circle class="spar-hole-circle" cx="${holeCx}" cy="${holeCy}" r="${holeR}" fill="${boreFill}" stroke="${boreStroke}" stroke-width="1.5" />`,
     );
   }
 
@@ -1851,7 +1884,7 @@ export function renderAirfoilSectionSvgMarkup(
 
       if (shape === "round" || shape === "snaplock") {
         elements.push(
-          `<circle class="joint-preview" cx="${jx.toFixed(1)}" cy="${jy.toFixed(1)}" r="${ry.toFixed(1)}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+          `<circle class="joint-preview" cx="${jx.toFixed(1)}" cy="${jy.toFixed(1)}" r="${ry.toFixed(1)}" fill="${jointFill}" stroke="${pitchColor}" stroke-width="1.3" />`,
         );
       } else if (shape === "dovetail") {
         const wy = ry * 0.52;
@@ -1864,7 +1897,7 @@ export function renderAirfoilSectionSvgMarkup(
           `${(jx - rx).toFixed(1)},${(jy + ry).toFixed(1)}`,
         ].join(" ");
         elements.push(
-          `<polygon class="joint-preview" points="${pts}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+          `<polygon class="joint-preview" points="${pts}" fill="${jointFill}" stroke="${pitchColor}" stroke-width="1.3" />`,
         );
       } else if (shape === "cruciform") {
         const tl = rx * 0.38;
@@ -1884,19 +1917,19 @@ export function renderAirfoilSectionSvgMarkup(
           `${(jx - tl).toFixed(1)},${(jy + ry).toFixed(1)}`,
         ].join(" ");
         elements.push(
-          `<polygon class="joint-preview" points="${pts}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+          `<polygon class="joint-preview" points="${pts}" fill="${jointFill}" stroke="${pitchColor}" stroke-width="1.3" />`,
         );
       } else {
         elements.push(
-          `<rect class="joint-preview" x="${(jx - rx).toFixed(1)}" y="${(jy - ry).toFixed(1)}" width="${(2 * rx).toFixed(1)}" height="${(2 * ry).toFixed(1)}" fill="rgba(245, 158, 11, 0.28)" stroke="#f59e0b" stroke-width="1.3" />`,
+          `<rect class="joint-preview" x="${(jx - rx).toFixed(1)}" y="${(jy - ry).toFixed(1)}" width="${(2 * rx).toFixed(1)}" height="${(2 * ry).toFixed(1)}" fill="${jointFill}" stroke="${pitchColor}" stroke-width="1.3" />`,
         );
       }
     }
   }
 
   elements.push(
-    `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="3.8" fill="#f59e0b" stroke="#07080d" stroke-width="1.4" />`,
-    `<text x="${padX}" y="14" fill="#7a8296" font-size="10" font-family="'IBM Plex Mono', ui-monospace, monospace">${escapeHtml(label)}  [x/c ${design.rotor.pitch_axis_ratio.toFixed(2)}]</text>`,
+    `<circle class="pitch-axis-dot" cx="${pivotX}" cy="${midY}" r="3.8" fill="${pitchColor}" stroke="${dotStroke}" stroke-width="1.4" />`,
+    `<text x="${padX}" y="14" fill="${labelColor}" font-size="10" font-family="'IBM Plex Mono', ui-monospace, monospace">${escapeHtml(label)}  [x/c ${design.rotor.pitch_axis_ratio.toFixed(2)}]</text>`,
   );
 
   return elements.join("\n");
@@ -1904,6 +1937,8 @@ export function renderAirfoilSectionSvgMarkup(
 
 // ---- Full Workbench Snapshot & Auto-Save / Load Helpers ----
 
+export type UiStyleMode = "atelier" | "dark";
+export const UI_STYLE_STORAGE_KEY = "bladelab:ui-style:v1";
 export const AUTOSAVE_STORAGE_KEY = "bladelab.autosave.v1";
 export const SAVED_SLOTS_STORAGE_KEY = "bladelab.slots.v1";
 
@@ -1955,6 +1990,7 @@ export type GeneratorPresetKey =
   | "custom";
 
 export interface WorkbenchUiSnapshot {
+  ui_style?: UiStyleMode;
   planform_cosine: boolean;
   planform_center_pct: number;
   planform_width_pct: number;
@@ -2036,6 +2072,7 @@ export function defaultFabricationSnapshot(): FabricationSnapshot {
  */
 export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
   return {
+    ui_style: "atelier",
     planform_cosine: false,
     planform_center_pct: 45,
     planform_width_pct: 25,
@@ -3139,7 +3176,20 @@ export function evaluateWindSpeedCurveAndAep(
  * Renders the Multi-Wind-Speed Power Curve (`2..18 m/s`) SVG showing Mechanical
  * Power (`P_mech`), Electrical Output (`P_elec`), and Cut-In Wind Speed datum.
  */
-export function renderWindPowerCurveSvgMarkup(report: WindPowerAepReport): string {
+export function renderWindPowerCurveSvgMarkup(
+  report: WindPowerAepReport,
+  theme: UiStyleMode = "dark",
+): string {
+  const isAtelier = theme === "atelier";
+  const axisColor = isAtelier ? "rgba(29,78,216,0.18)" : "rgba(148,163,184,0.18)";
+  const midGridColor = isAtelier ? "rgba(29,78,216,0.10)" : "rgba(148,163,184,0.10)";
+  const cutInColor = isAtelier ? "#e8451e" : "#fbbf24";
+  const mechColor = isAtelier ? "#1d4ed8" : "#22d3ee";
+  const elecColor = isAtelier ? "#047857" : "#34d399";
+  const labelColor = isAtelier ? "#475569" : "#7c879b";
+  const chLineColor = isAtelier ? "#18181b" : "#f1f5f9";
+  const dotStroke = isAtelier ? "#ffffff" : "#090b10";
+
   const width = 320;
   const height = 148;
   const padL = 38;
@@ -3169,22 +3219,22 @@ export function renderWindPowerCurveSvgMarkup(report: WindPowerAepReport): strin
   const cutInX = xOf(Math.max(vMin, Math.min(vMax, report.cut_in_mps))).toFixed(1);
 
   const lines: string[] = [
-    `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="rgba(148,163,184,0.18)" stroke-width="1" />`,
-    `<line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="rgba(148,163,184,0.18)" stroke-width="1" />`,
-    `<line x1="${padL}" y1="${(padT + plotH * 0.5).toFixed(1)}" x2="${padL + plotW}" y2="${(padT + plotH * 0.5).toFixed(1)}" stroke="rgba(148,163,184,0.10)" stroke-width="1" stroke-dasharray="3 3" />`,
-    `<line x1="${cutInX}" y1="${padT}" x2="${cutInX}" y2="${padT + plotH}" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="3 2" />`,
-    `<path d="${mechPath}" fill="none" stroke="#22d3ee" stroke-width="2" />`,
-    `<path d="${elecPath}" fill="none" stroke="#34d399" stroke-width="2" />`,
-    `<text x="${Number(cutInX) + 4}" y="${padT + 10}" fill="#fbbf24" font-size="9.5" font-family="'JetBrains Mono', monospace">Cut-in ${report.cut_in_mps.toFixed(1)} m/s</text>`,
-    `<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">${Math.round(maxP)}W</text>`,
-    `<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">0W</text>`,
-    `<text x="${padL}" y="${height - 8}" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">2 m/s</text>`,
-    `<text x="${padL + plotW * 0.5}" y="${height - 8}" text-anchor="middle" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">10 m/s</text>`,
-    `<text x="${padL + plotW}" y="${height - 8}" text-anchor="end" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">18 m/s</text>`,
+    `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="${axisColor}" stroke-width="1" />`,
+    `<line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="${axisColor}" stroke-width="1" />`,
+    `<line x1="${padL}" y1="${(padT + plotH * 0.5).toFixed(1)}" x2="${padL + plotW}" y2="${(padT + plotH * 0.5).toFixed(1)}" stroke="${midGridColor}" stroke-width="1" stroke-dasharray="3 3" />`,
+    `<line x1="${cutInX}" y1="${padT}" x2="${cutInX}" y2="${padT + plotH}" stroke="${cutInColor}" stroke-width="1.2" stroke-dasharray="3 2" />`,
+    `<path d="${mechPath}" fill="none" stroke="${mechColor}" stroke-width="2" />`,
+    `<path d="${elecPath}" fill="none" stroke="${elecColor}" stroke-width="2" />`,
+    `<text x="${Number(cutInX) + 4}" y="${padT + 10}" fill="${cutInColor}" font-size="9.5" font-family="'JetBrains Mono', monospace">Cut-in ${report.cut_in_mps.toFixed(1)} m/s</text>`,
+    `<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="${labelColor}" font-size="9.5" font-family="'JetBrains Mono', monospace">${Math.round(maxP)}W</text>`,
+    `<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="${labelColor}" font-size="9.5" font-family="'JetBrains Mono', monospace">0W</text>`,
+    `<text x="${padL}" y="${height - 8}" fill="${labelColor}" font-size="9.5" font-family="'JetBrains Mono', monospace">2 m/s</text>`,
+    `<text x="${padL + plotW * 0.5}" y="${height - 8}" text-anchor="middle" fill="${labelColor}" font-size="9.5" font-family="'JetBrains Mono', monospace">10 m/s</text>`,
+    `<text x="${padL + plotW}" y="${height - 8}" text-anchor="end" fill="${labelColor}" font-size="9.5" font-family="'JetBrains Mono', monospace">18 m/s</text>`,
     `<g class="chart-crosshair" style="display:none;pointer-events:none">` +
-      `<line class="ch-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#f1f5f9" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
-      `<circle class="ch-dot-primary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#22d3ee" stroke="#090b10" stroke-width="1.4" />` +
-      `<circle class="ch-dot-secondary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#34d399" stroke="#090b10" stroke-width="1.4" />` +
+      `<line class="ch-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="${chLineColor}" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
+      `<circle class="ch-dot-primary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="${mechColor}" stroke="${dotStroke}" stroke-width="1.4" />` +
+      `<circle class="ch-dot-secondary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="${elecColor}" stroke="${dotStroke}" stroke-width="1.4" />` +
       `</g>`,
   ];
 

@@ -64,6 +64,8 @@ import {
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
   snapSpanRatioToGrid,
+  renderSectionStackSvgMarkup,
+  UI_STYLE_STORAGE_KEY,
 } from "../src/state.ts";
 import {
   BLADELAB_GIST_FILENAME,
@@ -1642,6 +1644,77 @@ test("Task 7 (/ui-taste): Focus Workbench DOM integrity, zero chrome emoji, and 
     if (!htmlIds.has(id)) {
       missingIds.push(id);
     }
+  }
+  assert.deepEqual(missingIds, [], `missing DOM IDs in index.html: ${missingIds.join(", ")}`);
+});
+
+test("Task 8: Atelier Blueprint UI style mode, dual-theme SVGs, and 4-step wizard DOM integrity", () => {
+  // 1. Default ui_style & storage key + snapshot round-trip
+  assert.equal(UI_STYLE_STORAGE_KEY, "bladelab:ui-style:v1");
+  const defWb = defaultWorkbenchUiSnapshot();
+  assert.equal(defWb.ui_style, "atelier");
+  const darkSnap = createWorkbenchSnapshot(initialDesign, {}, { ui_style: "dark" });
+  assert.equal(darkSnap.workbench.ui_style, "dark");
+
+  // 2. Dual-theme SVG generators emit Atelier Cobalt (#1d4ed8) & Vermilion (#e8451e) while preserving dark defaults
+  const sampleSweep = [
+    { tsr: 2.0, cp: 0.21, ct: 0.45, cq: 0.1, rpm: 250, power_w: 80, axial_thrust_n: 12 },
+    { tsr: 4.5, cp: 0.43, ct: 0.78, cq: 0.095, rpm: 570, power_w: 220, axial_thrust_n: 26 },
+  ];
+  const darkCpSvg = renderCpTsrSvgMarkup(sampleSweep);
+  const atelierCpSvg = renderCpTsrSvgMarkup(sampleSweep, { theme: "atelier" });
+  assert.ok(darkCpSvg.includes("#22d3ee"), "dark Cp curve must default to cyan #22d3ee");
+  assert.ok(atelierCpSvg.includes("#1d4ed8") && atelierCpSvg.includes("#e8451e"), "atelier Cp SVG must use Cobalt & Vermilion");
+
+  const sampleAep = {
+    site_avg_wind_mps: 5.5,
+    cut_in_mps: 2.8,
+    rated_mech_power_w: 380,
+    rated_elec_power_w: 320,
+    aep_kwh_yr: 410,
+    capacity_factor_pct: 18.2,
+    points: [
+      { wind_mps: 3, mech_power_w: 18, elec_power_w: 10, rpm: 200 },
+      { wind_mps: 10, mech_power_w: 380, elec_power_w: 320, rpm: 720 },
+    ],
+  };
+  const darkWindSvg = renderWindPowerCurveSvgMarkup(sampleAep);
+  const atelierWindSvg = renderWindPowerCurveSvgMarkup(sampleAep, "atelier");
+  assert.ok(darkWindSvg.includes("#22d3ee"), "dark wind curve must default to cyan");
+  assert.ok(atelierWindSvg.includes("#1d4ed8") && atelierWindSvg.includes("#047857"), "atelier wind curve must use Cobalt & Emerald");
+
+  const darkAirfoilSvg = renderAirfoilSectionSvgMarkup(initialDesign);
+  const atelierAirfoilSvg = renderAirfoilSectionSvgMarkup(initialDesign, undefined, "atelier");
+  assert.ok(darkAirfoilSvg.includes("#38bdf8"), "dark airfoil SVG must default to sky blue");
+  assert.ok(atelierAirfoilSvg.includes("#1d4ed8") && atelierAirfoilSvg.includes("#e8451e"), "atelier airfoil SVG must use Cobalt & Vermilion");
+
+  const secs = readSections(initialDesign);
+  const darkStackSvg = renderSectionStackSvgMarkup(secs, "root");
+  const atelierStackSvg = renderSectionStackSvgMarkup(secs, "root", "atelier");
+  assert.ok(darkStackSvg.includes("#f6b94d"), "dark stack SVG must default to amber root");
+  assert.ok(atelierStackSvg.includes("#1d4ed8") && atelierStackSvg.includes("#e8451e"), "atelier stack SVG must use Cobalt & Vermilion");
+
+  // 3. index.html contains Atelier Blueprint switcher, HUD, and 4-step wizard with intact .table-wrap & IDs
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
+  const mainTs = fs.readFileSync(path.resolve(__dirname, "../src/main.ts"), "utf8");
+  assert.ok(html.includes('data-ui-style="atelier"'), "body must default to data-ui-style='atelier'");
+  assert.ok(html.includes('id="ui-style-switcher"'), "top bar must include #ui-style-switcher");
+  assert.ok(html.includes('id="btn-style-atelier"'), "top bar must include #btn-style-atelier");
+  assert.ok(html.includes('id="btn-style-dark"'), "top bar must include #btn-style-dark");
+  assert.ok(html.includes('id="atelier-canvas-hud"'), "HTML must include #atelier-canvas-hud");
+  assert.ok(html.includes('id="atelier-wizard-header"'), "HTML must include #atelier-wizard-header");
+  assert.ok(html.includes('id="atelier-wizard-footer"'), "HTML must include #atelier-wizard-footer");
+  for (const stepNum of [1, 2, 3, 4]) {
+    assert.ok(html.includes(`data-wizard-step="${stepNum}"`), `HTML must include wizard step ${stepNum}`);
+  }
+  const tableWrapMatches = html.match(/^\s*\.table-wrap\s*\{/gm) || [];
+  assert.equal(tableWrapMatches.length, 1, "index.html must keep exactly 1 top-level .table-wrap rule");
+  assert.ok(!html.includes("⚙") && !html.includes("▶"), "index.html must not contain chrome emojis");
+
+  const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const missingIds = [];
+  for (const m of mainTs.matchAll(/document\.getElementById\("([^"]+)"\)/g)) {
+    if (!htmlIds.has(m[1])) missingIds.push(m[1]);
   }
   assert.deepEqual(missingIds, [], `missing DOM IDs in index.html: ${missingIds.join(", ")}`);
 });

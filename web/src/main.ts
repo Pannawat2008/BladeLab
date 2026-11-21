@@ -100,6 +100,8 @@ import {
   snapSpanRatioToGrid,
   type StructuralMaterialKey,
   type StructuralMechanicsReport,
+  UI_STYLE_STORAGE_KEY,
+  type UiStyleMode,
   updateBezierControlPoint,
   updateBladeLengthMm,
   updatePitchAxisRatio,
@@ -195,9 +197,53 @@ function setGlobalIlluminationScale(scale: number) {
 }
 setGlobalIlluminationScale(1.35);
 
-const grid = new THREE.GridHelper(1800, 36, 0x2c3648, 0x181f2b);
+let grid: THREE.GridHelper = new THREE.GridHelper(1800, 36, 0x93c5fd, 0xd8d3c6);
 grid.position.y = -120;
 scene.add(grid);
+
+let activeUiStyle: UiStyleMode =
+  typeof localStorage !== "undefined" && localStorage.getItem(UI_STYLE_STORAGE_KEY) === "dark"
+    ? "dark"
+    : "atelier";
+let atelierStep: 1 | 2 | 3 | 4 = 1;
+let atelierSheetHidden = false;
+let lastShapeSectionId = "layer1-distributions";
+
+function applySceneTheme(style: UiStyleMode) {
+  const isAtelier = style === "atelier";
+  scene.background = new THREE.Color(isAtelier ? 0xf4f2ec : 0x090b10);
+  scene.remove(grid);
+  grid.geometry.dispose();
+  if (Array.isArray(grid.material)) {
+    grid.material.forEach((m) => m.dispose());
+  } else {
+    grid.material.dispose();
+  }
+  grid = new THREE.GridHelper(
+    1800,
+    36,
+    isAtelier ? 0x93c5fd : 0x2c3648,
+    isAtelier ? 0xd8d3c6 : 0x181f2b,
+  );
+  grid.position.y = -120;
+  scene.add(grid);
+}
+
+function updateCameraViewportOffset() {
+  if (
+    activeUiStyle === "atelier" &&
+    document.body.getAttribute("data-studio-mode") !== "gearbox" &&
+    !document.body.classList.contains("studio-gearbox-mode") &&
+    !atelierSheetHidden &&
+    innerWidth > 1180
+  ) {
+    const railW = innerWidth <= 1359 ? 344 : 376;
+    const offsetX = Math.round((railW + 10) / 2);
+    camera.setViewOffset(innerWidth, innerHeight, offsetX, 0, innerWidth, innerHeight);
+  } else {
+    camera.clearViewOffset();
+  }
+}
 
 // ---- DOM elements ----
 const btnUndo = document.getElementById("btn-undo") as HTMLButtonElement;
@@ -215,6 +261,21 @@ const btnCamTop = document.getElementById("btn-cam-top") as HTMLButtonElement;
 const btnCamTip = document.getElementById("btn-cam-tip") as HTMLButtonElement;
 
 const btnExportMain = document.getElementById("btn-export-main") as HTMLButtonElement | null;
+const btnStyleAtelier = document.getElementById("btn-style-atelier") as HTMLButtonElement | null;
+const btnStyleDark = document.getElementById("btn-style-dark") as HTMLButtonElement | null;
+const atelierHudSpec = document.getElementById("atelier-hud-spec");
+const atelierHudCp = document.getElementById("atelier-hud-cp");
+const atelierHudPower = document.getElementById("atelier-hud-power");
+const atelierHudMs = document.getElementById("atelier-hud-ms");
+const atelierWizardHeader = document.getElementById("atelier-wizard-header");
+const atelierWizardFooter = document.getElementById("atelier-wizard-footer");
+const atelierStepTitle = document.getElementById("atelier-step-title");
+const atelierWizardProgress = document.getElementById("atelier-wizard-progress");
+const btnWizardPrev = document.getElementById("btn-wizard-prev") as HTMLButtonElement | null;
+const btnWizardNext = document.getElementById("btn-wizard-next") as HTMLButtonElement | null;
+const wizardStepButtons = document.querySelectorAll<HTMLButtonElement>(
+  "#atelier-wizard-steps button[data-wizard-step]",
+);
 const exportDropdownMenu = document.getElementById("export-dropdown-menu");
 const selectExportPart = document.getElementById("export-part") as HTMLSelectElement;
 const btnExportStl = document.getElementById("btn-export-stl") as HTMLButtonElement;
@@ -862,6 +923,7 @@ function updateFabricationStatus(design: Design) {
           jointLengthMm: Number.parseFloat(inputAlignKeyLength.value) || 6.0,
         }
       : undefined,
+    activeUiStyle,
   );
 }
 
@@ -1194,6 +1256,9 @@ function updateGearboxHud(gearIdx: number | null) {
   if (hudRotorSpec) {
     hudRotorSpec.textContent = datumText;
   }
+  if (atelierHudSpec) {
+    atelierHudSpec.textContent = datumText;
+  }
 }
 
 function selectGear(gearIdx: 1 | 2 | 3 | null, openInspector: boolean = true) {
@@ -1408,7 +1473,7 @@ function rebuild3D(design: Design) {
       ? new THREE.LineBasicMaterial({
           color: 0x0f172a,
           transparent: true,
-          opacity: 0.36,
+          opacity: activeUiStyle === "atelier" ? 0.42 : 0.36,
         })
       : null;
 
@@ -1441,7 +1506,7 @@ function rebuild3D(design: Design) {
     }
 
     const bladeMaterial = new THREE.MeshStandardMaterial({
-      color: useHeatmap ? 0xffffff : 0x3b82f6,
+      color: useHeatmap ? 0xffffff : activeUiStyle === "atelier" ? 0x2563eb : 0x3b82f6,
       vertexColors: useHeatmap,
       metalness: 0.16,
       roughness: 0.38,
@@ -1466,7 +1531,9 @@ function rebuild3D(design: Design) {
         ),
     );
     const lineGeo = new THREE.BufferGeometry().setFromPoints(axisPoints);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b });
+    const lineMat = new THREE.LineBasicMaterial({
+      color: activeUiStyle === "atelier" ? 0xe8451e : 0xf59e0b,
+    });
 
     const holeDia = Math.max(0.5, Number.parseFloat(inputSparHoleDiameter.value) || 5.0);
     const holeDepth = Math.max(5, Number.parseFloat(inputSparHoleDepth.value) || 240);
@@ -1577,7 +1644,7 @@ function rebuild3D(design: Design) {
       hubGeo.translate(0, hubLen / 2 + hubYOffset, 0);
 
       const hubMat = new THREE.MeshStandardMaterial({
-        color: 0x64748b,
+        color: activeUiStyle === "atelier" ? 0x334155 : 0x64748b,
         metalness: 0.45,
         roughness: 0.35,
         wireframe: wireframeMode,
@@ -1661,6 +1728,12 @@ function updateAeroPanel(design: Design) {
     }
     kpiPeakCp.textContent = `${bundle.peak_cp.toFixed(2)} @λ${bundle.peak_tsr.toFixed(1)}`;
     kpiPower.textContent = `${bundle.design_point.power_w.toFixed(1)} W`;
+    if (atelierHudCp) {
+      atelierHudCp.textContent = bundle.design_point.cp.toFixed(2);
+    }
+    if (atelierHudPower) {
+      atelierHudPower.textContent = `${bundle.design_point.power_w.toFixed(0)} W`;
+    }
     if (
       optStatusEl &&
       (!optStatusEl.textContent || optStatusEl.textContent.startsWith("Ready"))
@@ -1724,7 +1797,7 @@ function updateAeroPanel(design: Design) {
     latestAepReport = aepReport;
     aepCutinBadge.textContent = `Cut-in ${aepReport.cut_in_mps.toFixed(1)} m/s`;
     kpiAepKwh.textContent = `${aepReport.aep_kwh_yr.toFixed(0)} kWh/yr`;
-    windPowerSvg.innerHTML = renderWindPowerCurveSvgMarkup(aepReport);
+    windPowerSvg.innerHTML = renderWindPowerCurveSvgMarkup(aepReport, activeUiStyle);
     aepSummary.textContent = `Rated @12 m/s: ${aepReport.rated_elec_power_w.toFixed(
       0,
     )} W elec (${aepReport.rated_mech_power_w.toFixed(
@@ -1802,6 +1875,7 @@ function updateAeroPanel(design: Design) {
       baselineASweep: baselineBundleA ? baselineBundleA.sweep : null,
       experimentalPoints: expPoints,
       designTsr: design.rotor.design_tsr,
+      theme: activeUiStyle,
     });
   } catch (err) {
     aeroSummary.textContent = `Aero error: ${String(err)}`;
@@ -1822,6 +1896,9 @@ function updateStats(
   ms.className = elapsed < 50 ? "ok" : "slow";
   if (hudMeshMs) {
     hudMeshMs.textContent = `${elapsed.toFixed(1)} ms`;
+  }
+  if (atelierHudMs) {
+    atelierHudMs.textContent = `${elapsed.toFixed(1)} ms`;
   }
   document.getElementById("tris")!.textContent = String(data.triangle_count);
   document.getElementById("vol")!.textContent = data.volume_mm3.toFixed(0);
@@ -1944,7 +2021,7 @@ function renderSectionsPanel(design: Design) {
       : "";
   for (const r of [secChord, secTwist, secThick]) setRangeFill(r);
 
-  secStack.innerHTML = renderSectionStackSvgMarkup(sections, activeSection);
+  secStack.innerHTML = renderSectionStackSvgMarkup(sections, activeSection, activeUiStyle);
 }
 
 function commitSectionAirfoil() {
@@ -2018,6 +2095,9 @@ function syncControlsFromDesign(design: Design) {
   rotorSummary.textContent = `R ${rotor.radius_mm} · L ${bladeLenMm.toFixed(0)} · ${rotor.blade_count}B`;
   if (hudRotorSpec) {
     hudRotorSpec.textContent = `R ${rotor.radius_mm} · L ${bladeLenMm.toFixed(0)} mm · ${rotor.blade_count}B`;
+  }
+  if (atelierHudSpec) {
+    atelierHudSpec.textContent = `R ${rotor.radius_mm} · L ${bladeLenMm.toFixed(0)} mm · ${rotor.blade_count}B`;
   }
   inputRadius.value = String(rotor.radius_mm);
   inputHubRadius.value = String(rotor.hub_radius_mm);
@@ -2141,12 +2221,20 @@ function renderBezierEditor(design: Design) {
   }
   const polyPts = pts.map((p) => `${toSvgX(p.x).toFixed(1)},${toSvgY(p.y).toFixed(1)}`).join(" ");
 
+  const isAtelier = activeUiStyle === "atelier";
+  const bezPolyColor = isAtelier ? "#cbd5e1" : "#262c3a";
+  const bezCurveColor = isAtelier ? "#1d4ed8" : "#38bdf8";
+  const bezEndColor = isAtelier ? "#e8451e" : "#f59e0b";
+  const bezMidColor = isAtelier ? "#1d4ed8" : "#38bdf8";
+  const bezStrokeColor = isAtelier ? "#ffffff" : "#07080d";
+
   const pathD = samples.join(" ");
   const existingPoly = bezierSvg.querySelector<SVGPolylineElement>("polyline[data-bezier-poly]");
   const existingPath = bezierSvg.querySelector<SVGPathElement>("path[data-bezier-curve]");
   const existingCircles = bezierSvg.querySelectorAll<SVGCircleElement>("circle[data-bezier-pt]");
+  const themeMatches = bezierSvg.dataset.theme === activeUiStyle;
 
-  if (existingPoly && existingPath && existingCircles.length === pts.length) {
+  if (existingPoly && existingPath && existingCircles.length === pts.length && themeMatches) {
     // Update SVG elements in place so pointer capture on dragged <circle> is never destroyed!
     existingPoly.setAttribute("points", polyPts);
     existingPath.setAttribute("d", pathD);
@@ -2154,9 +2242,10 @@ function renderBezierEditor(design: Design) {
       const circle = existingCircles[idx]!;
       circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
       circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
-      circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? "#f59e0b" : "#38bdf8");
+      circle.setAttribute("fill", idx === 0 || idx === pts.length - 1 ? bezEndColor : bezMidColor);
     });
   } else {
+    bezierSvg.dataset.theme = activeUiStyle;
     bezierSvg.innerHTML = "";
     const svgNs = "http://www.w3.org/2000/svg";
 
@@ -2164,7 +2253,7 @@ function renderBezierEditor(design: Design) {
     polyline.setAttribute("data-bezier-poly", "1");
     polyline.setAttribute("points", polyPts);
     polyline.setAttribute("fill", "none");
-    polyline.setAttribute("stroke", "#262c3a");
+    polyline.setAttribute("stroke", bezPolyColor);
     polyline.setAttribute("stroke-width", "1");
     polyline.setAttribute("stroke-dasharray", "3 3");
     bezierSvg.appendChild(polyline);
@@ -2173,7 +2262,7 @@ function renderBezierEditor(design: Design) {
     curvePath.setAttribute("data-bezier-curve", "1");
     curvePath.setAttribute("d", pathD);
     curvePath.setAttribute("fill", "none");
-    curvePath.setAttribute("stroke", "#38bdf8");
+    curvePath.setAttribute("stroke", bezCurveColor);
     curvePath.setAttribute("stroke-width", "2");
     bezierSvg.appendChild(curvePath);
 
@@ -2184,8 +2273,8 @@ function renderBezierEditor(design: Design) {
       circle.setAttribute("cx", toSvgX(pt.x).toFixed(1));
       circle.setAttribute("cy", toSvgY(pt.y).toFixed(1));
       circle.setAttribute("r", "5");
-      circle.setAttribute("fill", idx === 0 || idx === ptCount - 1 ? "#f59e0b" : "#38bdf8");
-      circle.setAttribute("stroke", "#07080d");
+      circle.setAttribute("fill", idx === 0 || idx === ptCount - 1 ? bezEndColor : bezMidColor);
+      circle.setAttribute("stroke", bezStrokeColor);
       circle.setAttribute("stroke-width", "1.5");
       circle.style.cursor = "grab";
 
@@ -2459,6 +2548,7 @@ function applyFabricationSnapshotToDom(fab: FabricationSnapshot) {
 
 function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
   return {
+    ui_style: activeUiStyle,
     planform_cosine: planformCosine,
     planform_center_pct: Number.parseFloat(sliderPlanformCenter.value) || 45,
     planform_width_pct: Number.parseFloat(sliderPlanformWidth.value) || 25,
@@ -2597,6 +2687,10 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
     if (hudRotorSpec) {
       hudRotorSpec.textContent = `R ${r} · L ${l.toFixed(0)} mm · ${workingDesign.rotor.blade_count}B`;
     }
+    if (atelierHudSpec) {
+      atelierHudSpec.textContent = `R ${r} · L ${l.toFixed(0)} mm · ${workingDesign.rotor.blade_count}B`;
+    }
+    updateCameraViewportOffset();
     syncDockAccessibilityState();
     syncTopDockOffset();
   }
@@ -2766,7 +2860,11 @@ function setStudioMode(mode: "blade" | "gearbox") {
     if (hudRotorSpec) {
       hudRotorSpec.textContent = `R ${r} · L ${l.toFixed(0)} mm · ${workingDesign.rotor.blade_count}B`;
     }
+    if (atelierHudSpec) {
+      atelierHudSpec.textContent = `R ${r} · L ${l.toFixed(0)} mm · ${workingDesign.rotor.blade_count}B`;
+    }
   }
+  updateCameraViewportOffset();
   syncDockAccessibilityState();
   syncTopDockOffset();
   scheduleAutoSave();
@@ -3476,7 +3574,10 @@ btnExportMain?.addEventListener("click", (ev) => {
 
 document.addEventListener("click", (ev) => {
   if (exportDropdownMenu?.classList.contains("open")) {
-    if (!exportDropdownMenu.contains(ev.target as Node) && ev.target !== btnExportMain) {
+    const t = ev.target as Node;
+    const fromExportBtn = t === btnExportMain || Boolean(btnExportMain?.contains(t));
+    const fromWizardNext = t === btnWizardNext || Boolean(btnWizardNext?.contains(t));
+    if (!exportDropdownMenu.contains(t) && !fromExportBtn && !fromWizardNext) {
       exportDropdownMenu.classList.remove("open");
       btnExportMain?.setAttribute("aria-expanded", "false");
     }
@@ -5068,12 +5169,6 @@ syncTopDockOffset();
 function syncDockAccessibilityState() {
   const isMobileLayout = innerWidth <= 1180;
   const mobilePane = document.body.getAttribute("data-mobile-pane") || "cad";
-  const leftHidden = isMobileLayout
-    ? mobilePane !== "cad"
-    : document.body.classList.contains("hide-left-dock");
-  const rightHidden = isMobileLayout
-    ? mobilePane !== "aero"
-    : document.body.classList.contains("hide-right-dock");
 
   if (studioMode === "gearbox") {
     if (panelEl) {
@@ -5084,6 +5179,14 @@ function syncDockAccessibilityState() {
       aeroDockEl.inert = true;
       aeroDockEl.setAttribute("aria-hidden", "true");
     }
+    if (atelierWizardHeader) {
+      (atelierWizardHeader as any).inert = true;
+      atelierWizardHeader.setAttribute("aria-hidden", "true");
+    }
+    if (atelierWizardFooter) {
+      (atelierWizardFooter as any).inert = true;
+      atelierWizardFooter.setAttribute("aria-hidden", "true");
+    }
     if (gearboxInspector) {
       const open = gearboxInspector.classList.contains("open");
       (gearboxInspector as any).inert = !open;
@@ -5092,6 +5195,53 @@ function syncDockAccessibilityState() {
     return;
   }
 
+  if (gearboxInspector) {
+    (gearboxInspector as any).inert = true;
+    gearboxInspector.setAttribute("aria-hidden", "true");
+  }
+
+  if (activeUiStyle === "atelier") {
+    const sheetHidden = isMobileLayout ? mobilePane === "canvas" : atelierSheetHidden;
+    const isStepAero = atelierStep === 3;
+    if (atelierWizardHeader) {
+      (atelierWizardHeader as any).inert = sheetHidden;
+      atelierWizardHeader.setAttribute("aria-hidden", String(sheetHidden));
+    }
+    if (atelierWizardFooter) {
+      (atelierWizardFooter as any).inert = sheetHidden;
+      atelierWizardFooter.setAttribute("aria-hidden", String(sheetHidden));
+    }
+    if (panelEl) {
+      const hidePanel = sheetHidden || isStepAero;
+      panelEl.inert = hidePanel;
+      panelEl.setAttribute("aria-hidden", String(hidePanel));
+    }
+    if (aeroDockEl) {
+      const hideAero = sheetHidden || !isStepAero;
+      aeroDockEl.inert = hideAero;
+      aeroDockEl.setAttribute("aria-hidden", String(hideAero));
+    }
+    btnZen3d?.classList.toggle("active", atelierSheetHidden);
+    btnZen3d?.setAttribute("aria-pressed", String(atelierSheetHidden));
+    return;
+  }
+
+  if (atelierWizardHeader) {
+    (atelierWizardHeader as any).inert = true;
+    atelierWizardHeader.setAttribute("aria-hidden", "true");
+  }
+  if (atelierWizardFooter) {
+    (atelierWizardFooter as any).inert = true;
+    atelierWizardFooter.setAttribute("aria-hidden", "true");
+  }
+
+  const leftHidden = isMobileLayout
+    ? mobilePane !== "cad"
+    : document.body.classList.contains("hide-left-dock");
+  const rightHidden = isMobileLayout
+    ? mobilePane !== "aero"
+    : document.body.classList.contains("hide-right-dock");
+
   if (panelEl) {
     panelEl.inert = leftHidden;
     panelEl.setAttribute("aria-hidden", String(leftHidden));
@@ -5099,10 +5249,6 @@ function syncDockAccessibilityState() {
   if (aeroDockEl) {
     aeroDockEl.inert = rightHidden;
     aeroDockEl.setAttribute("aria-hidden", String(rightHidden));
-  }
-  if (gearboxInspector) {
-    (gearboxInspector as any).inert = true;
-    gearboxInspector.setAttribute("aria-hidden", "true");
   }
 
   btnToggleLeft?.classList.toggle("active", !leftHidden);
@@ -5128,6 +5274,14 @@ btnToggleRight?.addEventListener("click", () => {
 });
 
 btnZen3d?.addEventListener("click", () => {
+  if (activeUiStyle === "atelier") {
+    atelierSheetHidden = !atelierSheetHidden;
+    document.body.classList.toggle("atelier-sheet-hidden", atelierSheetHidden);
+    updateCameraViewportOffset();
+    syncDockAccessibilityState();
+    syncTopDockOffset();
+    return;
+  }
   const bothHidden =
     document.body.classList.contains("hide-left-dock") &&
     document.body.classList.contains("hide-right-dock");
@@ -5145,6 +5299,7 @@ function bindDockSectionNav(
   navSelector: string,
   scrollContainerEl: HTMLElement | null,
   sectionIds: readonly string[],
+  onActivate?: (targetId: string) => void,
 ) {
   const navButtons = document.querySelectorAll<HTMLButtonElement>(
     `${navSelector} button[data-scroll-target]`,
@@ -5175,6 +5330,7 @@ function bindDockSectionNav(
     if (scrollContainerEl) {
       scrollContainerEl.scrollTop = 0;
     }
+    onActivate?.(targetId);
   }
 
   navButtons.forEach((btn) => {
@@ -5187,16 +5343,33 @@ function bindDockSectionNav(
   if (sectionIds[0]) {
     activateSectionTab(sectionIds[0]);
   }
+  return { activateSectionTab };
 }
 
-bindDockSectionNav("#panel-section-nav", panelScrollContainer, [
-  "layer1-rotor",
+const SHAPE_SECTION_IDS = new Set([
   "layer1-distributions",
   "layer2-planform",
   "layer2-sections",
-  "layer-fabrication",
   "layer3-stations",
 ]);
+
+const { activateSectionTab: activatePanelSectionTab } = bindDockSectionNav(
+  "#panel-section-nav",
+  panelScrollContainer,
+  [
+    "layer1-rotor",
+    "layer1-distributions",
+    "layer2-planform",
+    "layer2-sections",
+    "layer-fabrication",
+    "layer3-stations",
+  ],
+  (targetId) => {
+    if (SHAPE_SECTION_IDS.has(targetId)) {
+      lastShapeSectionId = targetId;
+    }
+  },
+);
 
 bindDockSectionNav("#aero-section-nav", aeroScrollContainer, [
   "layer-aero",
@@ -5204,6 +5377,120 @@ bindDockSectionNav("#aero-section-nav", aeroScrollContainer, [
   "layer-aero-struct",
   "layer-aero-cloud",
 ]);
+
+const STEP_TITLE_MAP: Record<1 | 2 | 3 | 4, string> = {
+  1: "01 WIND",
+  2: "02 SHAPE",
+  3: "03 AERO",
+  4: "04 PRINT",
+};
+
+function setAtelierWizardStep(step: 1 | 2 | 3 | 4) {
+  atelierStep = step;
+  document.body.setAttribute("data-atelier-step", String(step));
+  wizardStepButtons.forEach((btn) => {
+    const btnStep = Number(btn.dataset.wizardStep);
+    const active = btnStep === step;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", String(active));
+  });
+  if (atelierStepTitle) {
+    atelierStepTitle.textContent = STEP_TITLE_MAP[step];
+  }
+  if (atelierWizardProgress) {
+    atelierWizardProgress.textContent = `STEP ${step}/4`;
+  }
+  if (btnWizardPrev) {
+    btnWizardPrev.disabled = step === 1;
+  }
+  if (btnWizardNext) {
+    const isLast = step === 4;
+    btnWizardNext.textContent = isLast ? "EXPORT ✓" : "NEXT →";
+    btnWizardNext.classList.toggle("is-export", isLast);
+  }
+
+  if (step === 1) {
+    activatePanelSectionTab("layer1-rotor");
+  } else if (step === 2) {
+    activatePanelSectionTab(lastShapeSectionId);
+  } else if (step === 4) {
+    activatePanelSectionTab("layer-fabrication");
+  }
+
+  const curMobPane = document.body.getAttribute("data-mobile-pane") || "cad";
+  if (curMobPane !== "canvas") {
+    const nextMobPane = step === 3 ? "aero" : "cad";
+    document.body.setAttribute("data-mobile-pane", nextMobPane);
+    mobileNavButtons.forEach((b) => {
+      const isAct = (b.dataset.mobileTarget || "cad") === nextMobPane;
+      b.classList.toggle("active", isAct);
+      b.setAttribute("aria-pressed", String(isAct));
+    });
+  }
+  syncDockAccessibilityState();
+}
+
+function applyUiStyle(
+  style: UiStyleMode,
+  options: { persist?: boolean; rerender?: boolean } = {},
+) {
+  activeUiStyle = style;
+  document.body.setAttribute("data-ui-style", style);
+  const isAtelier = style === "atelier";
+  btnStyleAtelier?.classList.toggle("active", isAtelier);
+  btnStyleAtelier?.setAttribute("aria-pressed", String(isAtelier));
+  btnStyleDark?.classList.toggle("active", !isAtelier);
+  btnStyleDark?.setAttribute("aria-pressed", String(!isAtelier));
+
+  if (options.persist !== false && typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(UI_STYLE_STORAGE_KEY, style);
+    } catch {
+      // Ignore storage quota errors
+    }
+  }
+
+  applySceneTheme(style);
+  if (isAtelier) {
+    setAtelierWizardStep(atelierStep);
+  }
+  updateCameraViewportOffset();
+  syncDockAccessibilityState();
+  syncTopDockOffset();
+
+  if (options.rerender !== false) {
+    rebuild3D(workingDesign);
+    renderBezierEditor(workingDesign);
+  }
+}
+
+btnStyleAtelier?.addEventListener("click", () => applyUiStyle("atelier"));
+btnStyleDark?.addEventListener("click", () => applyUiStyle("dark"));
+
+wizardStepButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const nextStep = Number(btn.dataset.wizardStep);
+    if (nextStep >= 1 && nextStep <= 4) {
+      setAtelierWizardStep(nextStep as 1 | 2 | 3 | 4);
+    }
+  });
+});
+
+btnWizardPrev?.addEventListener("click", () => {
+  if (atelierStep > 1) {
+    setAtelierWizardStep((atelierStep - 1) as 1 | 2 | 3 | 4);
+  }
+});
+
+btnWizardNext?.addEventListener("click", (ev) => {
+  if (atelierStep < 4) {
+    setAtelierWizardStep((atelierStep + 1) as 1 | 2 | 3 | 4);
+  } else {
+    ev.stopPropagation();
+    const isOpen = exportDropdownMenu?.classList.toggle("open");
+    btnExportMain?.setAttribute("aria-expanded", String(Boolean(isOpen)));
+  }
+});
 
 // Collapsible section toggle buttons with aria-expanded state
 document.querySelectorAll<HTMLButtonElement>("button[data-collapse-section]").forEach((toggleBtn) => {
@@ -5225,6 +5512,13 @@ mobileNavButtons.forEach((btn) => {
       b.classList.toggle("active", isAct);
       b.setAttribute("aria-pressed", String(isAct));
     });
+    if (activeUiStyle === "atelier") {
+      if (targetPane === "aero") {
+        setAtelierWizardStep(3);
+      } else if (targetPane === "cad" && atelierStep === 3) {
+        setAtelierWizardStep(1);
+      }
+    }
     syncDockAccessibilityState();
   });
 });
@@ -5247,7 +5541,13 @@ addEventListener("keydown", (event) => {
     event.preventDefault();
     performRedo();
   } else if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    if (event.key === "[") {
+    if (activeUiStyle === "atelier" && (event.key === "[" || event.key === "]")) {
+      atelierSheetHidden = !atelierSheetHidden;
+      document.body.classList.toggle("atelier-sheet-hidden", atelierSheetHidden);
+      updateCameraViewportOffset();
+      syncDockAccessibilityState();
+      syncTopDockOffset();
+    } else if (event.key === "[") {
       document.body.classList.toggle("hide-left-dock");
       syncDockAccessibilityState();
       syncTopDockOffset();
@@ -5370,6 +5670,7 @@ addEventListener("keydown", (event) => {
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  updateCameraViewportOffset();
   renderer.setSize(innerWidth, innerHeight);
   syncTopDockOffset();
   syncDockAccessibilityState();
@@ -5378,6 +5679,8 @@ addEventListener("resize", () => {
 addEventListener("beforeunload", () => {
   flushAutoSaveNow("Auto-saved");
 });
+
+applyUiStyle(activeUiStyle, { persist: false, rerender: false });
 
 // ---- Startup Restore (Auto-Save, Saved Slots & ?gist= URL param) ----
 savedSlots = loadSavedSlotsFromStorage();
