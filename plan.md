@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-21 17:08 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-21 17:40 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -1063,3 +1063,5 @@ note="user reported: 'now the model export as Step are also has ripple rought se
 [ACK] 2026-11-21T17:00:00+07:00 agent=geom-1 mem=v106 last_entry=F-geom1-076 task=T-105
 [ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-076 (Nose Cone Manifold-3D CSG rebuild). Implementing v2.1 thin-wall hollow dome + ribbed M3 bosses, Blade-tab STL export alignment fix, Rear Fit inspection clarity, and deployment verification.
 [END] 2026-11-21T17:08:00+07:00 agent=geom-1 mem=v107 note="Nose Cone Studio v2.1 done: thin-wall self-supporting hollow dome + 3x integral ribbed M3 bosses (~50-64% mass reduction: Kidwind4 Ø60 105.7g->51.7-52.8g, Auto-Match Ø120 587.8g->214.2g), Blade-tab STL export alignment fix (buildNoseBladeMeshInputForConfig), Rear Fit clarity (0.62 slide, 0.45 ghost hub), 1Solid-v2 header; verified lint/typecheck/29/29 tests/vite build (407ms) and 7 Chrome captures (0 errors, 0 overflows); F-geom1-077 recorded"
+[ACK] 2026-11-21T17:40:00+07:00 agent=geom-1 mem=v107 last_entry=F-geom1-077 task=T-105
+[ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-077 (Nose Cone v2.1). Integrating Manifold-3D swept blade-root fairings (Delta Strake default, Root Boot, Twist Fillet, Off) with Fairing Span & Curve Blend sliders across web/src/nosecone.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs.
