@@ -1618,6 +1618,35 @@ test("Task 6: CSS design tokens/classes, hub diameter sync, WASM fabricated STEP
   );
 });
 
+test("Task 7 (/ui-taste): Focus Workbench DOM integrity, zero chrome emoji, and focused tab layout", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
+  const mainTs = fs.readFileSync(path.resolve(__dirname, "../src/main.ts"), "utf8");
+
+  // 1. Zero chrome emoji glyphs in UI markup (inline stroke SVGs only)
+  assert.ok(!html.includes("⚙"), "index.html must not contain ⚙ emoji in chrome");
+  assert.ok(!html.includes("▶"), "index.html must not contain ▶ emoji in chrome");
+
+  // 2. Focus Workbench architectural containers exist
+  assert.ok(html.includes('id="viewport-stage-bar"'), "index.html must include floating bottom #viewport-stage-bar");
+  assert.ok(html.includes('id="rotor-radius-slider"'), "index.html must include #rotor-radius-slider");
+  assert.ok(html.includes('id="rotor-hub-slider"'), "index.html must include #rotor-hub-slider");
+  assert.ok(html.includes('id="rotor-blades-slider"'), "index.html must include #rotor-blades-slider");
+  assert.ok(html.includes('id="hud-mesh-ms"'), "index.html must include #hud-mesh-ms in datum pill");
+  assert.ok(html.includes("tab-active"), "focused section tabs must use .tab-active single-pane display");
+
+  // 3. Every static document.getElementById("...") in main.ts resolves to a real id in index.html
+  const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const missingIds = [];
+  for (const m of mainTs.matchAll(/document\.getElementById\("([^"]+)"\)/g)) {
+    const id = m[1];
+    if (!htmlIds.has(id)) {
+      missingIds.push(id);
+    }
+  }
+  assert.deepEqual(missingIds, [], `missing DOM IDs in index.html: ${missingIds.join(", ")}`);
+});
+
+
 
 
 

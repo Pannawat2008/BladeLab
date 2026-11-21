@@ -136,7 +136,7 @@ let workingDesign: Design = history.current();
 
 // ---- scene ----
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0c0f14);
+scene.background = new THREE.Color(0x090b10);
 
 const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 1, 10000);
 camera.position.set(420, 320, 820);
@@ -242,6 +242,9 @@ const rotorSummary = document.getElementById("rotor-summary")!;
 const inputRadius = document.getElementById("rotor-radius") as HTMLInputElement;
 const inputHubRadius = document.getElementById("rotor-hub-radius") as HTMLInputElement;
 const inputBlades = document.getElementById("rotor-blades") as HTMLInputElement;
+const sliderRotorRadius = document.getElementById("rotor-radius-slider") as HTMLInputElement | null;
+const sliderRotorHub = document.getElementById("rotor-hub-slider") as HTMLInputElement | null;
+const sliderRotorBlades = document.getElementById("rotor-blades-slider") as HTMLInputElement | null;
 const inputTsr = document.getElementById("rotor-tsr") as HTMLInputElement;
 const inputWind = document.getElementById("rotor-wind") as HTMLInputElement;
 const inputStations = document.getElementById("rotor-stations") as HTMLInputElement;
@@ -249,6 +252,7 @@ const inputBladeLength = document.getElementById("rotor-blade-length") as HTMLIn
 const inputPitchAxis = document.getElementById("rotor-pitch-axis") as HTMLInputElement;
 const sliderBladeLength = document.getElementById("rotor-length-slider") as HTMLInputElement;
 const bladeLengthVal = document.getElementById("blade-length-val")!;
+const hudMeshMs = document.getElementById("hud-mesh-ms");
 const sliderChordOffsetX = document.getElementById("chord-offset-x") as HTMLInputElement;
 const chordOffsetXVal = document.getElementById("chord-offset-x-val")!;
 const sliderChordOffsetY = document.getElementById("chord-offset-y") as HTMLInputElement;
@@ -411,6 +415,9 @@ const hudRotorSpec = document.getElementById("hud-rotor-spec");
 const cpTsrSvg = document.getElementById("cp-tsr-svg") as unknown as SVGSVGElement;
 const cpTsrHoverReadout = document.getElementById("cp-tsr-hover-readout");
 const bemSecMeta = document.getElementById("bem-sec-meta");
+const selectOptObjective = document.getElementById("opt-objective") as HTMLSelectElement;
+const btnAutoOptimize = document.getElementById("btn-auto-optimize") as HTMLButtonElement;
+const optStatusEl = document.getElementById("opt-status")!;
 const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
 const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
 const abDeltaSummary = document.getElementById("ab-delta-summary")!;
@@ -594,8 +601,14 @@ function applyWingletConfigToDom(cfg?: WingletConfig) {
 function setCollectivePitch(deg: number, triggerRebuild = true) {
   collectivePitchDeg = Math.max(-10, Math.min(35, Math.round(deg * 2) / 2));
   const valStr = `${collectivePitchDeg >= 0 ? "+" : ""}${collectivePitchDeg.toFixed(1)}°`;
-  if (inputRotorCollectivePitch) inputRotorCollectivePitch.value = String(collectivePitchDeg);
-  if (inputTbCollectivePitch) inputTbCollectivePitch.value = String(collectivePitchDeg);
+  if (inputRotorCollectivePitch) {
+    inputRotorCollectivePitch.value = String(collectivePitchDeg);
+    setRangeFill(inputRotorCollectivePitch);
+  }
+  if (inputTbCollectivePitch) {
+    inputTbCollectivePitch.value = String(collectivePitchDeg);
+    setRangeFill(inputTbCollectivePitch);
+  }
   if (rotorCollectivePitchVal) rotorCollectivePitchVal.textContent = valStr;
   if (collectivePitchBadge) collectivePitchBadge.textContent = valStr;
   if (tbPitchVal) tbPitchVal.textContent = valStr;
@@ -1134,7 +1147,7 @@ function updateGearboxPanelUi(): GearboxConfig {
   }
   if (btnGearbox3dView) {
     btnGearbox3dView.textContent =
-      viewMode === "gearbox" ? "Viewing 3D Gearbox (Switch to Rotor)" : "Show Gearbox in 3D Viewport";
+      viewMode === "gearbox" ? "3D: Gearbox (Switch to Rotor)" : "Show Gearbox in 3D";
   }
   if (gearboxMetricsReadout) {
     const centerInfo =
@@ -1196,13 +1209,13 @@ function selectGear(gearIdx: 1 | 2 | 3 | null, openInspector: boolean = true) {
   // Update badge in inspector header
   if (gearInspectorActiveBadge) {
     if (gearIdx === 1) {
-      gearInspectorActiveBadge.textContent = "Gear 1: Bull Gear (Z1)";
+      gearInspectorActiveBadge.textContent = "G1 · Bull";
       gearInspectorActiveBadge.style.color = "#8fd9b6";
     } else if (gearIdx === 2) {
-      gearInspectorActiveBadge.textContent = "Gear 2: Compound (Z2)";
+      gearInspectorActiveBadge.textContent = "G2 · Compound";
       gearInspectorActiveBadge.style.color = "#b84ba1";
     } else if (gearIdx === 3) {
-      gearInspectorActiveBadge.textContent = "Gear 3: Pinion (Z3)";
+      gearInspectorActiveBadge.textContent = "G3 · Pinion";
       gearInspectorActiveBadge.style.color = "#38bdf8";
     } else {
       gearInspectorActiveBadge.textContent = "All Gears";
@@ -1646,14 +1659,21 @@ function updateAeroPanel(design: Design) {
     if (kpiBetzBar) {
       kpiBetzBar.style.width = `${betzPct.toFixed(1)}%`;
     }
-    kpiPeakCp.textContent = `${bundle.peak_cp.toFixed(3)} @${bundle.peak_tsr.toFixed(1)}`;
+    kpiPeakCp.textContent = `${bundle.peak_cp.toFixed(2)} @λ${bundle.peak_tsr.toFixed(1)}`;
     kpiPower.textContent = `${bundle.design_point.power_w.toFixed(1)} W`;
+    if (
+      optStatusEl &&
+      (!optStatusEl.textContent || optStatusEl.textContent.startsWith("Ready"))
+    ) {
+      optStatusEl.textContent = `Ready — peak Cp ${bundle.peak_cp.toFixed(3)} @ λ ${bundle.peak_tsr.toFixed(1)}`;
+    }
 
     if (bundle.generator_match) {
       const gm = bundle.generator_match;
       const st = gm.generator;
       const genRpm = st.generator_rpm ?? st.rotor_rpm * gearRatio;
-      kpiGenElec.textContent = `${st.terminal_voltage_v.toFixed(1)}V / ${st.electrical_power_w.toFixed(1)}W`;
+      kpiGenElec.textContent = `${st.electrical_power_w.toFixed(1)} W`;
+      kpiGenElec.title = `${st.terminal_voltage_v.toFixed(1)} V · ${st.current_a.toFixed(2)} A · η ${(st.efficiency * 100).toFixed(0)}%`;
       genSummary.textContent = `Rotor ${st.rotor_rpm.toFixed(0)} RPM · Gen ${genRpm.toFixed(0)} RPM (${gearRatio.toFixed(2)}:1, λ=${gm.tip_speed_ratio.toFixed(
         2,
       )}) / V=${st.terminal_voltage_v.toFixed(1)} V / I=${st.current_a.toFixed(
@@ -1663,6 +1683,7 @@ function updateAeroPanel(design: Design) {
       )}%)`;
     } else {
       kpiGenElec.textContent = "–";
+      kpiGenElec.title = "";
       genSummary.textContent = "Gen: uncoupled";
     }
 
@@ -1676,7 +1697,7 @@ function updateAeroPanel(design: Design) {
     });
     latestMaxOutReport = maxOut;
     if (genOptTarget) {
-      genOptTarget.textContent = `Opt ${maxOut.opt_gear_ratio.toFixed(2)}:1 · ${maxOut.opt_r_load_ohm.toFixed(1)} Ω (${maxOut.opt_elec_power_w.toFixed(1)} W)`;
+      genOptTarget.textContent = `${maxOut.opt_gear_ratio.toFixed(1)}:1 · ${maxOut.opt_r_load_ohm.toFixed(0)}Ω (${maxOut.opt_elec_power_w.toFixed(1)}W)`;
     }
     if (genRegimeBadge) {
       const gainTag =
@@ -1799,6 +1820,9 @@ function updateStats(
   const ms = document.getElementById("ms")!;
   ms.textContent = `${elapsed.toFixed(1)} ms`;
   ms.className = elapsed < 50 ? "ok" : "slow";
+  if (hudMeshMs) {
+    hudMeshMs.textContent = `${elapsed.toFixed(1)} ms`;
+  }
   document.getElementById("tris")!.textContent = String(data.triangle_count);
   document.getElementById("vol")!.textContent = data.volume_mm3.toFixed(0);
   document.title = `BladeLab — ${data.span_min_mm.toFixed(0)}–${data.span_max_mm.toFixed(
@@ -1872,7 +1896,19 @@ function sectionCenterFrac(): number {
 function setRangeFill(input: HTMLInputElement) {
   const min = Number(input.min);
   const max = Number(input.max);
-  input.style.setProperty("--fill", `${((Number(input.value) - min) / (max - min)) * 100}%`);
+  const val = Number(input.value);
+  const span = max - min;
+  const pct =
+    Number.isFinite(span) && span > 0 && Number.isFinite(val)
+      ? Math.min(100, Math.max(0, ((val - min) / span) * 100))
+      : 0;
+  input.style.setProperty("--fill", `${pct.toFixed(1)}%`);
+}
+
+function syncAllRangeFills() {
+  document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach((el) => {
+    setRangeFill(el);
+  });
 }
 
 function renderSectionsPanel(design: Design) {
@@ -1979,13 +2015,16 @@ function syncControlsFromDesign(design: Design) {
   const { rotor, distributions } = design;
 
   const bladeLenMm = Math.max(0, rotor.radius_mm - rotor.hub_radius_mm);
-  rotorSummary.textContent = `R ${rotor.radius_mm}  L ${bladeLenMm.toFixed(0)}  B ${rotor.blade_count}`;
+  rotorSummary.textContent = `R ${rotor.radius_mm} · L ${bladeLenMm.toFixed(0)} · ${rotor.blade_count}B`;
   if (hudRotorSpec) {
-    hudRotorSpec.textContent = `R ${rotor.radius_mm} mm  L ${bladeLenMm.toFixed(0)} mm  B ${rotor.blade_count}`;
+    hudRotorSpec.textContent = `R ${rotor.radius_mm} · L ${bladeLenMm.toFixed(0)} mm · ${rotor.blade_count}B`;
   }
   inputRadius.value = String(rotor.radius_mm);
   inputHubRadius.value = String(rotor.hub_radius_mm);
   inputBlades.value = String(rotor.blade_count);
+  if (sliderRotorRadius) sliderRotorRadius.value = String(rotor.radius_mm);
+  if (sliderRotorHub) sliderRotorHub.value = String(rotor.hub_radius_mm);
+  if (sliderRotorBlades) sliderRotorBlades.value = String(rotor.blade_count);
   inputTsr.value = String(rotor.design_tsr);
   inputWind.value = String(rotor.wind_speed_mps);
   inputStations.value = String(rotor.station_count);
@@ -2061,10 +2100,13 @@ function syncControlsFromDesign(design: Design) {
   const counts = history.counts();
   btnUndo.disabled = !history.canUndo();
   btnRedo.disabled = !history.canRedo();
-  btnUndo.textContent = counts.undo > 0 ? `Undo (${counts.undo})` : "Undo";
-  btnRedo.textContent = counts.redo > 0 ? `Redo (${counts.redo})` : "Redo";
+  btnUndo.title = counts.undo > 0 ? `Undo (${counts.undo}) (Ctrl+Z)` : "Undo (Ctrl+Z)";
+  btnRedo.title = counts.redo > 0 ? `Redo (${counts.redo}) (Ctrl+Y)` : "Redo (Ctrl+Y)";
+  btnUndo.setAttribute("aria-label", btnUndo.title);
+  btnRedo.setAttribute("aria-label", btnRedo.title);
 
   renderStationTable(design);
+  syncAllRangeFills();
 }
 
 function getBezierPointsForTarget(
@@ -2465,7 +2507,16 @@ function syncBladePresetButtons(presetKey: BladeWindPresetKey) {
   }
   const spec = BLADE_WIND_PRESETS[presetKey];
   if (bladePresetDesc && spec) {
-    bladePresetDesc.textContent = spec.description;
+    const midAf =
+      spec.sections.mid.airfoil.type === "named" ? spec.sections.mid.airfoil.name : "NACA 4412";
+    const rootAf =
+      spec.sections.root.airfoil.type === "named" ? spec.sections.root.airfoil.name : "NACA 4412";
+    const afSummary = rootAf === midAf ? midAf : `${rootAf}→${midAf}`;
+    const sparNote = spec.recommended_spar_mm
+      ? `${spec.recommended_spar_mm} mm CF spar`
+      : `${spec.recommended_drivetrain.gear_ratio}:1 drive`;
+    bladePresetDesc.textContent = `${spec.badge} · ${afSummary} · ${sparNote}`;
+    bladePresetDesc.title = spec.description;
   }
 }
 
@@ -2544,7 +2595,7 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
 
     const l = Math.max(0, r - workingDesign.rotor.hub_radius_mm);
     if (hudRotorSpec) {
-      hudRotorSpec.textContent = `R ${r} mm  L ${l.toFixed(0)} mm  B ${workingDesign.rotor.blade_count}`;
+      hudRotorSpec.textContent = `R ${r} · L ${l.toFixed(0)} mm · ${workingDesign.rotor.blade_count}B`;
     }
     syncDockAccessibilityState();
     syncTopDockOffset();
@@ -2607,7 +2658,8 @@ function flushAutoSaveNow(badgePrefix = "Auto-saved") {
     localStorage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(snap));
     const timeLabel = formatShortTime(snap.saved_at);
     autosaveBadge.classList.remove("saving");
-    autosaveBadge.textContent = `${badgePrefix} ${timeLabel}`;
+    autosaveBadge.textContent = badgePrefix === "Auto-saved" ? "Saved" : badgePrefix;
+    autosaveBadge.title = `${badgePrefix} at ${timeLabel} — click to open Projects`;
     autosaveDetail.textContent = `${badgePrefix} at ${timeLabel}`;
   } catch {
     autosaveBadge.classList.remove("saving");
@@ -2712,7 +2764,7 @@ function setStudioMode(mode: "blade" | "gearbox") {
     const r = workingDesign.rotor.radius_mm;
     const l = Math.max(0, r - workingDesign.rotor.hub_radius_mm);
     if (hudRotorSpec) {
-      hudRotorSpec.textContent = `R ${r} mm  L ${l.toFixed(0)} mm  B ${workingDesign.rotor.blade_count}`;
+      hudRotorSpec.textContent = `R ${r} · L ${l.toFixed(0)} mm · ${workingDesign.rotor.blade_count}B`;
     }
   }
   syncDockAccessibilityState();
@@ -3571,12 +3623,70 @@ function toggleProjectsDrawer(forceOpen?: boolean) {
   }
 }
 
-btnToggleProjects.addEventListener("click", () => {
+btnToggleProjects.addEventListener("click", (ev) => {
+  ev.stopPropagation();
   toggleProjectsDrawer();
 });
 
-autosaveBadge.addEventListener("click", () => {
+autosaveBadge.addEventListener("click", (ev) => {
+  ev.stopPropagation();
   toggleProjectsDrawer();
+});
+
+document.addEventListener("click", (ev) => {
+  if (!projectsDrawer.classList.contains("open")) return;
+  const target = ev.target as Node;
+  if (
+    !projectsDrawer.contains(target) &&
+    target !== btnToggleProjects &&
+    !btnToggleProjects.contains(target) &&
+    target !== autosaveBadge &&
+    !btnCloudOpenDrawer?.contains(target) &&
+    !btnCloudSave?.contains(target)
+  ) {
+    toggleProjectsDrawer(false);
+  }
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && projectsDrawer.classList.contains("open")) {
+    toggleProjectsDrawer(false);
+  }
+});
+
+// Transient toast behavior for #export-status (never crowds or wraps #top-dock)
+let exportToastTimer: ReturnType<typeof setTimeout> | null = null;
+function showExportToast() {
+  const txt = (exportStatus.textContent || "").trim();
+  if (!txt || txt === "Ready") {
+    exportStatus.classList.remove("toast-visible");
+    return;
+  }
+  exportStatus.classList.add("toast-visible");
+  if (exportToastTimer !== null) {
+    clearTimeout(exportToastTimer);
+    exportToastTimer = null;
+  }
+  if (!txt.endsWith("...")) {
+    exportToastTimer = setTimeout(() => {
+      exportStatus.classList.remove("toast-visible");
+    }, 4500);
+  }
+}
+if (typeof MutationObserver !== "undefined") {
+  new MutationObserver(() => showExportToast()).observe(exportStatus, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+}
+
+// Keep all range slider cyan fill tracks live on any input/change interaction
+document.addEventListener("input", (ev) => {
+  const t = ev.target;
+  if (t instanceof HTMLInputElement && t.type === "range") {
+    setRangeFill(t);
+  }
 });
 
 btnSaveSlot.addEventListener("click", () => {
@@ -3615,6 +3725,21 @@ function bindRotorNumberInput(input: HTMLInputElement, field: keyof Design["roto
     if (field === "blade_count" && raw < 1) return;
     if (field === "station_count" && raw < 2) return;
     workingDesign = updateRotorField(history.current(), field, raw);
+    const bladeLen = Math.max(0, workingDesign.rotor.radius_mm - workingDesign.rotor.hub_radius_mm);
+    if (field === "radius_mm") {
+      if (sliderRotorRadius) sliderRotorRadius.value = String(workingDesign.rotor.radius_mm);
+      inputBladeLength.value = String(Number(bladeLen.toFixed(1)));
+      sliderBladeLength.value = String(Math.round(bladeLen));
+      bladeLengthVal.textContent = `${bladeLen.toFixed(0)} mm`;
+    } else if (field === "hub_radius_mm") {
+      if (sliderRotorHub) sliderRotorHub.value = String(workingDesign.rotor.hub_radius_mm);
+      inputBladeLength.value = String(Number(bladeLen.toFixed(1)));
+      sliderBladeLength.value = String(Math.round(bladeLen));
+      bladeLengthVal.textContent = `${bladeLen.toFixed(0)} mm`;
+    } else if (field === "blade_count" && sliderRotorBlades) {
+      sliderRotorBlades.value = String(workingDesign.rotor.blade_count);
+    }
+    syncAllRangeFills();
     renderStationTable(workingDesign);
     rebuild3D(workingDesign);
   });
@@ -3632,6 +3757,42 @@ bindRotorNumberInput(inputBlades, "blade_count", true);
 bindRotorNumberInput(inputTsr, "design_tsr");
 bindRotorNumberInput(inputWind, "wind_speed_mps");
 bindRotorNumberInput(inputStations, "station_count", true);
+
+function bindRotorSlider(
+  slider: HTMLInputElement | null,
+  targetInput: HTMLInputElement,
+  field: keyof Design["rotor"],
+  isInt = false,
+) {
+  if (!slider) return;
+  slider.addEventListener("input", () => {
+    targetInput.value = slider.value;
+    setRangeFill(slider);
+    const raw = isInt ? Number.parseInt(slider.value, 10) : Number.parseFloat(slider.value);
+    if (!Number.isFinite(raw)) return;
+    if (field === "radius_mm" && raw <= workingDesign.rotor.hub_radius_mm + 5) return;
+    if (field === "hub_radius_mm" && (raw < 0 || raw >= workingDesign.rotor.radius_mm - 5)) return;
+    if (field === "blade_count" && raw < 1) return;
+    workingDesign = updateRotorField(history.current(), field, raw);
+    const bladeLen = Math.max(0, workingDesign.rotor.radius_mm - workingDesign.rotor.hub_radius_mm);
+    inputBladeLength.value = String(Number(bladeLen.toFixed(1)));
+    sliderBladeLength.value = String(Math.round(bladeLen));
+    bladeLengthVal.textContent = `${bladeLen.toFixed(0)} mm`;
+    syncAllRangeFills();
+    renderStationTable(workingDesign);
+    rebuild3D(workingDesign);
+  });
+  slider.addEventListener("change", () => {
+    const raw = isInt ? Number.parseInt(slider.value, 10) : Number.parseFloat(slider.value);
+    if (Number.isFinite(raw)) {
+      commitDesign(updateRotorField(history.current(), field, raw));
+    }
+  });
+}
+
+bindRotorSlider(sliderRotorRadius, inputRadius, "radius_mm");
+bindRotorSlider(sliderRotorHub, inputHubRadius, "hub_radius_mm");
+bindRotorSlider(sliderRotorBlades, inputBlades, "blade_count", true);
 
 inputBladeLength.addEventListener("change", () => {
   const len = Number.parseFloat(inputBladeLength.value);
@@ -4059,10 +4220,6 @@ btnClearOverrides.addEventListener("click", () => {
 });
 
 // ---- Phase 3 Aero / A-B / Generator / Test Data Listeners ----
-const selectOptObjective = document.getElementById("opt-objective") as HTMLSelectElement;
-const btnAutoOptimize = document.getElementById("btn-auto-optimize") as HTMLButtonElement;
-const optStatusEl = document.getElementById("opt-status")!;
-
 btnAutoOptimize.addEventListener("click", () => {
   try {
     // Snapshot current design as Baseline A so the user sees the before/after Cp-TSR curve comparison
@@ -4983,7 +5140,7 @@ btnZen3d?.addEventListener("click", () => {
   syncTopDockOffset();
 });
 
-// Quick Section Jump Pills & Scroll-Spy inside Left CAD Dock and Right Telemetry Dock
+// Focused Single-Tab Switcher inside Left CAD Dock and Right Telemetry Dock
 function bindDockSectionNav(
   navSelector: string,
   scrollContainerEl: HTMLElement | null,
@@ -4992,49 +5149,44 @@ function bindDockSectionNav(
   const navButtons = document.querySelectorAll<HTMLButtonElement>(
     `${navSelector} button[data-scroll-target]`,
   );
+
+  function activateSectionTab(targetId: string) {
+    if (!targetId) return;
+    for (const id of sectionIds) {
+      const sec = document.getElementById(id);
+      if (!sec) continue;
+      const isActive = id === targetId;
+      sec.classList.toggle("tab-active", isActive);
+      if (isActive) {
+        sec.classList.remove("collapsed");
+        const toggleBtn = sec.querySelector<HTMLButtonElement>("[data-collapse-section]");
+        toggleBtn?.setAttribute("aria-expanded", "true");
+      }
+    }
+    navButtons.forEach((b) => {
+      const isTarget = b.dataset.scrollTarget === targetId;
+      b.classList.toggle("active", isTarget);
+      if (isTarget) {
+        b.setAttribute("aria-current", "true");
+      } else {
+        b.removeAttribute("aria-current");
+      }
+    });
+    if (scrollContainerEl) {
+      scrollContainerEl.scrollTop = 0;
+    }
+  }
+
   navButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       const targetId = btn.dataset.scrollTarget;
-      if (!targetId) return;
-      const sectionEl = document.getElementById(targetId);
-      if (!sectionEl) return;
-      sectionEl.classList.remove("collapsed");
-      const toggleBtn = sectionEl.querySelector<HTMLButtonElement>("[data-collapse-section]");
-      toggleBtn?.setAttribute("aria-expanded", "true");
-      sectionEl.scrollIntoView({ behavior: "smooth", block: "start" });
-      navButtons.forEach((b) => {
-        const isTarget = b === btn;
-        b.classList.toggle("active", isTarget);
-        if (isTarget) {
-          b.setAttribute("aria-current", "true");
-        } else {
-          b.removeAttribute("aria-current");
-        }
-      });
+      if (targetId) activateSectionTab(targetId);
     });
   });
 
-  scrollContainerEl?.addEventListener("scroll", () => {
-    const containerTop = scrollContainerEl.getBoundingClientRect().top;
-    let activeId = sectionIds[0] ?? "";
-    for (const id of sectionIds) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      const offset = el.getBoundingClientRect().top - containerTop;
-      if (offset <= 88) {
-        activeId = id;
-      }
-    }
-    navButtons.forEach((btn) => {
-      const isAct = btn.dataset.scrollTarget === activeId;
-      btn.classList.toggle("active", isAct);
-      if (isAct) {
-        btn.setAttribute("aria-current", "true");
-      } else {
-        btn.removeAttribute("aria-current");
-      }
-    });
-  });
+  if (sectionIds[0]) {
+    activateSectionTab(sectionIds[0]);
+  }
 }
 
 bindDockSectionNav("#panel-section-nav", panelScrollContainer, [

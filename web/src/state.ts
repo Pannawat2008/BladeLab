@@ -1569,26 +1569,41 @@ export function renderCpTsrSvgMarkup(
       .join(" ");
 
   const betzY = toY(16.0 / 27.0).toFixed(1);
+  const gridY45 = toY(0.45).toFixed(1);
+  const gridY30 = toY(0.3).toFixed(1);
+  const gridY15 = toY(0.15).toFixed(1);
   const parts: string[] = [
-    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="#e5484d" stroke-width="1" stroke-dasharray="4 3" />`,
+    `<line x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="rgba(148,163,184,0.16)" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${h - padY}" x2="${w - padX}" y2="${h - padY}" stroke="rgba(148,163,184,0.16)" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${gridY15}" x2="${w - padX}" y2="${gridY15}" stroke="rgba(148,163,184,0.10)" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${gridY30}" x2="${w - padX}" y2="${gridY30}" stroke="rgba(148,163,184,0.10)" stroke-width="1" />`,
+    `<line x1="${padX}" y1="${gridY45}" x2="${w - padX}" y2="${gridY45}" stroke="rgba(148,163,184,0.10)" stroke-width="1" />`,
+    `<line class="betz-limit" x1="${padX}" y1="${betzY}" x2="${w - padX}" y2="${betzY}" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="4 3" />`,
+    `<text x="${w - padX}" y="${Number(betzY) - 4}" text-anchor="end" fill="#fbbf24" font-size="9" font-family="'JetBrains Mono', monospace">Betz 0.593</text>`,
+    `<text x="${padX - 4}" y="${Number(gridY45) + 3}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">.45</text>`,
+    `<text x="${padX - 4}" y="${Number(gridY30) + 3}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">.30</text>`,
+    `<text x="${padX - 4}" y="${Number(gridY15) + 3}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">.15</text>`,
+    `<text x="${padX}" y="${h - 5}" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">λ 1</text>`,
+    `<text x="${toX(5).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">5</text>`,
+    `<text x="${w - padX}" y="${h - 5}" text-anchor="end" fill="#7c879b" font-size="8.5" font-family="'JetBrains Mono', monospace">9.5</text>`,
   ];
 
   if (options.designTsr !== undefined && Number.isFinite(options.designTsr)) {
     const dx = toX(options.designTsr).toFixed(1);
     parts.push(
-      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="#262c3a" stroke-width="1" stroke-dasharray="2 2" />`,
+      `<line class="design-tsr" x1="${dx}" y1="${padY}" x2="${dx}" y2="${h - padY}" stroke="rgba(148,163,184,0.22)" stroke-width="1" stroke-dasharray="2 2" />`,
     );
   }
 
   if (options.baselineASweep && options.baselineASweep.length > 0) {
     parts.push(
-      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="#7a8296" stroke-width="1.5" stroke-dasharray="4 3" />`,
+      `<path class="curve-a" d="${buildPath(options.baselineASweep)}" fill="none" stroke="#7c879b" stroke-width="1.5" stroke-dasharray="4 3" />`,
     );
   }
 
   if (currentSweep.length > 0) {
     parts.push(
-      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="#38bdf8" stroke-width="2" />`,
+      `<path class="curve-b" d="${buildPath(currentSweep)}" fill="none" stroke="#22d3ee" stroke-width="2.2" />`,
     );
   }
 
@@ -1596,15 +1611,15 @@ export function renderCpTsrSvgMarkup(
     const cx = toX(exp.tsr).toFixed(1);
     const cy = toY(exp.cp).toFixed(1);
     parts.push(
-      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="3.5" fill="#f59e0b" stroke="#07080d" stroke-width="1.2" />`,
+      `<circle class="exp-point" data-tsr="${exp.tsr}" data-cp="${exp.cp}" cx="${cx}" cy="${cy}" r="3.5" fill="#fbbf24" stroke="#090b10" stroke-width="1.2" />`,
     );
   }
 
   parts.push(
     `<g class="chart-crosshair" style="display:none;pointer-events:none">` +
-      `<line class="ch-line" x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="#edeff5" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
-      `<circle class="ch-dot-secondary" cx="${padX}" cy="${h - padY}" r="3.2" fill="#7a8296" stroke="#07080d" stroke-width="1.2" style="display:none" />` +
-      `<circle class="ch-dot-primary" cx="${padX}" cy="${h - padY}" r="4" fill="#38bdf8" stroke="#07080d" stroke-width="1.5" />` +
+      `<line class="ch-line" x1="${padX}" y1="${padY}" x2="${padX}" y2="${h - padY}" stroke="#f1f5f9" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
+      `<circle class="ch-dot-secondary" cx="${padX}" cy="${h - padY}" r="3.2" fill="#7c879b" stroke="#090b10" stroke-width="1.2" style="display:none" />` +
+      `<circle class="ch-dot-primary" cx="${padX}" cy="${h - padY}" r="4" fill="#22d3ee" stroke="#090b10" stroke-width="1.5" />` +
       `</g>`,
   );
 
@@ -3154,22 +3169,22 @@ export function renderWindPowerCurveSvgMarkup(report: WindPowerAepReport): strin
   const cutInX = xOf(Math.max(vMin, Math.min(vMax, report.cut_in_mps))).toFixed(1);
 
   const lines: string[] = [
-    `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#262c3a" stroke-width="1" />`,
-    `<line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="#262c3a" stroke-width="1" />`,
-    `<line x1="${padL}" y1="${(padT + plotH * 0.5).toFixed(1)}" x2="${padL + plotW}" y2="${(padT + plotH * 0.5).toFixed(1)}" stroke="#1b202c" stroke-width="1" stroke-dasharray="3 3" />`,
-    `<line x1="${cutInX}" y1="${padT}" x2="${cutInX}" y2="${padT + plotH}" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3 2" />`,
-    `<path d="${mechPath}" fill="none" stroke="#38bdf8" stroke-width="1.8" />`,
-    `<path d="${elecPath}" fill="none" stroke="#4cc38a" stroke-width="1.8" />`,
-    `<text x="${Number(cutInX) + 4}" y="${padT + 10}" fill="#f59e0b" font-size="9.5" font-family="'IBM Plex Mono', monospace">Cut-in ${report.cut_in_mps.toFixed(1)} m/s</text>`,
-    `<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">${Math.round(maxP)}W</text>`,
-    `<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">0W</text>`,
-    `<text x="${padL}" y="${height - 8}" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">2 m/s</text>`,
-    `<text x="${padL + plotW * 0.5}" y="${height - 8}" text-anchor="middle" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">10 m/s</text>`,
-    `<text x="${padL + plotW}" y="${height - 8}" text-anchor="end" fill="#8b93a7" font-size="9.5" font-family="'IBM Plex Mono', monospace">18 m/s</text>`,
+    `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="rgba(148,163,184,0.18)" stroke-width="1" />`,
+    `<line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="rgba(148,163,184,0.18)" stroke-width="1" />`,
+    `<line x1="${padL}" y1="${(padT + plotH * 0.5).toFixed(1)}" x2="${padL + plotW}" y2="${(padT + plotH * 0.5).toFixed(1)}" stroke="rgba(148,163,184,0.10)" stroke-width="1" stroke-dasharray="3 3" />`,
+    `<line x1="${cutInX}" y1="${padT}" x2="${cutInX}" y2="${padT + plotH}" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="3 2" />`,
+    `<path d="${mechPath}" fill="none" stroke="#22d3ee" stroke-width="2" />`,
+    `<path d="${elecPath}" fill="none" stroke="#34d399" stroke-width="2" />`,
+    `<text x="${Number(cutInX) + 4}" y="${padT + 10}" fill="#fbbf24" font-size="9.5" font-family="'JetBrains Mono', monospace">Cut-in ${report.cut_in_mps.toFixed(1)} m/s</text>`,
+    `<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">${Math.round(maxP)}W</text>`,
+    `<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">0W</text>`,
+    `<text x="${padL}" y="${height - 8}" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">2 m/s</text>`,
+    `<text x="${padL + plotW * 0.5}" y="${height - 8}" text-anchor="middle" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">10 m/s</text>`,
+    `<text x="${padL + plotW}" y="${height - 8}" text-anchor="end" fill="#7c879b" font-size="9.5" font-family="'JetBrains Mono', monospace">18 m/s</text>`,
     `<g class="chart-crosshair" style="display:none;pointer-events:none">` +
-      `<line class="ch-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#edeff5" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
-      `<circle class="ch-dot-primary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#38bdf8" stroke="#07080d" stroke-width="1.4" />` +
-      `<circle class="ch-dot-secondary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#4cc38a" stroke="#07080d" stroke-width="1.4" />` +
+      `<line class="ch-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#f1f5f9" stroke-width="1" stroke-dasharray="2 2" opacity="0.65" />` +
+      `<circle class="ch-dot-primary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#22d3ee" stroke="#090b10" stroke-width="1.4" />` +
+      `<circle class="ch-dot-secondary" cx="${padL}" cy="${padT + plotH}" r="3.8" fill="#34d399" stroke="#090b10" stroke-width="1.4" />` +
       `</g>`,
   ];
 
