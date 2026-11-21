@@ -1914,7 +1914,7 @@ test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile
   const wraps = ["saddle", "closed", "cuff", "flush"];
   for (const aero_profile of profiles) {
     for (const wrap_style of wraps) {
-      const cfg = { ...def, aero_profile, wrap_style, cutaway_mode: false };
+      const cfg = { ...def, aero_profile, wrap_style, fairing_style: "none", cutaway_mode: false };
       const bundle = buildNoseConeMeshes(cfg, bladeCtxKid);
       const label = `kid/${aero_profile}/${wrap_style}`;
       assert.equal(bundle.submeshes.length, 1, `${label}: nose cone must be 1 unified CSG solid`);
@@ -1945,6 +1945,7 @@ test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile
           ...def,
           hub_fit_mode: "match_design",
           wrap_style,
+          fairing_style: "none",
           cutaway_mode,
           skirt_length_mm: 30,
           cone_length_mm: 85,
@@ -1961,6 +1962,49 @@ test("Task 9: Nose Cone single-solid watertight CSG meshes across all 16 profile
         );
       }
       assertWatertightPositive(bundle.submeshes, label, true);
+    }
+  }
+
+  // Verify all 3 Swept Blade-Root Fairing styles on Kidwind4 Ø60 & Auto-Match Ø120
+  for (const fairing_style of ["delta", "boot", "fillet"]) {
+    for (const [modeLabel, cfg, ctx, minMaxR] of [
+      [
+        `kid/${fairing_style}`,
+        { ...def, fairing_style, fairing_span_mm: 28, fairing_blend_pct: 40, cutaway_mode: false },
+        bladeCtxKid,
+        30 + 2.2 + 12,
+      ],
+      [
+        `match_wasm/${fairing_style}`,
+        {
+          ...def,
+          hub_fit_mode: "match_design",
+          fairing_style,
+          fairing_span_mm: 30,
+          fairing_blend_pct: 45,
+          skirt_length_mm: 30,
+          cone_length_mm: 85,
+          cutaway_mode: false,
+        },
+        bladeCtxMatch,
+        60 + 2.2 + 12,
+      ],
+    ]) {
+      const bundle = buildNoseConeMeshes(cfg, ctx);
+      assert.equal(bundle.submeshes.length, 1, `${modeLabel}: fairing must fuse into 1 monolithic solid`);
+      assert.equal(bundle.metrics.is_watertight, true);
+      assert.equal(bundle.metrics.is_single_solid, true);
+      assertWatertightPositive(bundle.submeshes, modeLabel, true);
+      const pos = bundle.submeshes[0].positions;
+      let maxR = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        const r = Math.hypot(pos[i], pos[i + 1]);
+        if (r > maxR) maxR = r;
+      }
+      assert.ok(
+        maxR > minMaxR,
+        `${modeLabel}: expected swept fairing radial reach > ${minMaxR}mm, got ${maxR.toFixed(1)}mm`,
+      );
     }
   }
 
@@ -2018,6 +2062,9 @@ test("Task 9: Nose Cone Studio HTML DOM integrity", () => {
     "nose-preview-canvas",
     "nose-profile-tabs",
     "nose-wrap-tabs",
+    "nose-fairing-tabs",
+    "nose-fairing-span",
+    "nose-fairing-blend",
     "nose-slide",
     "nose-length",
     "nose-skirt",

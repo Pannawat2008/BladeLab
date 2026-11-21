@@ -4488,6 +4488,16 @@
             <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-wrap="cuff">3. Rotating Cuff</button>
             <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-wrap="flush">Flush Spinner</button>
           </div>
+
+          <div class="field" style="margin-top: 9px; margin-bottom: 5px">
+            <label>Blade-Root Fairing</label>
+          </div>
+          <div id="nose-fairing-tabs" class="nose-pill-grid" role="tablist" aria-label="Blade-Root Fairing Style">
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-fairing="none">Off (Clean)</button>
+            <button type="button" class="btn-mini active" role="tab" aria-selected="true" data-nose-fairing="delta">1. Delta Strake</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-fairing="boot">2. Root Boot</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-fairing="fillet">3. Twist Fillet</button>
+          </div>
         </div>
 
         <div class="card-box">
@@ -4498,6 +4508,20 @@
                 <span id="nose-slide-val" class="nose-slider-val">0% Seated</span>
               </div>
               <input id="nose-slide" class="nose-range" type="range" min="0" max="100" step="1" value="0" />
+            </div>
+            <div id="nose-fairing-span-row" class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-fairing-span">Fairing Span Reach</label>
+                <span id="nose-fairing-span-val" class="nose-slider-val">26 mm</span>
+              </div>
+              <input id="nose-fairing-span" class="nose-range" type="range" min="10" max="48" step="1" value="26" />
+            </div>
+            <div id="nose-fairing-blend-row" class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-fairing-blend">Fairing Curve Blend</label>
+                <span id="nose-fairing-blend-val" class="nose-slider-val">35%</span>
+              </div>
+              <input id="nose-fairing-blend" class="nose-range" type="range" min="0" max="100" step="1" value="35" />
             </div>
             <div class="nose-slider-row">
               <div class="nose-slider-head">

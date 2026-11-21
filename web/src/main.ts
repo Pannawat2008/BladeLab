@@ -122,6 +122,7 @@ import {
   type NoseConeConfig,
   type NoseConeAeroProfile,
   type NoseConeWrapStyle,
+  type NoseConeFairingStyle,
   type NoseConeHubFitMode,
   type NoseConeViewMode,
   type NoseBladeMeshInput,
@@ -574,6 +575,7 @@ let gearSpinAngleRad = 0;
 // ---- Nose Cone Studio State & DOM Elements ----
 let activeNoseProfile: NoseConeAeroProfile = "adaptive";
 let activeNoseWrap: NoseConeWrapStyle = "saddle";
+let activeNoseFairing: NoseConeFairingStyle = "delta";
 let activeNoseView: NoseConeViewMode = "mounted";
 let noseCutawayMode = false;
 let noseBlueprintPhase = 0;
@@ -609,9 +611,16 @@ const inputNoseEnabled = document.getElementById("nose-enabled") as HTMLInputEle
 const selectNoseHubFit = document.getElementById("nose-hub-fit") as HTMLSelectElement | null;
 const noseProfileTabs = document.getElementById("nose-profile-tabs");
 const noseWrapTabs = document.getElementById("nose-wrap-tabs");
+const noseFairingTabs = document.getElementById("nose-fairing-tabs");
 const sliderNoseSlide = document.getElementById("nose-slide") as HTMLInputElement | null;
 const noseSlideLabel = document.getElementById("nose-slide-label");
 const noseSlideVal = document.getElementById("nose-slide-val");
+const noseFairingSpanRow = document.getElementById("nose-fairing-span-row");
+const sliderNoseFairingSpan = document.getElementById("nose-fairing-span") as HTMLInputElement | null;
+const noseFairingSpanVal = document.getElementById("nose-fairing-span-val");
+const noseFairingBlendRow = document.getElementById("nose-fairing-blend-row");
+const sliderNoseFairingBlend = document.getElementById("nose-fairing-blend") as HTMLInputElement | null;
+const noseFairingBlendVal = document.getElementById("nose-fairing-blend-val");
 const sliderNoseLength = document.getElementById("nose-length") as HTMLInputElement | null;
 const noseLengthVal = document.getElementById("nose-length-val");
 const sliderNoseSkirt = document.getElementById("nose-skirt") as HTMLInputElement | null;
@@ -1479,6 +1488,9 @@ function readCurrentNoseConeConfig(): NoseConeConfig {
     hub_fit_mode: hubFitMode,
     aero_profile: activeNoseProfile,
     wrap_style: activeNoseWrap,
+    fairing_style: activeNoseFairing,
+    fairing_span_mm: Math.max(10, Math.min(48, Number.parseFloat(sliderNoseFairingSpan?.value || String(def.fairing_span_mm)) || def.fairing_span_mm)),
+    fairing_blend_pct: Math.max(0, Math.min(100, Number.parseFloat(sliderNoseFairingBlend?.value || String(def.fairing_blend_pct)) || def.fairing_blend_pct)),
     view_mode: activeNoseView,
     cone_length_mm: Math.max(35, Math.min(150, Number.parseFloat(sliderNoseLength?.value || String(def.cone_length_mm)) || def.cone_length_mm)),
     skirt_length_mm: Math.max(6, Math.min(52, Number.parseFloat(sliderNoseSkirt?.value || String(def.skirt_length_mm)) || def.skirt_length_mm)),
@@ -1494,11 +1506,14 @@ function applyNoseConeConfigToDom(cfg?: NoseConeConfig) {
   const c = cfg ? { ...defaultNoseConeConfig(), ...cfg } : defaultNoseConeConfig();
   activeNoseProfile = c.aero_profile;
   activeNoseWrap = c.wrap_style;
+  activeNoseFairing = c.fairing_style ?? "delta";
   activeNoseView = c.view_mode;
   noseCutawayMode = Boolean(c.cutaway_mode);
   if (inputNoseEnabled) inputNoseEnabled.checked = Boolean(c.enabled);
   if (selectNoseHubFit) selectNoseHubFit.value = c.hub_fit_mode;
   if (sliderNoseSlide) sliderNoseSlide.value = String(c.assembly_slide_pct);
+  if (sliderNoseFairingSpan) sliderNoseFairingSpan.value = String(c.fairing_span_mm ?? 26);
+  if (sliderNoseFairingBlend) sliderNoseFairingBlend.value = String(c.fairing_blend_pct ?? 35);
   if (sliderNoseLength) sliderNoseLength.value = String(c.cone_length_mm);
   if (sliderNoseSkirt) sliderNoseSkirt.value = String(c.skirt_length_mm);
   if (sliderNoseWall) sliderNoseWall.value = String(c.wall_thickness_mm);
@@ -1540,6 +1555,20 @@ function updateNosePanelUi(design: Design, overrideMetrics?: NoseConeMetrics): N
       btn.setAttribute("aria-selected", String(act));
     });
   }
+  if (noseFairingTabs) {
+    noseFairingTabs.querySelectorAll<HTMLButtonElement>("[data-nose-fairing]").forEach((btn) => {
+      const act = btn.dataset.noseFairing === cfg.fairing_style;
+      btn.classList.toggle("active", act);
+      btn.setAttribute("aria-selected", String(act));
+    });
+  }
+  const fairingOff = cfg.fairing_style === "none";
+  if (noseFairingSpanRow) noseFairingSpanRow.style.opacity = fairingOff ? "0.45" : "1";
+  if (noseFairingBlendRow) noseFairingBlendRow.style.opacity = fairingOff ? "0.45" : "1";
+  if (sliderNoseFairingSpan) sliderNoseFairingSpan.disabled = fairingOff;
+  if (sliderNoseFairingBlend) sliderNoseFairingBlend.disabled = fairingOff;
+  if (noseFairingSpanVal) noseFairingSpanVal.textContent = `${Math.round(cfg.fairing_span_mm)} mm`;
+  if (noseFairingBlendVal) noseFairingBlendVal.textContent = `${Math.round(cfg.fairing_blend_pct)}%`;
 
   for (const [btn, view] of [
     [btnNoseViewMounted, "mounted"],
@@ -3560,6 +3589,16 @@ noseWrapTabs?.querySelectorAll<HTMLButtonElement>("[data-nose-wrap]").forEach((b
   });
 });
 
+noseFairingTabs?.querySelectorAll<HTMLButtonElement>("[data-nose-fairing]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const f = btn.dataset.noseFairing as NoseConeFairingStyle | undefined;
+    if (!f) return;
+    activeNoseFairing = f;
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+});
+
 for (const [btn, v] of [
   [btnNoseViewMounted, "mounted"],
   [btnNoseViewOnly, "cone_only"],
@@ -3611,6 +3650,8 @@ selectNoseHubFit?.addEventListener("change", () => {
 
 [
   sliderNoseSlide,
+  sliderNoseFairingSpan,
+  sliderNoseFairingBlend,
   sliderNoseLength,
   sliderNoseSkirt,
   sliderNoseWall,

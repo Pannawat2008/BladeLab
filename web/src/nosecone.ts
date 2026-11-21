@@ -14,6 +14,7 @@ import Module, {
 
 export type NoseConeAeroProfile = "adaptive" | "vonkarman" | "elliptical" | "bell";
 export type NoseConeWrapStyle = "saddle" | "closed" | "cuff" | "flush";
+export type NoseConeFairingStyle = "none" | "delta" | "boot" | "fillet";
 export type NoseConeHubFitMode = "kidwind4_lockrev4" | "match_design";
 export type NoseConeViewMode = "mounted" | "cone_only" | "rear_fit";
 
@@ -22,6 +23,9 @@ export interface NoseConeConfig {
   hub_fit_mode: NoseConeHubFitMode;
   aero_profile: NoseConeAeroProfile;
   wrap_style: NoseConeWrapStyle;
+  fairing_style: NoseConeFairingStyle;
+  fairing_span_mm: number;
+  fairing_blend_pct: number;
   view_mode: NoseConeViewMode;
   cone_length_mm: number;
   skirt_length_mm: number;
@@ -126,6 +130,9 @@ export function defaultNoseConeConfig(): NoseConeConfig {
     hub_fit_mode: "kidwind4_lockrev4",
     aero_profile: "adaptive",
     wrap_style: "saddle",
+    fairing_style: "delta",
+    fairing_span_mm: 26,
+    fairing_blend_pct: 35,
     view_mode: "mounted",
     cone_length_mm: 68,
     skirt_length_mm: 20,
@@ -718,6 +725,318 @@ function buildOuterAeroSolid(
   return man;
 }
 
+interface BladeEdgeSummary {
+  nyMin: number;
+  nyMax: number;
+  wideSign: -1 | 1;
+  yWideRoot: number;
+  zWideRoot: number;
+  yNarrowRoot: number;
+  zNarrowRoot: number;
+  yWideOut: number;
+  zWideOut: number;
+  yNarrowOut: number;
+  zNarrowOut: number;
+}
+
+function extractExtremeEdgesFromPolys(polys: Vec2[][], fallbackZ: number) {
+  let nyMin = Infinity;
+  let nyMax = -Infinity;
+  for (const poly of polys) {
+    for (const [ny] of poly) {
+      if (ny < nyMin) nyMin = ny;
+      if (ny > nyMax) nyMax = ny;
+    }
+  }
+  if (!Number.isFinite(nyMin) || !Number.isFinite(nyMax)) {
+    return {
+      nyMin: -32,
+      nyMax: 14,
+      zAtMin: fallbackZ,
+      zAtMax: fallbackZ,
+    };
+  }
+  let sumZMin = 0;
+  let cntMin = 0;
+  let sumZMax = 0;
+  let cntMax = 0;
+  for (const poly of polys) {
+    for (const [ny, nz] of poly) {
+      if (ny <= nyMin + 2.2) {
+        sumZMin += nz;
+        cntMin++;
+      }
+      if (ny >= nyMax - 2.2) {
+        sumZMax += nz;
+        cntMax++;
+      }
+    }
+  }
+  return {
+    nyMin,
+    nyMax,
+    zAtMin: cntMin > 0 ? sumZMin / cntMin : fallbackZ,
+    zAtMax: cntMax > 0 ? sumZMax / cntMax : fallbackZ,
+  };
+}
+
+function measureBladeRootEdges(
+  bladeCtx: NoseConeBladeContext,
+  baseR: number,
+  wall: number,
+  effHubLen: number,
+  fairingSpanMm: number,
+  rootPolys: Vec2[][],
+): BladeEdgeSummary {
+  const zFallback = -effHubLen * 0.5;
+  const rootExt = extractExtremeEdgesFromPolys(rootPolys, zFallback);
+  const wideSign: -1 | 1 = Math.abs(rootExt.nyMin) >= Math.abs(rootExt.nyMax) ? -1 : 1;
+  const yWideRoot = wideSign < 0 ? rootExt.nyMin : rootExt.nyMax;
+  const zWideRoot = wideSign < 0 ? rootExt.zAtMin : rootExt.zAtMax;
+  const yNarrowRoot = wideSign < 0 ? rootExt.nyMax : rootExt.nyMin;
+  const zNarrowRoot = wideSign < 0 ? rootExt.zAtMax : rootExt.zAtMin;
+
+  let yWideOut = yWideRoot;
+  let zWideOut = zWideRoot;
+  let yNarrowOut = yNarrowRoot;
+  let zNarrowOut = zNarrowRoot;
+
+  if (bladeCtx.blade_mesh && bladeCtx.blade_mesh.positions.length >= 9) {
+    const bm = bladeCtx.blade_mesh;
+    let minNx = Infinity;
+    let maxNx = -Infinity;
+    const nVerts = (bm.positions.length / 3) | 0;
+    for (let v = 0; v < nVerts; v++) {
+      const nx = bm.positions[3 * v + 2]! + bm.radial_shift_mm;
+      if (nx < minNx) minNx = nx;
+      if (nx > maxNx) maxNx = nx;
+    }
+    const rOut = clamp(baseR + wall + fairingSpanMm * 0.65, minNx + 0.4, maxNx - 0.5);
+    if (Number.isFinite(rOut) && rOut > minNx + 0.2 && rOut < maxNx - 0.2) {
+      const outPolys = sliceBladeMeshAtRadialPlane(bm, rOut);
+      if (outPolys.length > 0) {
+        const outExt = extractExtremeEdgesFromPolys(outPolys, zFallback);
+        yWideOut = wideSign < 0 ? outExt.nyMin : outExt.nyMax;
+        zWideOut = wideSign < 0 ? outExt.zAtMin : outExt.zAtMax;
+        yNarrowOut = wideSign < 0 ? outExt.nyMax : outExt.nyMin;
+        zNarrowOut = wideSign < 0 ? outExt.zAtMax : outExt.zAtMin;
+      }
+    }
+  }
+
+  return {
+    nyMin: rootExt.nyMin,
+    nyMax: rootExt.nyMax,
+    wideSign,
+    yWideRoot,
+    zWideRoot,
+    yNarrowRoot,
+    zNarrowRoot,
+    yWideOut,
+    zWideOut,
+    yNarrowOut,
+    zNarrowOut,
+  };
+}
+
+/**
+ * Builds one closed, watertight swept blade-root fairing wing attached inside the nose shell
+ * so `solid.add(...)` followed by internal/blade boolean subtractions yields a seamless bridge.
+ */
+function buildOneFairingWingManifold(
+  mk: ManifoldToplevel,
+  baseR: number,
+  wall: number,
+  coneLen: number,
+  effSkirtLen: number,
+  bCount: number,
+  style: "delta" | "boot" | "fillet",
+  sideSign: -1 | 1,
+  isWideSide: boolean,
+  spanMm: number,
+  blendPct: number,
+  yTargetRoot: number,
+  yTargetOut: number,
+  zTargetEdge: number,
+  track: { delete(): void }[],
+): Manifold {
+  const sectorFull = (2 * Math.PI) / bCount;
+  const safeMaxFlankRad = Math.max(0.45, Math.min(1.22, sectorFull - 0.62));
+  const thetaA = sideSign * (isWideSide ? safeMaxFlankRad : Math.min(safeMaxFlankRad * 0.72, 0.85));
+  const thetaB = sideSign * Math.min(0.28, safeMaxFlankRad * 0.30);
+
+  // Anchor well inside the solid outer nose cone shell so the root edge blends without a seam step
+  const rA = baseR * 0.65;
+  const rB = baseR * 0.63;
+  const pA: Vec2 = [rA * Math.cos(thetaA), rA * Math.sin(thetaA)];
+  const pB: Vec2 = [rB * Math.cos(thetaB), rB * Math.sin(thetaB)];
+
+  const spanScale = isWideSide ? (style === "fillet" ? 0.92 : 1.0) : style === "boot" ? 0.68 : 0.55;
+  const effSpan = clamp(spanMm, 10, 48) * spanScale;
+  const xTip = baseR + wall + effSpan;
+  const maxTan = Math.tan(Math.min(1.08, sectorFull * (isWideSide ? 0.50 : 0.38)));
+  const clampAbsY = (raw: number) => clamp(Math.abs(raw), baseR * (isWideSide ? 0.52 : 0.32), xTip * maxTan);
+  const yTip = sideSign * clampAbsY(yTargetOut);
+  const yCorner = sideSign * clamp(Math.abs(yTargetRoot), baseR * (isWideSide ? 0.52 : 0.32), (baseR + 4) * maxTan);
+
+  const cornerPad = isWideSide ? 2.6 : 1.6;
+  const pCorner: Vec2 = [baseR + 1.5, yCorner + sideSign * cornerPad];
+  const pCOut: Vec2 = [xTip, yTip + sideSign * 0.9];
+  const pCIn: Vec2 = [Math.max(baseR + 0.5, xTip - 1.5), yTip - sideSign * 2.4];
+
+  const blendEff =
+    style === "fillet" ? Math.max(0.65, clamp(blendPct / 100, 0, 1)) : clamp(blendPct / 100, 0, 1);
+  // Blend between crisp triangular delta elbow (pA -> pCorner -> pCOut) and smooth quadratic Karman curve
+  const midAC: Vec2 = [0.5 * (pA[0] + pCOut[0]), 0.5 * (pA[1] + pCOut[1])];
+  const qSmooth: Vec2 = [
+    1.84 * pCorner[0] - 0.84 * midAC[0],
+    1.84 * pCorner[1] - 0.84 * midAC[1],
+  ];
+
+  const zSkirtBot = effSkirtLen > 0 ? -effSkirtLen : 0;
+  const zTopStart = clamp(coneLen * (isWideSide ? 0.25 : 0.19), 9.5, coneLen * 0.34);
+  const zBotTarget = clamp(zTargetEdge - 0.8, zSkirtBot, 4.0);
+
+  // 12-point closed perimeter (s ∈ [0=P_in..1=P_out], fz ∈ [0=zBot..1=zTop])
+  const profTemplate: [number, number][] = [
+    [0.0, 0.0],
+    [0.45, 0.0],
+    [0.86, 0.0],
+    [0.98, 0.08],
+    [1.0, 0.20],
+    [0.92, 0.36],
+    [0.74, 0.56],
+    [0.52, 0.76],
+    [0.30, 0.91],
+    [0.10, 0.99],
+    [0.0, 1.0],
+    [0.0, 0.5],
+  ];
+  const N_PROF = profTemplate.length;
+  const N_U = 16;
+
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const rings: number[][] = [];
+
+  for (let i = 0; i <= N_U; i++) {
+    const u = i / N_U;
+    const omt = 1 - u;
+    const bX = omt * omt * pA[0] + 2 * omt * u * qSmooth[0] + u * u * pCOut[0];
+    const bY = omt * omt * pA[1] + 2 * omt * u * qSmooth[1] + u * u * pCOut[1];
+    const uElbow = 0.38;
+    const lX =
+      u <= uElbow
+        ? pA[0] + ((pCorner[0] - pA[0]) * u) / uElbow
+        : pCorner[0] + ((pCOut[0] - pCorner[0]) * (u - uElbow)) / (1 - uElbow);
+    const lY =
+      u <= uElbow
+        ? pA[1] + ((pCorner[1] - pA[1]) * u) / uElbow
+        : pCorner[1] + ((pCOut[1] - pCorner[1]) * (u - uElbow)) / (1 - uElbow);
+
+    let outX = lX + (bX - lX) * blendEff;
+    let outY = lY + (bY - lY) * blendEff;
+    const inX = pB[0] + (pCIn[0] - pB[0]) * u;
+    const inY = pB[1] + (pCIn[1] - pB[1]) * u;
+
+    const wVecY = (outY - inY) * sideSign;
+    if (wVecY < 2.8) {
+      outY += sideSign * (2.8 - wVecY);
+    }
+    const wLen = Math.hypot(outX - inX, outY - inY);
+    if (wLen < 2.8) {
+      outX += 2.8 - wLen;
+    }
+
+    const distU = Math.hypot(outX - pA[0], outY - pA[1]);
+    const rMinU = Math.min(Math.hypot(outX, outY), Math.hypot(inX, inY));
+    const distPastSkirtBevel = Math.max(0, rMinU - (baseR + 1.2));
+    const skirtBevelLift = effSkirtLen > 0 ? Math.max(0, 0.9 - distPastSkirtBevel * 0.9) : 0;
+    const zBotFloor = zSkirtBot + skirtBevelLift;
+    const zBot = Math.max(zBotFloor, Math.min(zBotTarget, zBotFloor + distU * 0.78));
+    const zTopEnd =
+      style === "fillet"
+        ? Math.max(zBot + 2.4, Math.min(zTargetEdge + 3.0, zTopStart - 3))
+        : Math.max(zBot + 2.4, Math.min(zTargetEdge + 2.8, zBot + 6.5));
+    const zTop = Math.max(zBot + 2.2, zTopStart + (zTopEnd - zTopStart) * Math.pow(u, 0.72));
+
+    const ring: number[] = [];
+    for (let j = 0; j < N_PROF; j++) {
+      const [s, fz] = profTemplate[j]!;
+      const x = inX + (outX - inX) * s;
+      const y = inY + (outY - inY) * s;
+      const z = zBot + (zTop - zBot) * fz;
+      ring.push(pos.length / 3);
+      pos.push(x, y, z);
+    }
+    rings.push(ring);
+  }
+
+  for (let i = 0; i < N_U; i++) {
+    const r0 = rings[i]!;
+    const r1 = rings[i + 1]!;
+    for (let j = 0; j < N_PROF; j++) {
+      const jNext = (j + 1) % N_PROF;
+      idx.push(r0[j]!, r1[j]!, r1[jNext]!);
+      idx.push(r0[j]!, r1[jNext]!, r0[jNext]!);
+    }
+  }
+
+  // Start cap (u = 0) and End cap (u = 1) using centroid fan
+  const addCap = (ring: number[], reverse: boolean) => {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (const vi of ring) {
+      cx += pos[3 * vi]!;
+      cy += pos[3 * vi + 1]!;
+      cz += pos[3 * vi + 2]!;
+    }
+    const cIdx = pos.length / 3;
+    pos.push(cx / ring.length, cy / ring.length, cz / ring.length);
+    for (let j = 0; j < ring.length; j++) {
+      const a = ring[j]!;
+      const b = ring[(j + 1) % ring.length]!;
+      if (reverse) idx.push(cIdx, b, a);
+      else idx.push(cIdx, a, b);
+    }
+  };
+  addCap(rings[0]!, false);
+  addCap(rings[rings.length - 1]!, true);
+
+  // Guarantee positive signed volume (outward normals regardless of sideSign)
+  let signedVol6 = 0;
+  for (let t = 0; t + 2 < idx.length; t += 3) {
+    const ia = idx[t]! * 3;
+    const ib = idx[t + 1]! * 3;
+    const ic = idx[t + 2]! * 3;
+    const ax = pos[ia]!, ay = pos[ia + 1]!, az = pos[ia + 2]!;
+    const bx = pos[ib]!, by = pos[ib + 1]!, bz = pos[ib + 2]!;
+    const cx = pos[ic]!, cy = pos[ic + 1]!, cz = pos[ic + 2]!;
+    signedVol6 +=
+      ax * (by * cz - bz * cy) +
+      ay * (bz * cx - bx * cz) +
+      az * (bx * cy - by * cx);
+  }
+  if (signedVol6 < 0) {
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      const tmp = idx[t + 1]!;
+      idx[t + 1] = idx[t + 2]!;
+      idx[t + 2] = tmp;
+    }
+  }
+
+  const mMesh: ManifoldMesh = new mk.Mesh({
+    numProp: 3,
+    vertProperties: new Float32Array(pos),
+    triVerts: new Uint32Array(idx),
+  });
+  mMesh.merge();
+  const man = new mk.Manifold(mMesh);
+  track.push(man);
+  return man;
+}
+
 /**
  * Carves the full printable Nose Cone single solid with Manifold-3D CSG operations.
  */
@@ -747,10 +1066,88 @@ function buildPrintableNoseManifold(
   const boreR = Math.max(2.65, bladeCtx.hub_bore_mm * 0.5);
   const clearance = clamp(cfg.blade_clearance_mm, 0.2, 2.5);
   const effPitch = bladeCtx.root_twist_deg + bladeCtx.collective_pitch_deg;
+  const effFairingStyle: NoseConeFairingStyle = cfg.fairing_style ?? "delta";
+  const effFairingSpan =
+    effFairingStyle === "none" ? 0 : clamp(cfg.fairing_span_mm ?? 26, 10, 48);
+  const effFairingBlend = clamp(cfg.fairing_blend_pct ?? 35, 0, 100);
 
   try {
-    // 1. Base outer aerodynamic solid
+    // Pre-slice blade root contours so both swept fairings & skirt cutouts match exact 3D blade geometry
+    let bladeCutInfo: { cut2D: CrossSection; rawPolys: Vec2[][] } | null = null;
+    if (cfg.wrap_style !== "flush" || effFairingStyle !== "none") {
+      bladeCutInfo = buildBladeCutCrossSection(
+        mk,
+        bladeCtx,
+        baseR,
+        wall,
+        effHubLen,
+        clearance,
+        track,
+      );
+    }
+    const edgeSummary = measureBladeRootEdges(
+      bladeCtx,
+      baseR,
+      wall,
+      effHubLen,
+      effFairingSpan || 26,
+      bladeCutInfo?.rawPolys ?? [],
+    );
+
+    // 1. Base outer aerodynamic solid (+ monolithic swept blade-root fairings if enabled)
     let solid = buildOuterAeroSolid(mk, cfg, bladeCtx, baseR, wall, effSkirtLen, coneLen, track);
+    if (effFairingStyle !== "none" && effFairingSpan >= 8) {
+      let wing0 = buildOneFairingWingManifold(
+        mk,
+        baseR,
+        wall,
+        coneLen,
+        effSkirtLen,
+        bCount,
+        effFairingStyle,
+        edgeSummary.wideSign,
+        true,
+        effFairingSpan,
+        effFairingBlend,
+        edgeSummary.yWideRoot,
+        edgeSummary.yWideOut,
+        edgeSummary.zWideOut,
+        track,
+      );
+      if (effFairingStyle === "boot" || effFairingStyle === "fillet") {
+        const narrowSign: -1 | 1 = edgeSummary.wideSign > 0 ? -1 : 1;
+        const narrowWing = buildOneFairingWingManifold(
+          mk,
+          baseR,
+          wall,
+          coneLen,
+          effSkirtLen,
+          bCount,
+          effFairingStyle,
+          narrowSign,
+          false,
+          effFairingSpan,
+          effFairingBlend,
+          edgeSummary.yNarrowRoot,
+          edgeSummary.yNarrowOut,
+          edgeSummary.zNarrowOut,
+          track,
+        );
+        wing0 = wing0.add(narrowWing);
+        track.push(wing0);
+      }
+      const fairingInstances: Manifold[] = [];
+      for (let k = 0; k < bCount; k++) {
+        const deg = (k * 360) / bCount;
+        const inst = deg === 0 ? wing0 : wing0.rotate([0, 0, deg]);
+        if (deg !== 0) track.push(inst);
+        fairingInstances.push(inst);
+      }
+      const fairingsUnion = fairingInstances.length === 1 ? fairingInstances[0]! : mk.Manifold.union(fairingInstances);
+      if (fairingInstances.length > 1) track.push(fairingsUnion);
+      solid = solid.add(fairingsUnion);
+      track.push(solid);
+    }
 
     const subtractList: Manifold[] = [];
 
@@ -865,25 +1262,10 @@ function buildPrintableNoseManifold(
     }
 
     // 5. Compute true blade root cutouts + track max blade height
-    let bladeNYMin = 0;
-    let bladeNYMax = 0;
-    if (cfg.wrap_style !== "flush") {
-      const { cut2D, rawPolys } = buildBladeCutCrossSection(
-        mk,
-        bladeCtx,
-        baseR,
-        wall,
-        effHubLen,
-        clearance,
-        track,
-      );
-
-      for (const p of rawPolys) {
-        for (const [py] of p) {
-          if (py < bladeNYMin) bladeNYMin = py;
-          if (py > bladeNYMax) bladeNYMax = py;
-        }
-      }
+    const bladeNYMin = edgeSummary.nyMin;
+    const bladeNYMax = edgeSummary.nyMax;
+    if (cfg.wrap_style !== "flush" && bladeCutInfo) {
+      const { cut2D } = bladeCutInfo;
 
       // Build sector safety clip so adjacent 120-deg blades can NEVER merge and detach skirt segments,
       // and radial start never breaches internal trefoil/M3 boss pillars.
@@ -891,7 +1273,7 @@ function buildPrintableNoseManifold(
       const pierHalfRad = Math.min(0.16, sectorHalfRad * 0.25);
       const maxAngle = Math.max(0.15, sectorHalfRad - pierHalfRad);
       const rCutIn = Math.max(boltR + bossR + 0.4, baseR - 0.7);
-      const rCutOut = baseR + wall + 36;
+      const rCutOut = baseR + wall + Math.max(36, effFairingSpan + 24);
       const wedgePts: Vec2[] = [];
       const nArc = 16;
       for (let i = 0; i <= nArc; i++) {
@@ -905,8 +1287,30 @@ function buildPrintableNoseManifold(
       const wedgeCs = new mk.CrossSection([ensureCCW2D(wedgePts)], "Positive");
       track.push(wedgeCs);
       const wedgeHeight = coneLen + effSkirtLen + 20;
-      const wedgeSolid = wedgeCs.extrude(wedgeHeight).translate([0, 0, -effSkirtLen - 8]);
+      let wedgeSolid = wedgeCs.extrude(wedgeHeight).translate([0, 0, -effSkirtLen - 8]);
       track.push(wedgeSolid);
+
+      // When swept root fairings extend beyond the hub wall, widen the outboard cutout sector
+      // so wide blade trailing edges are cleanly carved through the fairing without blocking piers
+      if (effFairingSpan > 0) {
+        const rOutIn = baseR + wall + 0.8;
+        const outAngle = Math.max(maxAngle, Math.min(1.22, sectorHalfRad * 2 - 0.14));
+        const outPts: Vec2[] = [];
+        for (let i = 0; i <= nArc; i++) {
+          const a = -outAngle + ((2 * outAngle) * i) / nArc;
+          outPts.push([rCutOut * Math.cos(a), rCutOut * Math.sin(a)]);
+        }
+        for (let i = nArc; i >= 0; i--) {
+          const a = -outAngle + ((2 * outAngle) * i) / nArc;
+          outPts.push([rOutIn * Math.cos(a), rOutIn * Math.sin(a)]);
+        }
+        const outCs = new mk.CrossSection([ensureCCW2D(outPts)], "Positive");
+        track.push(outCs);
+        const outWedge = outCs.extrude(wedgeHeight).translate([0, 0, -effSkirtLen - 8]);
+        track.push(outWedge);
+        wedgeSolid = wedgeSolid.add(outWedge);
+        track.push(wedgeSolid);
+      }
 
       let blade0Cutter: Manifold;
       if (cfg.wrap_style === "cuff") {
@@ -1362,11 +1766,28 @@ export function computeNoseConeMetrics(
     cuff: 6,
     flush: 0,
   };
+  const fairingMeta: Record<NoseConeFairingStyle, { cdDelta: number; boost: number }> = {
+    none: { cdDelta: 0, boost: 0 },
+    delta: { cdDelta: 0.01, boost: 5 },
+    boot: { cdDelta: 0.015, boost: 7 },
+    fillet: { cdDelta: 0.02, boost: 8 },
+  };
+  const fMeta = fairingMeta[cfg.fairing_style ?? "none"] ?? fairingMeta.none;
   const base = profileMeta[cfg.aero_profile];
-  const cd = clamp(base.cd + (68 - cfg.cone_length_mm) * 0.0009 - wrapBonus[cfg.wrap_style] * 0.002, 0.08, 0.34);
+  const cd = clamp(
+    base.cd + (68 - cfg.cone_length_mm) * 0.0009 - wrapBonus[cfg.wrap_style] * 0.002 - fMeta.cdDelta,
+    0.07,
+    0.34,
+  );
   const boost = Math.max(
     4,
-    Math.round(base.boost + wrapBonus[cfg.wrap_style] * 0.6 + (effPitch - 14) * 0.12 + (bladeCtx.root_chord_mm - 60) * 0.06),
+    Math.round(
+      base.boost +
+        wrapBonus[cfg.wrap_style] * 0.6 +
+        fMeta.boost +
+        (effPitch - 14) * 0.12 +
+        (bladeCtx.root_chord_mm - 60) * 0.06,
+    ),
   );
 
   let volCm3 = overrides?.volumeCm3;
@@ -1490,7 +1911,8 @@ export function exportNoseConeStlBytes(
 
   const buf = new ArrayBuffer(84 + triCount * 50);
   const view = new DataView(buf);
-  const header = `BladeLab NoseCone ${cfg.aero_profile}/${cfg.wrap_style} D=${metrics.hub_diameter_mm.toFixed(0)}mm 1Solid-v2`;
+  const fairingTag = cfg.fairing_style && cfg.fairing_style !== "none" ? `+${cfg.fairing_style}` : "";
+  const header = `BladeLab NoseCone ${cfg.aero_profile}/${cfg.wrap_style}${fairingTag} D=${metrics.hub_diameter_mm.toFixed(0)}mm 1Solid-v2`;
   for (let i = 0; i < Math.min(80, header.length); i++) {
     view.setUint8(i, header.charCodeAt(i));
   }
@@ -1789,6 +2211,42 @@ export function drawNoseConeBlueprint2D(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
+
+  // Draw swept blade-root fairing triangle/fillet footprint when active
+  const fStyle = cfg.fairing_style ?? "none";
+  if (fStyle !== "none") {
+    const blend = clamp((cfg.fairing_blend_pct ?? 35) / 100, 0, 1);
+    const spanVis = clamp((cfg.fairing_span_mm ?? 26) / 48, 0.25, 1) * rs * 13;
+    const tePt = af[0]!;
+    const midLow = af[Math.floor(af.length * 0.72)]!;
+    const rootTipX = skirtR + spanVis;
+    ctx.fillStyle = isLight ? "rgba(232,69,30,0.20)" : "rgba(251,191,36,0.22)";
+    ctx.strokeStyle = cTheme.warn;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(tePt[0], tePt[1]);
+    ctx.quadraticCurveTo(
+      tePt[0] + spanVis * (0.45 + 0.25 * blend),
+      tePt[1] - (tePt[1] - midLow[1]) * (0.25 + 0.45 * blend),
+      rootTipX,
+      tePt[1] - 4 * rs,
+    );
+    ctx.lineTo(midLow[0], midLow[1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    if (fStyle === "boot" || fStyle === "fillet") {
+      const lePt = af[Math.floor(af.length * 0.48)]!;
+      ctx.beginPath();
+      ctx.moveTo(lePt[0], lePt[1]);
+      ctx.quadraticCurveTo(lePt[0] + spanVis * 0.4, lePt[1] + 2 * rs, skirtR + spanVis * 0.65, lePt[1] + 2.5 * rs);
+      ctx.lineTo(af[Math.floor(af.length * 0.28)]![0], af[Math.floor(af.length * 0.28)]![1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
 
   ctx.font = "400 9.5px ui-monospace, monospace";
   ctx.fillStyle = cTheme.muted;
