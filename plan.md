@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-08 11:38 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-21 13:21 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -1037,3 +1037,5 @@ note="user reported: 'now the model export as Step are also has ripple rought se
 [ACK] 2026-11-21T12:46:18+07:00 agent=geom-1 mem=v102 last_entry=F-geom1-072 task=T-105
 [ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-064..072. Redesigning the web workbench UI (/ui-taste) into the focused BladeLab Focus Workbench eliminating all text overflow, toolbar wrapping, and walls of text while preserving all 372 DOM IDs and WASM/CAD/BEM/Gearbox/Gist functionality.
 [END] 2026-11-21T13:03:00+07:00 agent=geom-1 mem=v103 note="Redesigned web workbench into BladeLab Focus Workbench (/ui-taste): 48px single-row command header, transient export toast, focused single-tab left CAD & right telemetry docks with pinned 3-KPI strip, 2x2 metric cards with live cyan sliders, floating bottom 3D stage capsule, progressive disclosure drawers, zero chrome emojis, and 372/372 preserved DOM IDs; verified tsc/lint/25 Node tests/Vite build and headless Chrome captures across 7 desktop/interactive/Gearbox/mobile states (0 overflows, Uizze visual-evidence.json ok=true); F-geom1-073 recorded"
+[ACK] 2026-11-21T13:21:20+07:00 agent=geom-1 mem=v103 last_entry=F-geom1-073 task=T-105
+[ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-073. Implementing combined #1 Daylight Atelier x #3 Swiss Blueprint ("Atelier Blueprint") default UI with live Atelier/Dark switcher and 4-step guided wizard across web/src/state.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs.
