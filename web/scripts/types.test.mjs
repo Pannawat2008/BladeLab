@@ -61,6 +61,10 @@ import {
   solveGearTeethForTargetRatio,
   buildGearboxMeshes,
   exportGearStlBytes,
+  defaultNoseConeConfig,
+  computeNoseConeMetrics,
+  buildNoseConeMeshes,
+  exportNoseConeStlBytes,
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
   snapSpanRatioToGrid,
@@ -1727,3 +1731,190 @@ test("Task 8: Atelier Blueprint UI style mode, dual-theme SVGs, and 4-step wizar
 
 
 
+
+
+test("Task 9: Nose Cone parametric metrics, Kidwind4-LockRev4 defaults, and studio_mode snapshot round-trip", () => {
+  const def = defaultNoseConeConfig();
+  assert.equal(def.hub_fit_mode, "kidwind4_lockrev4");
+  assert.equal(def.aero_profile, "adaptive");
+  assert.equal(def.wrap_style, "saddle");
+  assert.equal(def.hub_diameter_mm, 60);
+  assert.equal(def.bolt_circle_mm, 40);
+  assert.equal(def.trefoil_center_r_mm, 15);
+  assert.equal(def.trefoil_lobe_r_mm, 7.5);
+  assert.equal(def.trefoil_depth_mm, 2.0);
+
+  const bladeCtx = {
+    blade_count: 3,
+    hub_diameter_mm: 60,
+    hub_length_mm: 20,
+    hub_bore_mm: 5.3,
+    root_chord_mm: 70,
+    root_twist_deg: 20,
+    collective_pitch_deg: 0,
+  };
+  const mKid = computeNoseConeMetrics(def, bladeCtx);
+  assert.ok(mKid.nose_cd > 0 && mKid.nose_cd < 0.5);
+  assert.ok(mKid.root_flow_boost_pct >= 4);
+  assert.ok(mKid.est_mass_g > 5);
+  assert.ok(mKid.hardware_label.includes("M3"));
+  assert.ok(mKid.fit_note.includes("Kidwind4-LockRev4"));
+
+  const mAuto = computeNoseConeMetrics({ ...def, hub_fit_mode: "match_design" }, { ...bladeCtx, hub_diameter_mm: 84 });
+  assert.equal(mAuto.hub_diameter_mm, 84);
+  assert.ok(mAuto.fit_note.includes("84mm"));
+
+  const baseWb = defaultWorkbenchUiSnapshot();
+  const customNose = {
+    ...def,
+    aero_profile: "bell",
+    wrap_style: "closed",
+    cone_length_mm: 84,
+    blade_clearance_mm: 0.7,
+    assembly_slide_pct: 40,
+  };
+  const snap = createWorkbenchSnapshot(initialDesign, {}, { ...baseWb, studio_mode: "nose", nosecone: customNose }, "Nose Test");
+  const parsed = parseLoadedProjectJson(JSON.stringify(snap));
+  assert.equal(parsed.workbench.studio_mode, "nose");
+  assert.equal(parsed.workbench.nosecone?.aero_profile, "bell");
+  assert.equal(parsed.workbench.nosecone?.wrap_style, "closed");
+  assert.equal(parsed.workbench.nosecone?.cone_length_mm, 84);
+  assert.equal(parsed.workbench.nosecone?.blade_clearance_mm, 0.7);
+  assert.equal(parsed.workbench.nosecone?.assembly_slide_pct, 40);
+});
+
+test("Task 9: Nose Cone watertight manifold meshes across all 16 profile×wrap combinations & binary STL export", () => {
+  const def = defaultNoseConeConfig();
+  const bladeCtx = {
+    blade_count: 3,
+    hub_diameter_mm: 60,
+    hub_length_mm: 20,
+    hub_bore_mm: 5.3,
+    root_chord_mm: 70,
+    root_twist_deg: 20,
+    collective_pitch_deg: 0,
+  };
+
+  function assertWatertightPositive(submeshes, comboLabel) {
+    assert.ok(submeshes.length > 0, `${comboLabel}: expected at least 1 submesh`);
+    for (const sub of submeshes) {
+      const { positions, indices } = sub;
+      assert.ok(positions.length > 0 && indices.length > 0 && indices.length % 3 === 0, `${comboLabel}/${sub.id}: empty or non-triangle geometry`);
+      const directedEdges = new Map();
+      const undirectedCounts = new Map();
+      let signedVol6 = 0;
+
+      for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i];
+        const b = indices[i + 1];
+        const c = indices[i + 2];
+        const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+        const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
+        const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
+        assert.ok(
+          Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az) &&
+          Number.isFinite(bx) && Number.isFinite(by) && Number.isFinite(bz) &&
+          Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(cz),
+          `${comboLabel}/${sub.id}: non-finite vertex coordinate`,
+        );
+        signedVol6 +=
+          ax * (by * cz - bz * cy) +
+          ay * (bz * cx - bx * cz) +
+          az * (bx * cy - by * cx);
+
+        for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+          const dKey = `${u},${v}`;
+          directedEdges.set(dKey, (directedEdges.get(dKey) ?? 0) + 1);
+          const uKey = u < v ? `${u}-${v}` : `${v}-${u}`;
+          undirectedCounts.set(uKey, (undirectedCounts.get(uKey) ?? 0) + 1);
+        }
+      }
+
+      let inconsistent = 0;
+      let boundary = 0;
+      let nonManifold = 0;
+      for (const [key, count] of directedEdges.entries()) {
+        if (count > 1) inconsistent += count - 1;
+        const [u, v] = key.split(",");
+        if (!directedEdges.has(`${v},${u}`)) boundary++;
+      }
+      for (const count of undirectedCounts.values()) {
+        if (count !== 2) nonManifold++;
+      }
+
+      assert.equal(inconsistent, 0, `${comboLabel}/${sub.id}: inconsistent winding edges=${inconsistent}`);
+      assert.equal(boundary, 0, `${comboLabel}/${sub.id}: boundary edges=${boundary}`);
+      assert.equal(nonManifold, 0, `${comboLabel}/${sub.id}: non-manifold edges=${nonManifold}`);
+      assert.ok(signedVol6 > 0, `${comboLabel}/${sub.id}: expected positive signed volume, got ${signedVol6 / 6}`);
+    }
+  }
+
+  const profiles = ["adaptive", "vonkarman", "elliptical", "bell"];
+  const wraps = ["saddle", "closed", "cuff", "flush"];
+  for (const aero_profile of profiles) {
+    for (const wrap_style of wraps) {
+      const cfg = { ...def, aero_profile, wrap_style, cutaway_mode: false };
+      const bundle = buildNoseConeMeshes(cfg, bladeCtx);
+      const label = `${aero_profile}/${wrap_style}`;
+      assertWatertightPositive(bundle.submeshes, label);
+      assertWatertightPositive(bundle.ghost_hub_submeshes, `${label}/ghost`);
+      if (wrap_style === "cuff") {
+        assert.equal(bundle.cuff_submeshes.length, 1);
+        assert.equal(bundle.cuff_submeshes[0].id, "blade-rotating-cuff");
+        assertWatertightPositive(bundle.cuff_submeshes, `${label}/cuff`);
+      } else {
+        assert.equal(bundle.cuff_submeshes.length, 0);
+      }
+    }
+  }
+
+  // Binary STL export (must remain full watertight even when cutaway_mode is toggled on in viewport)
+  const coneFullBundle = buildNoseConeMeshes({ ...def, cutaway_mode: false }, bladeCtx);
+  const expectedConeTris = coneFullBundle.submeshes.reduce((n, s) => n + s.indices.length / 3, 0);
+  const coneStl = exportNoseConeStlBytes({ ...def, cutaway_mode: true }, bladeCtx, "cone");
+  const coneView = new DataView(coneStl.buffer, coneStl.byteOffset, coneStl.byteLength);
+  const coneTriCount = coneView.getUint32(80, true);
+  assert.equal(coneTriCount, expectedConeTris, "exportNoseConeStlBytes must ignore cutaway_mode and export full cone");
+  assert.equal(coneStl.byteLength, 84 + coneTriCount * 50);
+  let minZ = Infinity;
+  for (let t = 0; t < coneTriCount; t++) {
+    for (let v = 0; v < 3; v++) {
+      const z = coneView.getFloat32(84 + t * 50 + 12 + v * 12 + 8, true);
+      if (z < minZ) minZ = z;
+    }
+  }
+  assert.ok(minZ >= -1e-4, `STL must sit flat on build plate z >= 0, got minZ=${minZ}`);
+
+  const cuffStl = exportNoseConeStlBytes({ ...def, wrap_style: "cuff" }, bladeCtx, "cuff");
+  const cuffView = new DataView(cuffStl.buffer, cuffStl.byteOffset, cuffStl.byteLength);
+  const cuffTris = cuffView.getUint32(80, true);
+  assert.ok(cuffTris > 100);
+  assert.equal(cuffStl.byteLength, 84 + cuffTris * 50);
+});
+
+test("Task 9: Nose Cone Studio HTML DOM integrity", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
+  for (const id of [
+    "tab-studio-nose",
+    "nosecone-inspector",
+    "nose-toolbar-controls",
+    "nose-preview-canvas",
+    "nose-profile-tabs",
+    "nose-wrap-tabs",
+    "nose-slide",
+    "nose-length",
+    "nose-skirt",
+    "nose-wall",
+    "nose-gap",
+    "nose-trefoil-tol",
+    "nose-kpi-cd",
+    "nose-kpi-boost",
+    "nose-kpi-mass",
+    "nose-kpi-hardware",
+    "btn-export-nose-stl",
+    "btn-export-nose-cuff-stl",
+    "btn-export-nose-menu",
+  ]) {
+    assert.ok(html.includes(`id="${id}"`), `Missing expected Nose Cone Studio element id="${id}"`);
+  }
+});

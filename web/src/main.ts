@@ -112,6 +112,18 @@ import {
   type WingletConfig,
   applyWingletToBladeGeometry,
   exportBufferGeometryStlBytes,
+  defaultNoseConeConfig,
+  computeNoseConeMetrics,
+  buildNoseConeMeshes,
+  exportNoseConeStlBytes,
+  drawNoseConeBlueprint2D,
+  type NoseConeConfig,
+  type NoseConeAeroProfile,
+  type NoseConeWrapStyle,
+  type NoseConeHubFitMode,
+  type NoseConeViewMode,
+  type NoseConeBladeContext,
+  type NoseConeSubMesh,
   type WorkbenchSnapshot,
   type WorkbenchUiSnapshot,
 } from "./state";
@@ -230,19 +242,33 @@ function applySceneTheme(style: UiStyleMode) {
 }
 
 function updateCameraViewportOffset() {
-  if (
-    activeUiStyle === "atelier" &&
-    document.body.getAttribute("data-studio-mode") !== "gearbox" &&
-    !document.body.classList.contains("studio-gearbox-mode") &&
-    !atelierSheetHidden &&
-    innerWidth > 1180
-  ) {
-    const railW = innerWidth <= 1359 ? 344 : 376;
-    const offsetX = Math.round((railW + 10) / 2);
-    camera.setViewOffset(innerWidth, innerHeight, offsetX, 0, innerWidth, innerHeight);
-  } else {
-    camera.clearViewOffset();
+  if (innerWidth > 1180) {
+    if (studioMode === "nose") {
+      if (noseconeInspector?.classList.contains("open")) {
+        const offsetX =
+          activeUiStyle === "atelier"
+            ? Math.round((392 + 10) / 2)
+            : -Math.round((384 + 10) / 2);
+        camera.setViewOffset(innerWidth, innerHeight, offsetX, 0, innerWidth, innerHeight);
+      } else {
+        camera.clearViewOffset();
+      }
+      return;
+    }
+    if (
+      activeUiStyle === "atelier" &&
+      studioMode === "blade" &&
+      document.body.getAttribute("data-studio-mode") !== "gearbox" &&
+      !document.body.classList.contains("studio-gearbox-mode") &&
+      !atelierSheetHidden
+    ) {
+      const railW = innerWidth <= 1359 ? 344 : 376;
+      const offsetX = Math.round((railW + 10) / 2);
+      camera.setViewOffset(innerWidth, innerHeight, offsetX, 0, innerWidth, innerHeight);
+      return;
+    }
   }
+  camera.clearViewOffset();
 }
 
 // ---- DOM elements ----
@@ -534,16 +560,70 @@ let latestAepReport: WindPowerAepReport | null = null;
 let latestMaxOutReport: DrivetrainMaxOutReport | null = null;
 
 let viewMode: "single" | "rotor" | "gearbox" = "rotor";
-let studioMode: "blade" | "gearbox" = "blade";
+let studioMode: "blade" | "nose" | "gearbox" = "blade";
 let selectedGearIndex: 1 | 2 | 3 | null = null;
 let hoveredGearIndex: number | null = null;
 let wireframeMode = false;
 let spinRotorMode = false;
 let gearSpinAngleRad = 0;
 
-// ---- Studio Tabs & Gearbox Inspector DOM Elements ----
+// ---- Nose Cone Studio State & DOM Elements ----
+let activeNoseProfile: NoseConeAeroProfile = "adaptive";
+let activeNoseWrap: NoseConeWrapStyle = "saddle";
+let activeNoseView: NoseConeViewMode = "mounted";
+let noseCutawayMode = false;
+let noseBlueprintPhase = 0;
+let latestNoseCfgCache: NoseConeConfig = defaultNoseConeConfig();
+let latestNoseBladeCtxCache: NoseConeBladeContext = {
+  blade_count: 3,
+  hub_diameter_mm: 60,
+  hub_length_mm: 20,
+  hub_bore_mm: 5.3,
+  root_chord_mm: 70,
+  root_twist_deg: 20,
+  collective_pitch_deg: 0,
+};
+
 const tabStudioBlade = document.getElementById("tab-studio-blade") as HTMLButtonElement | null;
+const tabStudioNose = document.getElementById("tab-studio-nose") as HTMLButtonElement | null;
 const tabStudioGearbox = document.getElementById("tab-studio-gearbox") as HTMLButtonElement | null;
+
+const noseconeInspector = document.getElementById("nosecone-inspector");
+const btnCloseNoseInspector = document.getElementById("btn-close-nose-inspector") as HTMLButtonElement | null;
+const btnToggleNoseInspector = document.getElementById("btn-toggle-nose-inspector") as HTMLButtonElement | null;
+const noseSummary = document.getElementById("nose-summary");
+const nosePreviewCanvas = document.getElementById("nose-preview-canvas") as HTMLCanvasElement | null;
+const inputNoseEnabled = document.getElementById("nose-enabled") as HTMLInputElement | null;
+const selectNoseHubFit = document.getElementById("nose-hub-fit") as HTMLSelectElement | null;
+const noseProfileTabs = document.getElementById("nose-profile-tabs");
+const noseWrapTabs = document.getElementById("nose-wrap-tabs");
+const sliderNoseSlide = document.getElementById("nose-slide") as HTMLInputElement | null;
+const noseSlideLabel = document.getElementById("nose-slide-label");
+const noseSlideVal = document.getElementById("nose-slide-val");
+const sliderNoseLength = document.getElementById("nose-length") as HTMLInputElement | null;
+const noseLengthVal = document.getElementById("nose-length-val");
+const sliderNoseSkirt = document.getElementById("nose-skirt") as HTMLInputElement | null;
+const noseSkirtVal = document.getElementById("nose-skirt-val");
+const sliderNoseWall = document.getElementById("nose-wall") as HTMLInputElement | null;
+const noseWallVal = document.getElementById("nose-wall-val");
+const sliderNoseGap = document.getElementById("nose-gap") as HTMLInputElement | null;
+const noseGapVal = document.getElementById("nose-gap-val");
+const sliderNoseTrefoilTol = document.getElementById("nose-trefoil-tol") as HTMLInputElement | null;
+const noseTrefoilTolVal = document.getElementById("nose-trefoil-tol-val");
+const noseKpiCd = document.getElementById("nose-kpi-cd");
+const noseKpiBoost = document.getElementById("nose-kpi-boost");
+const noseKpiMass = document.getElementById("nose-kpi-mass");
+const noseKpiHardware = document.getElementById("nose-kpi-hardware");
+const noseFitNote = document.getElementById("nose-fit-note");
+const btnNoseViewMounted = document.getElementById("btn-nose-view-mounted") as HTMLButtonElement | null;
+const btnNoseViewOnly = document.getElementById("btn-nose-view-only") as HTMLButtonElement | null;
+const btnNoseViewRear = document.getElementById("btn-nose-view-rear") as HTMLButtonElement | null;
+const btnNoseCutaway = document.getElementById("btn-nose-cutaway") as HTMLButtonElement | null;
+const btnTbNoseSpin = document.getElementById("btn-tb-nose-spin") as HTMLButtonElement | null;
+const btnTbNoseExport = document.getElementById("btn-tb-nose-export") as HTMLButtonElement | null;
+const btnExportNoseStl = document.getElementById("btn-export-nose-stl") as HTMLButtonElement | null;
+const btnExportNoseCuffStl = document.getElementById("btn-export-nose-cuff-stl") as HTMLButtonElement | null;
+const btnExportNoseMenu = document.getElementById("btn-export-nose-menu") as HTMLButtonElement | null;
 const gearboxInspector = document.getElementById("gearbox-inspector");
 const btnCloseGearboxInspector = document.getElementById("btn-close-gearbox-inspector") as HTMLButtonElement | null;
 const btnToggleGearboxInspector = document.getElementById("btn-toggle-gearbox-inspector") as HTMLButtonElement | null;
@@ -1336,11 +1416,375 @@ function disposeObject3D(root: THREE.Object3D): void {
   for (const mat of materials) mat.dispose();
 }
 
+function getNoseConeBladeContext(design: Design): NoseConeBladeContext {
+  const rows = resolveStationsPreview(design);
+  return {
+    blade_count: Math.max(1, design.rotor.blade_count),
+    hub_diameter_mm: design.hub.diameter_mm,
+    hub_length_mm: design.hub.length_mm,
+    hub_bore_mm: design.hub.bore_diameter_mm,
+    root_chord_mm: rows[0]?.effective_chord_mm ?? 70,
+    root_twist_deg: rows[0]?.effective_twist_deg ?? 20,
+    collective_pitch_deg: collectivePitchDeg,
+  };
+}
+
+function readCurrentNoseConeConfig(): NoseConeConfig {
+  const def = defaultNoseConeConfig();
+  const hubFitMode = (selectNoseHubFit?.value === "match_design"
+    ? "match_design"
+    : "kidwind4_lockrev4") as NoseConeHubFitMode;
+  return {
+    ...def,
+    enabled: inputNoseEnabled ? inputNoseEnabled.checked : def.enabled,
+    hub_fit_mode: hubFitMode,
+    aero_profile: activeNoseProfile,
+    wrap_style: activeNoseWrap,
+    view_mode: activeNoseView,
+    cone_length_mm: Math.max(35, Math.min(150, Number.parseFloat(sliderNoseLength?.value || String(def.cone_length_mm)) || def.cone_length_mm)),
+    skirt_length_mm: Math.max(6, Math.min(36, Number.parseFloat(sliderNoseSkirt?.value || String(def.skirt_length_mm)) || def.skirt_length_mm)),
+    wall_thickness_mm: Math.max(1.6, Math.min(5.0, Number.parseFloat(sliderNoseWall?.value || String(def.wall_thickness_mm)) || def.wall_thickness_mm)),
+    blade_clearance_mm: Math.max(0.2, Math.min(2.5, Number.parseFloat(sliderNoseGap?.value || String(def.blade_clearance_mm)) || def.blade_clearance_mm)),
+    trefoil_clearance_mm: Math.max(0.1, Math.min(0.6, Number.parseFloat(sliderNoseTrefoilTol?.value || String(def.trefoil_clearance_mm)) || def.trefoil_clearance_mm)),
+    assembly_slide_pct: Math.max(0, Math.min(100, Number.parseFloat(sliderNoseSlide?.value || "0") || 0)),
+    cutaway_mode: noseCutawayMode,
+  };
+}
+
+function applyNoseConeConfigToDom(cfg?: NoseConeConfig) {
+  const c = cfg ? { ...defaultNoseConeConfig(), ...cfg } : defaultNoseConeConfig();
+  activeNoseProfile = c.aero_profile;
+  activeNoseWrap = c.wrap_style;
+  activeNoseView = c.view_mode;
+  noseCutawayMode = Boolean(c.cutaway_mode);
+  if (inputNoseEnabled) inputNoseEnabled.checked = Boolean(c.enabled);
+  if (selectNoseHubFit) selectNoseHubFit.value = c.hub_fit_mode;
+  if (sliderNoseSlide) sliderNoseSlide.value = String(c.assembly_slide_pct);
+  if (sliderNoseLength) sliderNoseLength.value = String(c.cone_length_mm);
+  if (sliderNoseSkirt) sliderNoseSkirt.value = String(c.skirt_length_mm);
+  if (sliderNoseWall) sliderNoseWall.value = String(c.wall_thickness_mm);
+  if (sliderNoseGap) sliderNoseGap.value = String(c.blade_clearance_mm);
+  if (sliderNoseTrefoilTol) sliderNoseTrefoilTol.value = String(c.trefoil_clearance_mm);
+}
+
+function updateNosePanelUi(design: Design): NoseConeConfig {
+  const cfg = readCurrentNoseConeConfig();
+  const bladeCtx = getNoseConeBladeContext(design);
+  latestNoseCfgCache = cfg;
+  latestNoseBladeCtxCache = bladeCtx;
+  const metrics = computeNoseConeMetrics(cfg, bladeCtx);
+
+  const profileLabels: Record<NoseConeAeroProfile, string> = {
+    adaptive: "Adaptive",
+    vonkarman: "Von Kármán",
+    elliptical: "Elliptical",
+    bell: "Bell",
+  };
+  const wrapLabels: Record<NoseConeWrapStyle, string> = {
+    saddle: "Saddle",
+    closed: "Window",
+    cuff: "Cuff",
+    flush: "Flush",
+  };
+
+  if (noseProfileTabs) {
+    noseProfileTabs.querySelectorAll<HTMLButtonElement>("[data-nose-profile]").forEach((btn) => {
+      const act = btn.dataset.noseProfile === cfg.aero_profile;
+      btn.classList.toggle("active", act);
+      btn.setAttribute("aria-selected", String(act));
+    });
+  }
+  if (noseWrapTabs) {
+    noseWrapTabs.querySelectorAll<HTMLButtonElement>("[data-nose-wrap]").forEach((btn) => {
+      const act = btn.dataset.noseWrap === cfg.wrap_style;
+      btn.classList.toggle("active", act);
+      btn.setAttribute("aria-selected", String(act));
+    });
+  }
+
+  for (const [btn, view] of [
+    [btnNoseViewMounted, "mounted"],
+    [btnNoseViewOnly, "cone_only"],
+    [btnNoseViewRear, "rear_fit"],
+  ] as const) {
+    if (btn) {
+      const act = cfg.view_mode === view;
+      btn.classList.toggle("active", act);
+      btn.setAttribute("aria-pressed", String(act));
+    }
+  }
+  if (btnNoseCutaway) {
+    btnNoseCutaway.classList.toggle("active", cfg.cutaway_mode);
+    btnNoseCutaway.setAttribute("aria-pressed", String(cfg.cutaway_mode));
+  }
+
+  const radialMode = cfg.wrap_style === "closed" || cfg.wrap_style === "cuff";
+  if (noseSlideLabel) {
+    noseSlideLabel.textContent = radialMode ? "Blade Slide (Radial)" : "Assembly Slide (Axial)";
+  }
+  if (noseSlideVal) {
+    noseSlideVal.textContent = cfg.assembly_slide_pct <= 0 ? "0% Seated" : `${Math.round(cfg.assembly_slide_pct)}% Open`;
+  }
+  if (noseLengthVal) noseLengthVal.textContent = `${Math.round(cfg.cone_length_mm)} mm`;
+  if (noseSkirtVal) noseSkirtVal.textContent = `${Math.round(cfg.skirt_length_mm)} mm`;
+  if (noseWallVal) noseWallVal.textContent = `${cfg.wall_thickness_mm.toFixed(1)} mm`;
+  if (noseGapVal) noseGapVal.textContent = `${cfg.blade_clearance_mm.toFixed(1)} mm`;
+  if (noseTrefoilTolVal) noseTrefoilTolVal.textContent = `${cfg.trefoil_clearance_mm.toFixed(2)} mm`;
+
+  if (noseSummary) {
+    noseSummary.textContent = `${profileLabels[cfg.aero_profile]} · ${wrapLabels[cfg.wrap_style]} · Ø${metrics.hub_diameter_mm.toFixed(0)} mm`;
+  }
+  if (noseKpiCd) noseKpiCd.textContent = metrics.nose_cd.toFixed(2);
+  if (noseKpiBoost) noseKpiBoost.textContent = `+${metrics.root_flow_boost_pct}%`;
+  if (noseKpiMass) noseKpiMass.textContent = `${metrics.est_mass_g.toFixed(1)} g`;
+  if (noseKpiHardware) noseKpiHardware.textContent = metrics.hardware_label;
+  if (noseFitNote) noseFitNote.textContent = metrics.fit_note;
+
+  if (btnExportNoseCuffStl) {
+    btnExportNoseCuffStl.style.opacity = cfg.wrap_style === "cuff" ? "1" : "0.72";
+    btnExportNoseCuffStl.title =
+      cfg.wrap_style === "cuff"
+        ? `Export ${bladeCtx.blade_count} Rotating Blade Cuffs as STL`
+        : "Export B Rotating Blade Cuffs (wrap style option 3)";
+  }
+
+  if (studioMode === "nose") {
+    const datumText = `NOSE · ${profileLabels[cfg.aero_profile].toUpperCase()} · ${wrapLabels[cfg.wrap_style].toUpperCase()} · Ø${metrics.hub_diameter_mm.toFixed(0)} mm · ${metrics.hardware_label}`;
+    if (hudRotorSpec) hudRotorSpec.textContent = datumText;
+    if (atelierHudSpec) atelierHudSpec.textContent = datumText;
+  }
+
+  return cfg;
+}
+
+function frameNoseCamera(view: NoseConeViewMode) {
+  if (view === "mounted") {
+    camera.position.set(145, 105, 165);
+    controls.target.set(0, 18, 0);
+  } else if (view === "cone_only") {
+    camera.position.set(108, 82, 128);
+    controls.target.set(0, 26, 0);
+  } else {
+    camera.position.set(95, -95, 120);
+    controls.target.set(0, 8, 0);
+  }
+  controls.update();
+}
+
+function buildThreeNoseSubMeshGroup(
+  submeshes: NoseConeSubMesh[],
+  wireframe: boolean,
+  opacity = 1.0,
+  translatePerIndex?: (idx: number) => [number, number, number],
+): THREE.Group {
+  const grp = new THREE.Group();
+  const edgeMat = wireframe
+    ? null
+    : new THREE.LineBasicMaterial({
+        color: 0x0f172a,
+        transparent: true,
+        opacity: 0.24,
+      });
+
+  submeshes.forEach((sub, idx) => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(sub.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(sub.indices, 1));
+    geo.computeVertexNormals();
+
+    const isGhostBody = sub.id.startsWith("ghost-hub-body") || sub.id.startsWith("ghost-hub-trefoil");
+    const matOpacity = isGhostBody ? opacity : 1.0;
+    const mat = new THREE.MeshStandardMaterial({
+      color: sub.color_hex,
+      metalness: sub.id.includes("bolt") ? 0.55 : isGhostBody ? 0.35 : 0.16,
+      roughness: sub.id.includes("bolt") ? 0.28 : isGhostBody ? 0.45 : 0.34,
+      wireframe,
+      transparent: matOpacity < 0.99,
+      opacity: matOpacity,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    if (translatePerIndex) {
+      const [dx, dy, dz] = translatePerIndex(idx);
+      mesh.position.set(dx, dy, dz);
+    }
+    grp.add(mesh);
+
+    if (edgeMat && !isGhostBody) {
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), edgeMat);
+      if (translatePerIndex) {
+        const [dx, dy, dz] = translatePerIndex(idx);
+        edges.position.set(dx, dy, dz);
+      }
+      grp.add(edges);
+    }
+  });
+  return grp;
+}
+
+function wrapAlignedNoseGroup(content: THREE.Object3D): THREE.Group {
+  const outer = new THREE.Group();
+  outer.rotation.y = -Math.PI / 2;
+  const inner = new THREE.Group();
+  inner.rotation.x = -Math.PI / 2;
+  inner.add(content);
+  outer.add(inner);
+  return outer;
+}
+
+function buildRadialCuffInstances(
+  cuffSubmeshes: NoseConeSubMesh[],
+  bladeCount: number,
+  effHubDia: number,
+  effHubLen: number,
+  radialSlideMm: number,
+  wireframe: boolean,
+): THREE.Group {
+  const grp = new THREE.Group();
+  if (cuffSubmeshes.length === 0) return grp;
+  const proto = cuffSubmeshes[0]!;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(proto.positions, 3));
+  geo.setIndex(new THREE.BufferAttribute(proto.indices, 1));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    color: proto.color_hex,
+    metalness: 0.18,
+    roughness: 0.34,
+    wireframe,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+  const edgeGeo = wireframe ? null : new THREE.EdgesGeometry(geo, 30);
+  const edgeMat = wireframe
+    ? null
+    : new THREE.LineBasicMaterial({
+        color: 0x0f172a,
+        transparent: true,
+        opacity: 0.24,
+      });
+
+  const zAxis = new THREE.Vector3(0, 0, 1);
+  const rBase = effHubDia * 0.5 - 1.2 + radialSlideMm;
+  const zSocket = -effHubLen * 0.5;
+  const bCount = Math.max(1, bladeCount);
+  for (let k = 0; k < bCount; k++) {
+    const ang = (k * 2 * Math.PI) / bCount;
+    const dir = new THREE.Vector3(Math.cos(ang), Math.sin(ang), 0);
+    const holder = new THREE.Group();
+    holder.position.set(dir.x * rBase, dir.y * rBase, zSocket);
+    holder.quaternion.setFromUnitVectors(zAxis, dir);
+    holder.add(new THREE.Mesh(geo, mat));
+    if (edgeGeo && edgeMat) {
+      holder.add(new THREE.LineSegments(edgeGeo, edgeMat));
+    }
+    grp.add(holder);
+  }
+  return grp;
+}
+
 function rebuild3D(design: Design) {
   try {
     updateFabricationStatus(design);
     updateAeroPanel(design);
     const gearCfg = updateGearboxPanelUi();
+    const noseCfg = updateNosePanelUi(design);
+
+    if (studioMode === "nose" && noseCfg.view_mode !== "mounted") {
+      const start = performance.now();
+      const bladeCtx = getNoseConeBladeContext(design);
+      const noseBundle = buildNoseConeMeshes(noseCfg, bladeCtx);
+      const elapsed = performance.now() - start;
+
+      errorBanner.style.display = "none";
+      errorBanner.textContent = "";
+      viewportHeatmapLegend.classList.remove("visible");
+      viewportHeatmapLegend.setAttribute("aria-hidden", "true");
+
+      if (rotorGroup !== null) {
+        disposeObject3D(rotorGroup);
+        scene.remove(rotorGroup);
+      }
+      rotorGroup = new THREE.Group();
+      rotorGroup.userData.isNoseGroup = true;
+
+      const slideRaw = noseCfg.assembly_slide_pct / 100;
+      const slideRear = noseCfg.view_mode === "rear_fit" && slideRaw === 0 ? 0.35 : slideRaw;
+      const effHubLen =
+        noseCfg.hub_fit_mode === "kidwind4_lockrev4" ? 20 : Math.max(10, design.hub.length_mm);
+      const hubFrontY = effHubLen / 2;
+
+      const bCount = Math.max(1, bladeCtx.blade_count);
+      const effHubDia =
+        noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+          ? noseCfg.hub_diameter_mm
+          : design.hub.diameter_mm;
+      const cuffSlideMm = slideRaw * 65;
+
+      if (noseCfg.view_mode === "cone_only") {
+        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
+        const alignedCone = wrapAlignedNoseGroup(coneGrp);
+        alignedCone.position.y = 0;
+        rotorGroup.add(alignedCone);
+
+        if (noseBundle.cuff_submeshes.length > 0) {
+          const cuffGrp = buildRadialCuffInstances(
+            noseBundle.cuff_submeshes,
+            bCount,
+            effHubDia,
+            effHubLen,
+            cuffSlideMm,
+            wireframeMode,
+          );
+          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
+          alignedCuffs.position.y = 0;
+          rotorGroup.add(alignedCuffs);
+        }
+      } else {
+        // rear_fit view: ghost hub + M3 bolts + separated cone showing rear trefoil pocket & M3 bosses
+        const hubGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.84);
+        const alignedHub = wrapAlignedNoseGroup(hubGrp);
+        alignedHub.position.y = hubFrontY;
+        rotorGroup.add(alignedHub);
+
+        const axialSep =
+          noseCfg.wrap_style === "closed" || noseCfg.wrap_style === "cuff"
+            ? slideRear * 48
+            : slideRear * 58;
+        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
+        const alignedCone = wrapAlignedNoseGroup(coneGrp);
+        alignedCone.position.y = hubFrontY + axialSep;
+        rotorGroup.add(alignedCone);
+
+        if (noseBundle.cuff_submeshes.length > 0) {
+          const cuffGrp = buildRadialCuffInstances(
+            noseBundle.cuff_submeshes,
+            bCount,
+            effHubDia,
+            effHubLen,
+            cuffSlideMm,
+            wireframeMode,
+          );
+          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
+          alignedCuffs.position.y = hubFrontY + axialSep;
+          rotorGroup.add(alignedCuffs);
+        }
+      }
+
+      scene.add(rotorGroup);
+      updateStats(elapsed, {
+        triangle_count: noseBundle.metrics.total_triangles,
+        volume_mm3: Math.round((noseBundle.metrics.est_mass_g / 1.27) * 1000),
+        span_min_mm: -noseBundle.metrics.skirt_length_mm,
+        span_max_mm: noseCfg.cone_length_mm,
+      });
+      return;
+    }
 
     if (viewMode === "gearbox") {
       const start = performance.now();
@@ -1618,48 +2062,140 @@ function rebuild3D(design: Design) {
       if (viewMode === "rotor") {
         const angle = (2 * Math.PI * i) / count;
         branch.rotation.y = angle;
+        if (studioMode === "nose") {
+          const baseRadialFit =
+            noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+              ? Math.min(0, noseCfg.hub_diameter_mm * 0.5 - design.rotor.hub_radius_mm)
+              : 0;
+          const radialSlide =
+            noseCfg.wrap_style === "closed" || noseCfg.wrap_style === "cuff"
+              ? (noseCfg.assembly_slide_pct / 100) * 65
+              : 0;
+          const rShift = baseRadialFit + radialSlide;
+          if (Math.abs(rShift) > 1e-4) {
+            branch.position.set(Math.sin(angle) * rShift, 0, Math.cos(angle) * rShift);
+          }
+        }
       }
       rotorGroup.add(branch);
     }
 
     if (viewMode === "rotor") {
-      const hubOuterR = Math.max(12, design.hub.diameter_mm / 2);
-      const hubInnerR = Math.max(2, Math.min(hubOuterR - 2, design.hub.bore_diameter_mm / 2));
-      const hubLen = Math.max(10, design.hub.length_mm);
       const rootCoreY = tubeAxis && tubeAxis.length >= 7 ? tubeAxis[1]! : 0;
       const hubYOffset = bladeFlipped ? -rootCoreY : rootCoreY;
+      const bladeCtx = getNoseConeBladeContext(design);
 
-      const hubShape = new THREE.Shape();
-      hubShape.absarc(0, 0, hubOuterR, 0, Math.PI * 2, false);
-      const boreHole = new THREE.Path();
-      boreHole.absarc(0, 0, hubInnerR, 0, Math.PI * 2, true);
-      hubShape.holes.push(boreHole);
+      if (studioMode === "nose") {
+        const effHubLen =
+          noseCfg.hub_fit_mode === "kidwind4_lockrev4" ? 20 : Math.max(10, design.hub.length_mm);
+        const hubFrontY = effHubLen / 2 + hubYOffset;
+        const noseBundle = buildNoseConeMeshes(noseCfg, bladeCtx);
 
-      const hubGeo = new THREE.ExtrudeGeometry(hubShape, {
-        depth: hubLen,
-        bevelEnabled: false,
-        curveSegments: 64,
-      });
-      hubGeo.rotateX(Math.PI / 2);
-      hubGeo.translate(0, hubLen / 2 + hubYOffset, 0);
+        const ghostGrp = buildThreeNoseSubMeshGroup(noseBundle.ghost_hub_submeshes, wireframeMode, 0.85);
+        const alignedGhost = wrapAlignedNoseGroup(ghostGrp);
+        alignedGhost.position.y = hubFrontY;
+        rotorGroup.add(alignedGhost);
 
-      const hubMat = new THREE.MeshStandardMaterial({
-        color: activeUiStyle === "atelier" ? 0x334155 : 0x64748b,
-        metalness: 0.45,
-        roughness: 0.35,
-        wireframe: wireframeMode,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
-      });
-      const hubMesh = new THREE.Mesh(hubGeo, hubMat);
-      rotorGroup.add(hubMesh);
-      if (edgeMat) {
-        const hubEdges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(hubGeo, 32),
-          edgeMat,
-        );
-        rotorGroup.add(hubEdges);
+        const slideFrac = noseCfg.assembly_slide_pct / 100;
+        const axialSlideMm =
+          noseCfg.wrap_style === "saddle" || noseCfg.wrap_style === "flush" ? slideFrac * 58 : 0;
+        const radialSlideMm =
+          noseCfg.wrap_style === "closed" || noseCfg.wrap_style === "cuff" ? slideFrac * 65 : 0;
+
+        const coneGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
+        const alignedCone = wrapAlignedNoseGroup(coneGrp);
+        alignedCone.position.y = hubFrontY + axialSlideMm;
+        rotorGroup.add(alignedCone);
+
+        if (noseBundle.cuff_submeshes.length > 0) {
+          const bCount = Math.max(1, bladeCtx.blade_count);
+          const effHubDia =
+            noseCfg.hub_fit_mode === "kidwind4_lockrev4"
+              ? noseCfg.hub_diameter_mm
+              : design.hub.diameter_mm;
+          const cuffGrp = buildRadialCuffInstances(
+            noseBundle.cuff_submeshes,
+            bCount,
+            effHubDia,
+            effHubLen,
+            radialSlideMm,
+            wireframeMode,
+          );
+          const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
+          alignedCuffs.position.y = hubFrontY;
+          rotorGroup.add(alignedCuffs);
+        }
+        rotorGroup.userData.isNoseGroup = true;
+      } else {
+        const hubOuterR = Math.max(12, design.hub.diameter_mm / 2);
+        const hubInnerR = Math.max(2, Math.min(hubOuterR - 2, design.hub.bore_diameter_mm / 2));
+        const hubLen = Math.max(10, design.hub.length_mm);
+
+        const hubShape = new THREE.Shape();
+        hubShape.absarc(0, 0, hubOuterR, 0, Math.PI * 2, false);
+        const boreHole = new THREE.Path();
+        boreHole.absarc(0, 0, hubInnerR, 0, Math.PI * 2, true);
+        hubShape.holes.push(boreHole);
+
+        const hubGeo = new THREE.ExtrudeGeometry(hubShape, {
+          depth: hubLen,
+          bevelEnabled: false,
+          curveSegments: 64,
+        });
+        hubGeo.rotateX(Math.PI / 2);
+        hubGeo.translate(0, hubLen / 2 + hubYOffset, 0);
+
+        const hubMat = new THREE.MeshStandardMaterial({
+          color: activeUiStyle === "atelier" ? 0x334155 : 0x64748b,
+          metalness: 0.45,
+          roughness: 0.35,
+          wireframe: wireframeMode,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+        const hubMesh = new THREE.Mesh(hubGeo, hubMat);
+        rotorGroup.add(hubMesh);
+        if (edgeMat) {
+          const hubEdges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(hubGeo, 32),
+            edgeMat,
+          );
+          rotorGroup.add(hubEdges);
+        }
+
+        if (noseCfg.enabled) {
+          const rotorMatchedCfg: NoseConeConfig = {
+            ...noseCfg,
+            hub_fit_mode:
+              Math.abs(hubOuterR * 2 - 60) > 1 ? "match_design" : noseCfg.hub_fit_mode,
+            cutaway_mode: false,
+            assembly_slide_pct: 0,
+          };
+          const mountedCtx: NoseConeBladeContext = {
+            ...bladeCtx,
+            hub_diameter_mm: hubOuterR * 2,
+          };
+          const noseBundle = buildNoseConeMeshes(rotorMatchedCfg, mountedCtx);
+          const noseGrp = buildThreeNoseSubMeshGroup(noseBundle.submeshes, wireframeMode);
+          const alignedNose = wrapAlignedNoseGroup(noseGrp);
+          alignedNose.position.y = hubLen / 2 + hubYOffset;
+          rotorGroup.add(alignedNose);
+
+          if (noseBundle.cuff_submeshes.length > 0) {
+            const cuffGrp = buildRadialCuffInstances(
+              noseBundle.cuff_submeshes,
+              mountedCtx.blade_count,
+              hubOuterR * 2,
+              hubLen,
+              0,
+              wireframeMode,
+            );
+            const alignedCuffs = wrapAlignedNoseGroup(cuffGrp);
+            alignedCuffs.position.y = hubLen / 2 + hubYOffset;
+            rotorGroup.add(alignedCuffs);
+          }
+        }
       }
     }
 
@@ -2573,6 +3109,7 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gen_r_load: Number.parseFloat(inputGenRLoad.value) || 12.0,
     exp_data_log: inputExpData.value || "",
     gearbox: readCurrentGearboxConfig(),
+    nosecone: readCurrentNoseConeConfig(),
     studio_mode: studioMode,
     gearbox_selected_gear: selectedGearIndex,
     gearbox_inspector_open: gearboxInspector?.classList.contains("open") ?? true,
@@ -2648,6 +3185,11 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   } else {
     applyGearboxConfigToDom(defaultGearboxConfig());
   }
+  if (wb.nosecone) {
+    applyNoseConeConfigToDom(wb.nosecone);
+  } else {
+    applyNoseConeConfigToDom(defaultNoseConeConfig());
+  }
 
   if (wb.studio_mode === "gearbox" || wb.view_mode === "gearbox") {
     setStudioMode("gearbox");
@@ -2661,16 +3203,24 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
       btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
       syncDockAccessibilityState();
     }
+  } else if (wb.studio_mode === "nose") {
+    setStudioMode("nose");
   } else {
     studioMode = "blade";
     tabStudioBlade?.classList.add("active");
     tabStudioBlade?.setAttribute("aria-selected", "true");
+    tabStudioNose?.classList.remove("active");
+    tabStudioNose?.setAttribute("aria-selected", "false");
     tabStudioGearbox?.classList.remove("active");
     tabStudioGearbox?.setAttribute("aria-selected", "false");
     document.body.classList.remove("studio-gearbox-mode");
+    document.body.classList.remove("studio-nose-mode");
     gearboxInspector?.classList.remove("open");
+    noseconeInspector?.classList.remove("open");
     btnToggleGearboxInspector?.classList.remove("active");
     btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+    btnToggleNoseInspector?.classList.remove("active");
+    btnToggleNoseInspector?.setAttribute("aria-pressed", "false");
     selectGear(null, false);
 
     const r = workingDesign.rotor.radius_mm;
@@ -2834,25 +3384,54 @@ function setViewportMode(nextMode: "single" | "rotor" | "gearbox") {
   scheduleAutoSave();
 }
 
-function setStudioMode(mode: "blade" | "gearbox") {
+function setStudioMode(mode: "blade" | "nose" | "gearbox") {
   studioMode = mode;
   tabStudioBlade?.classList.toggle("active", mode === "blade");
   tabStudioBlade?.setAttribute("aria-selected", String(mode === "blade"));
+  tabStudioNose?.classList.toggle("active", mode === "nose");
+  tabStudioNose?.setAttribute("aria-selected", String(mode === "nose"));
   tabStudioGearbox?.classList.toggle("active", mode === "gearbox");
   tabStudioGearbox?.setAttribute("aria-selected", String(mode === "gearbox"));
 
   if (mode === "gearbox") {
     document.body.classList.add("studio-gearbox-mode");
+    document.body.classList.remove("studio-nose-mode");
+    noseconeInspector?.classList.remove("open");
+    btnToggleNoseInspector?.classList.remove("active");
+    btnToggleNoseInspector?.setAttribute("aria-pressed", "false");
     setViewportMode("gearbox");
     gearboxInspector?.classList.add("open");
     btnToggleGearboxInspector?.classList.add("active");
     btnToggleGearboxInspector?.setAttribute("aria-pressed", "true");
     selectGear(1, true);
-  } else {
+  } else if (mode === "nose") {
     document.body.classList.remove("studio-gearbox-mode");
+    document.body.classList.add("studio-nose-mode");
     gearboxInspector?.classList.remove("open");
     btnToggleGearboxInspector?.classList.remove("active");
     btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+    selectGear(null, false);
+    noseconeInspector?.classList.add("open");
+    btnToggleNoseInspector?.classList.add("active");
+    btnToggleNoseInspector?.setAttribute("aria-pressed", "true");
+    viewMode = "rotor";
+    btnViewSingle.classList.remove("active");
+    btnViewSingle.setAttribute("aria-pressed", "false");
+    btnViewRotor.classList.add("active");
+    btnViewRotor.setAttribute("aria-pressed", "true");
+    btnViewGearbox?.classList.remove("active");
+    btnViewGearbox?.setAttribute("aria-pressed", "false");
+    frameNoseCamera(activeNoseView);
+    rebuild3D(workingDesign);
+  } else {
+    document.body.classList.remove("studio-gearbox-mode");
+    document.body.classList.remove("studio-nose-mode");
+    gearboxInspector?.classList.remove("open");
+    btnToggleGearboxInspector?.classList.remove("active");
+    btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
+    noseconeInspector?.classList.remove("open");
+    btnToggleNoseInspector?.classList.remove("active");
+    btnToggleNoseInspector?.setAttribute("aria-pressed", "false");
     selectGear(null, false);
     setViewportMode("rotor");
     const r = workingDesign.rotor.radius_mm;
@@ -2871,7 +3450,116 @@ function setStudioMode(mode: "blade" | "gearbox") {
 }
 
 tabStudioBlade?.addEventListener("click", () => setStudioMode("blade"));
+tabStudioNose?.addEventListener("click", () => setStudioMode("nose"));
 tabStudioGearbox?.addEventListener("click", () => setStudioMode("gearbox"));
+
+btnCloseNoseInspector?.addEventListener("click", () => {
+  noseconeInspector?.classList.remove("open");
+  btnToggleNoseInspector?.classList.remove("active");
+  btnToggleNoseInspector?.setAttribute("aria-pressed", "false");
+  updateCameraViewportOffset();
+  syncDockAccessibilityState();
+});
+
+btnToggleNoseInspector?.addEventListener("click", () => {
+  const isOpen = noseconeInspector?.classList.toggle("open");
+  btnToggleNoseInspector.classList.toggle("active", Boolean(isOpen));
+  btnToggleNoseInspector.setAttribute("aria-pressed", String(Boolean(isOpen)));
+  updateCameraViewportOffset();
+  syncDockAccessibilityState();
+});
+
+noseProfileTabs?.querySelectorAll<HTMLButtonElement>("[data-nose-profile]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const p = btn.dataset.noseProfile as NoseConeAeroProfile | undefined;
+    if (!p) return;
+    activeNoseProfile = p;
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+});
+
+noseWrapTabs?.querySelectorAll<HTMLButtonElement>("[data-nose-wrap]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const w = btn.dataset.noseWrap as NoseConeWrapStyle | undefined;
+    if (!w) return;
+    activeNoseWrap = w;
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+});
+
+for (const [btn, v] of [
+  [btnNoseViewMounted, "mounted"],
+  [btnNoseViewOnly, "cone_only"],
+  [btnNoseViewRear, "rear_fit"],
+] as const) {
+  btn?.addEventListener("click", () => {
+    activeNoseView = v;
+    frameNoseCamera(v);
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+}
+
+btnNoseCutaway?.addEventListener("click", () => {
+  noseCutawayMode = !noseCutawayMode;
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+});
+
+btnTbNoseSpin?.addEventListener("click", () => {
+  spinRotorMode = !spinRotorMode;
+  btnViewSpin.classList.toggle("active", spinRotorMode);
+  btnViewSpin.setAttribute("aria-pressed", String(spinRotorMode));
+  btnTbGearSpin?.classList.toggle("active", spinRotorMode);
+  btnTbGearSpin?.setAttribute("aria-pressed", String(spinRotorMode));
+  btnTbNoseSpin.classList.toggle("active", spinRotorMode);
+  btnTbNoseSpin.setAttribute("aria-pressed", String(spinRotorMode));
+});
+
+[inputNoseEnabled, selectNoseHubFit].forEach((el) => {
+  el?.addEventListener("change", () => {
+    rebuild3D(workingDesign);
+    scheduleAutoSave();
+  });
+});
+
+[
+  sliderNoseSlide,
+  sliderNoseLength,
+  sliderNoseSkirt,
+  sliderNoseWall,
+  sliderNoseGap,
+  sliderNoseTrefoilTol,
+].forEach((slider) => {
+  slider?.addEventListener("input", () => {
+    rebuild3D(workingDesign);
+  });
+  slider?.addEventListener("change", () => {
+    scheduleAutoSave();
+  });
+});
+
+function exportNoseConeTargetStl(target: "cone" | "cuff") {
+  const cfg = readCurrentNoseConeConfig();
+  const bladeCtx = getNoseConeBladeContext(workingDesign);
+  const bytes = exportNoseConeStlBytes(cfg, bladeCtx, target);
+  const effDia =
+    cfg.hub_fit_mode === "kidwind4_lockrev4" ? cfg.hub_diameter_mm : bladeCtx.hub_diameter_mm;
+  const suffix =
+    target === "cuff"
+      ? `nose-cuffs-${bladeCtx.blade_count}B`
+      : `nosecone-${cfg.aero_profile}-${cfg.wrap_style}-D${effDia.toFixed(0)}`;
+  const filename = `bladelab-${suffix}.stl`;
+  triggerBlobDownload(bytes, filename, "model/stl");
+  exportStatus.textContent = `Saved ${filename} (${(bytes.byteLength / 1024).toFixed(1)} kB)`;
+}
+
+btnExportNoseStl?.addEventListener("click", () => exportNoseConeTargetStl("cone"));
+btnTbNoseExport?.addEventListener("click", () => exportNoseConeTargetStl("cone"));
+btnExportNoseMenu?.addEventListener("click", () => exportNoseConeTargetStl("cone"));
+btnExportNoseCuffStl?.addEventListener("click", () => exportNoseConeTargetStl("cuff"));
 
 btnCloseGearboxInspector?.addEventListener("click", () => {
   gearboxInspector?.classList.remove("open");
@@ -3054,6 +3742,8 @@ btnViewSpin.addEventListener("click", () => {
   btnViewSpin.setAttribute("aria-pressed", String(spinRotorMode));
   btnTbGearSpin?.classList.toggle("active", spinRotorMode);
   btnTbGearSpin?.setAttribute("aria-pressed", String(spinRotorMode));
+  btnTbNoseSpin?.classList.toggle("active", spinRotorMode);
+  btnTbNoseSpin?.setAttribute("aria-pressed", String(spinRotorMode));
 });
 
 selectHeatmapMode.addEventListener("change", () => {
@@ -3095,6 +3785,10 @@ btnAutoFitPrinter.addEventListener("click", () => {
 });
 
 btnCamIso.addEventListener("click", () => {
+  if (studioMode === "nose") {
+    frameNoseCamera(activeNoseView);
+    return;
+  }
   if (viewMode === "gearbox") {
     const gm = computeGearboxMetrics(readCurrentGearboxConfig());
     const span = Math.max(120, gm.total_span_width_mm);
@@ -3110,6 +3804,12 @@ btnCamIso.addEventListener("click", () => {
 });
 
 btnCamTop.addEventListener("click", () => {
+  if (studioMode === "nose") {
+    camera.position.set(0, 210, 0.01);
+    controls.target.set(0, 20, 0);
+    controls.update();
+    return;
+  }
   if (viewMode === "gearbox") {
     const gm = computeGearboxMetrics(readCurrentGearboxConfig());
     const span = Math.max(120, gm.total_span_width_mm);
@@ -3125,6 +3825,12 @@ btnCamTop.addEventListener("click", () => {
 });
 
 btnCamTip.addEventListener("click", () => {
+  if (studioMode === "nose") {
+    camera.position.set(175, 22, 0.01);
+    controls.target.set(0, 22, 0);
+    controls.update();
+    return;
+  }
   if (viewMode === "gearbox") {
     const gm = computeGearboxMetrics(readCurrentGearboxConfig());
     const span = Math.max(120, gm.total_span_width_mm);
@@ -3591,7 +4297,7 @@ window.addEventListener("keydown", (ev) => {
   }
 });
 
-[btnExportStl, btnExport3mf, btnExportStep, btnExportJson, btnLoadJson].forEach((btn) => {
+[btnExportStl, btnExport3mf, btnExportNoseMenu, btnExportStep, btnExportJson, btnLoadJson].forEach((btn) => {
   btn?.addEventListener("click", () => {
     exportDropdownMenu?.classList.remove("open");
     btnExportMain?.setAttribute("aria-expanded", "false");
@@ -5192,12 +5898,50 @@ function syncDockAccessibilityState() {
       (gearboxInspector as any).inert = !open;
       gearboxInspector.setAttribute("aria-hidden", String(!open));
     }
+    if (noseconeInspector) {
+      (noseconeInspector as any).inert = true;
+      noseconeInspector.setAttribute("aria-hidden", "true");
+    }
+    return;
+  }
+
+  if (studioMode === "nose") {
+    if (panelEl) {
+      panelEl.inert = true;
+      panelEl.setAttribute("aria-hidden", "true");
+    }
+    if (aeroDockEl) {
+      aeroDockEl.inert = true;
+      aeroDockEl.setAttribute("aria-hidden", "true");
+    }
+    if (atelierWizardHeader) {
+      (atelierWizardHeader as any).inert = true;
+      atelierWizardHeader.setAttribute("aria-hidden", "true");
+    }
+    if (atelierWizardFooter) {
+      (atelierWizardFooter as any).inert = true;
+      atelierWizardFooter.setAttribute("aria-hidden", "true");
+    }
+    if (gearboxInspector) {
+      (gearboxInspector as any).inert = true;
+      gearboxInspector.setAttribute("aria-hidden", "true");
+    }
+    if (noseconeInspector) {
+      const mobileHide = isMobileLayout && mobilePane !== "cad";
+      const open = noseconeInspector.classList.contains("open") && !mobileHide;
+      (noseconeInspector as any).inert = !open;
+      noseconeInspector.setAttribute("aria-hidden", String(!open));
+    }
     return;
   }
 
   if (gearboxInspector) {
     (gearboxInspector as any).inert = true;
     gearboxInspector.setAttribute("aria-hidden", "true");
+  }
+  if (noseconeInspector) {
+    (noseconeInspector as any).inert = true;
+    noseconeInspector.setAttribute("aria-hidden", "true");
   }
 
   if (activeUiStyle === "atelier") {
@@ -5541,7 +6285,13 @@ addEventListener("keydown", (event) => {
     event.preventDefault();
     performRedo();
   } else if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    if (activeUiStyle === "atelier" && (event.key === "[" || event.key === "]")) {
+    if (studioMode === "nose" && (event.key === "[" || event.key === "]")) {
+      const isOpen = noseconeInspector?.classList.toggle("open");
+      btnToggleNoseInspector?.classList.toggle("active", Boolean(isOpen));
+      btnToggleNoseInspector?.setAttribute("aria-pressed", String(Boolean(isOpen)));
+      updateCameraViewportOffset();
+      syncDockAccessibilityState();
+    } else if (activeUiStyle === "atelier" && (event.key === "[" || event.key === "]")) {
       atelierSheetHidden = !atelierSheetHidden;
       document.body.classList.toggle("atelier-sheet-hidden", atelierSheetHidden);
       updateCameraViewportOffset();
@@ -5580,6 +6330,17 @@ renderer.setAnimationLoop((now) => {
     } else {
       rotorGroup.rotation.y += visualRadPerSec * dt;
     }
+  }
+
+  if (studioMode === "nose" && nosePreviewCanvas && noseconeInspector?.classList.contains("open")) {
+    noseBlueprintPhase += dt * (spinRotorMode ? 3.2 : 1.4);
+    drawNoseConeBlueprint2D(
+      nosePreviewCanvas,
+      latestNoseCfgCache,
+      latestNoseBladeCtxCache,
+      noseBlueprintPhase,
+      activeUiStyle,
+    );
   }
 
   controls.update();
@@ -5664,6 +6425,12 @@ addEventListener("keydown", (event) => {
     btnToggleGearboxInspector?.classList.remove("active");
     btnToggleGearboxInspector?.setAttribute("aria-pressed", "false");
     syncDockAccessibilityState();
+  } else if (event.key === "Escape" && studioMode === "nose" && noseconeInspector?.classList.contains("open")) {
+    noseconeInspector.classList.remove("open");
+    btnToggleNoseInspector?.classList.remove("active");
+    btnToggleNoseInspector?.setAttribute("aria-pressed", "false");
+    updateCameraViewportOffset();
+    syncDockAccessibilityState();
   }
 });
 
@@ -5706,6 +6473,7 @@ try {
 }
 
 if (!restoredOnStartup) {
+  applyNoseConeConfigToDom(defaultNoseConeConfig());
   syncControlsFromDesign(workingDesign);
   rebuild3D(workingDesign);
   flushAutoSaveNow("Auto-saved");

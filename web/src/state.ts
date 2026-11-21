@@ -13,6 +13,8 @@ import type {
   Rotor,
   StationOverride,
 } from "./types/blade-model";
+import { defaultNoseConeConfig, type NoseConeConfig } from "./nosecone.ts";
+export * from "./nosecone.ts";
 
 
 export const RATIO_EPS = 1e-9;
@@ -2015,7 +2017,8 @@ export interface WorkbenchUiSnapshot {
   gen_r_load: number;
   exp_data_log: string;
   gearbox?: GearboxConfig;
-  studio_mode?: "blade" | "gearbox";
+  nosecone?: NoseConeConfig;
+  studio_mode?: "blade" | "nose" | "gearbox";
   gearbox_selected_gear?: 1 | 2 | 3 | null;
   gearbox_inspector_open?: boolean;
   collective_pitch_deg?: number;
@@ -2097,6 +2100,7 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     gen_r_load: 12.0,
     exp_data_log: "",
     gearbox: defaultGearboxConfig(),
+    nosecone: defaultNoseConeConfig(),
     studio_mode: "blade",
     gearbox_selected_gear: null,
     gearbox_inspector_open: true,
@@ -2151,6 +2155,10 @@ export function createWorkbenchSnapshot(
     gearbox: {
       ...defWb.gearbox!,
       ...(workbench.gearbox && typeof workbench.gearbox === "object" ? workbench.gearbox : {}),
+    },
+    nosecone: {
+      ...defWb.nosecone!,
+      ...(workbench.nosecone && typeof workbench.nosecone === "object" ? workbench.nosecone : {}),
     },
   };
 

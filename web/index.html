@@ -622,26 +622,39 @@
         pointer-events: none;
       }
 
-      /* Gearbox Toolbar Controls & Studio Visibility */
-      #gearbox-toolbar-controls {
+      /* Gearbox & Nose Cone Toolbar Controls & Studio Visibility */
+      #gearbox-toolbar-controls,
+      #nose-toolbar-controls {
         display: none;
         align-items: center;
         gap: 6px;
       }
       body.studio-gearbox-mode #panel,
       body.studio-gearbox-mode #aero-dock,
+      body.studio-gearbox-mode #nosecone-inspector,
       body.studio-gearbox-mode #dock-toggles-desktop,
       body.studio-gearbox-mode #blade-view-controls,
       body.studio-gearbox-mode #export-bar,
-      body.studio-gearbox-mode #projects-drawer {
+      body.studio-gearbox-mode #projects-drawer,
+      body.studio-nose-mode #panel,
+      body.studio-nose-mode #aero-dock,
+      body.studio-nose-mode #gearbox-inspector,
+      body.studio-nose-mode #dock-toggles-desktop,
+      body.studio-nose-mode #blade-view-controls,
+      body.studio-nose-mode #export-bar,
+      body.studio-nose-mode #projects-drawer {
         display: none !important;
       }
       body.studio-gearbox-mode #gearbox-toolbar-controls {
         display: inline-flex !important;
       }
+      body.studio-nose-mode #nose-toolbar-controls {
+        display: inline-flex !important;
+      }
 
-      /* Gearbox Inspector Dock */
-      #gearbox-inspector {
+      /* Gearbox & Nose Cone Inspector Docks */
+      #gearbox-inspector,
+      #nosecone-inspector {
         position: fixed;
         top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
         left: var(--dock-gap);
@@ -663,13 +676,130 @@
           transform 0.26s var(--ease),
           opacity 0.18s var(--ease);
       }
-      body.studio-gearbox-mode #gearbox-inspector {
+      #nosecone-inspector {
+        width: 384px;
+      }
+      body.studio-gearbox-mode #gearbox-inspector,
+      body.studio-nose-mode #nosecone-inspector {
         display: flex;
       }
-      body.studio-gearbox-mode #gearbox-inspector.open {
+      body.studio-gearbox-mode #gearbox-inspector.open,
+      body.studio-nose-mode #nosecone-inspector.open {
         transform: translateX(0);
         opacity: 1;
         pointer-events: auto;
+      }
+      body.studio-nose-mode #viewport-datum-hud,
+      body.studio-nose-mode #viewport-stage-bar {
+        left: calc(384px + var(--dock-gap) + (100vw - 384px - var(--dock-gap)) / 2);
+        max-width: calc(100vw - 384px - var(--dock-gap) * 3);
+      }
+      body.studio-nose-mode #nosecone-inspector:not(.open) ~ #viewport-datum-hud,
+      body.studio-nose-mode #nosecone-inspector:not(.open) ~ #viewport-stage-bar {
+        left: 50%;
+        max-width: calc(100vw - 24px);
+      }
+      body.studio-nose-mode #heatmap-mode {
+        display: none;
+      }
+      .nose-blueprint-card {
+        padding: 4px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        margin-bottom: 8px;
+      }
+      #nose-preview-canvas {
+        display: block;
+        width: 100%;
+        height: 172px;
+      }
+      .nose-pill-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px;
+      }
+      .nose-pill-grid button.btn-mini {
+        width: 100%;
+        height: 28px;
+        justify-content: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 0 6px;
+        font-size: 11px;
+      }
+      .nose-pill-grid button.btn-mini.active {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .nose-slider-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .nose-slider-row {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .nose-slider-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+      .nose-slider-head label {
+        font-weight: 500;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .nose-slider-val {
+        font: 600 11px/14px var(--font-mono);
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+      }
+      .nose-range {
+        width: 100%;
+        height: 16px;
+        margin: 0;
+        accent-color: var(--accent-solid);
+        cursor: pointer;
+      }
+      .nose-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .nose-kpi-grid .telemetry-card {
+        padding: 7px 8px;
+      }
+      .nose-kpi-grid .kpi-val {
+        font-size: 13px;
+      }
+      .nose-toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--text-primary);
+        cursor: pointer;
+      }
+      .nose-toggle-row input[type="checkbox"] {
+        width: 15px;
+        height: 15px;
+        accent-color: var(--accent-solid);
+        cursor: pointer;
       }
 
       .gear-card {
@@ -2512,10 +2642,10 @@
       }
 
       /* Daylight Atelier Top-Left Floating Canvas Pill (#atelier-canvas-hud) */
-      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #viewport-datum-hud {
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #viewport-datum-hud {
         display: none;
       }
-      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-canvas-hud {
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-canvas-hud {
         position: fixed;
         top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
         left: var(--dock-gap);
@@ -2636,9 +2766,36 @@
         border-color: #93c5fd;
         box-shadow: 0 18px 40px rgba(24, 24, 27, 0.14);
       }
+      body[data-ui-style="atelier"].studio-nose-mode #nosecone-inspector {
+        left: auto;
+        right: var(--dock-gap);
+        width: 392px;
+        border-color: #93c5fd;
+        box-shadow: 0 18px 40px rgba(24, 24, 27, 0.14);
+        transform: translateX(calc(100% + 24px));
+      }
+      body[data-ui-style="atelier"].studio-nose-mode #nosecone-inspector.open {
+        transform: translateX(0);
+      }
+      body[data-ui-style="atelier"].studio-nose-mode #viewport-datum-hud,
+      body[data-ui-style="atelier"].studio-nose-mode #viewport-stage-bar {
+        left: calc((100vw - 392px - var(--dock-gap)) / 2);
+        max-width: calc(100vw - 392px - var(--dock-gap) * 3);
+      }
+      body[data-ui-style="atelier"].studio-nose-mode #viewport-datum-hud {
+        background: #ffffff;
+        border-color: #93c5fd;
+        color: #18181b;
+        box-shadow: 0 8px 20px rgba(24, 24, 27, 0.12);
+      }
+      body[data-ui-style="atelier"].studio-nose-mode #nosecone-inspector:not(.open) ~ #viewport-datum-hud,
+      body[data-ui-style="atelier"].studio-nose-mode #nosecone-inspector:not(.open) ~ #viewport-stage-bar {
+        left: 50%;
+        max-width: calc(100vw - 24px);
+      }
 
       /* Single Right Swiss Blueprint Drafting Sheet + 4-Step Wizard Rail */
-      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-header {
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-wizard-header {
         position: fixed;
         top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
         right: var(--dock-gap);
@@ -2704,7 +2861,7 @@
         color: #ffffff;
       }
 
-      body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-footer {
+      body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-wizard-footer {
         position: fixed;
         right: var(--dock-gap);
         bottom: var(--dock-gap);
@@ -2819,6 +2976,9 @@
 
       /* Atelier Breakpoints */
       @media (max-width: 1359px) {
+        .studio-tabs button {
+          padding: 0 8px;
+        }
         body[data-ui-style="atelier"] {
           --atelier-rail-w: 344px;
         }
@@ -2828,13 +2988,13 @@
       }
 
       @media (max-width: 1180px) {
-        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-header {
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-wizard-header {
           left: auto;
           right: var(--dock-gap);
           width: min(410px, calc(100vw - 16px));
           max-width: none;
         }
-        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-footer {
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-wizard-footer {
           left: auto;
           right: var(--dock-gap);
           width: min(410px, calc(100vw - 16px));
@@ -2849,6 +3009,32 @@
           max-width: none;
           right: var(--dock-gap);
           left: auto;
+        }
+        body.studio-nose-mode #nosecone-inspector,
+        body[data-ui-style="atelier"].studio-nose-mode #nosecone-inspector {
+          top: calc(var(--dock-gap) * 2 + var(--top-dock-h));
+          bottom: 56px;
+          left: 8px;
+          right: 8px;
+          width: auto;
+          max-width: none;
+        }
+        body[data-mobile-pane="canvas"].studio-nose-mode #nosecone-inspector,
+        body[data-mobile-pane="canvas"].studio-nose-mode #nosecone-inspector.open,
+        body[data-mobile-pane="aero"].studio-nose-mode #nosecone-inspector,
+        body[data-mobile-pane="aero"].studio-nose-mode #nosecone-inspector.open,
+        body[data-ui-style="atelier"][data-mobile-pane="canvas"].studio-nose-mode #nosecone-inspector.open,
+        body[data-ui-style="atelier"][data-mobile-pane="aero"].studio-nose-mode #nosecone-inspector.open {
+          transform: translateX(calc(-100% - 24px));
+          opacity: 0;
+          pointer-events: none;
+        }
+        body.studio-nose-mode #viewport-datum-hud,
+        body.studio-nose-mode #viewport-stage-bar,
+        body[data-ui-style="atelier"].studio-nose-mode #viewport-datum-hud,
+        body[data-ui-style="atelier"].studio-nose-mode #viewport-stage-bar {
+          left: 50%;
+          max-width: calc(100vw - 24px);
         }
         body[data-ui-style="atelier"][data-mobile-pane="canvas"] #atelier-wizard-header,
         body[data-ui-style="atelier"][data-mobile-pane="canvas"] #atelier-wizard-footer,
@@ -2873,10 +3059,11 @@
       }
 
       @media (max-width: 720px) {
-        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-header,
-        body[data-ui-style="atelier"]:not(.studio-gearbox-mode) #atelier-wizard-footer,
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-wizard-header,
+        body[data-ui-style="atelier"]:not(.studio-gearbox-mode):not(.studio-nose-mode) #atelier-wizard-footer,
         body[data-ui-style="atelier"] #panel,
-        body[data-ui-style="atelier"] #aero-dock {
+        body[data-ui-style="atelier"] #aero-dock,
+        body.studio-nose-mode #nosecone-inspector {
           left: 8px;
           right: 8px;
           width: auto;
@@ -2906,6 +3093,7 @@
 
         <div class="studio-tabs" role="tablist" aria-label="Studio Mode">
           <button id="tab-studio-blade" class="active" type="button" role="tab" aria-selected="true" title="Blade CAD &amp; Aerodynamics Studio">Blade</button>
+          <button id="tab-studio-nose" type="button" role="tab" aria-selected="false" title="Aerodynamic Nose Cone &amp; Hub Fit Studio">Nose</button>
           <button id="tab-studio-gearbox" type="button" role="tab" aria-selected="false" title="Involute Helical/Spur Gearbox Prototype Studio">Gearbox</button>
         </div>
 
@@ -2971,6 +3159,21 @@
           </button>
           <button id="btn-tb-gear-export-all" class="btn-primary btn-mini" type="button" title="Download all 3 gears arranged flat on build plate as STL">Export 3 Gears</button>
         </div>
+
+        <div id="nose-toolbar-controls" class="toolbar">
+          <button id="btn-toggle-nose-inspector" class="btn-icon active" type="button" aria-pressed="true" title="Toggle Nose Cone Inspector ( [ )">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+          </button>
+          <span class="toolbar-divider"></span>
+          <div class="seg-pill" role="group" aria-label="Nose Cone Preview View">
+            <button id="btn-nose-view-mounted" class="active" type="button" aria-pressed="true" title="Mounted on Rotor Hub">Mounted</button>
+            <button id="btn-nose-view-only" type="button" aria-pressed="false" title="Nose Cone Only">Cone Only</button>
+            <button id="btn-nose-view-rear" type="button" aria-pressed="false" title="Rear M3 &amp; Trefoil Pocket Fit">Rear Fit</button>
+          </div>
+          <button id="btn-nose-cutaway" class="btn-mini" type="button" aria-pressed="false" title="Half-section cutaway view">Cutaway</button>
+          <button id="btn-tb-nose-spin" class="btn-mini" type="button" aria-pressed="false" title="Animate rotor &amp; nose rotation">Spin</button>
+          <button id="btn-tb-nose-export" class="btn-primary btn-mini" type="button" title="Download printable Nose Cone STL">Export STL</button>
+        </div>
       </div>
 
       <div class="toolbar" id="export-bar">
@@ -2995,6 +3198,10 @@
             <button id="btn-export-3mf" type="button" role="menuitem" class="export-menu-item">
               <strong>3MF Package</strong>
               <span class="export-menu-sub">Bambu Lab / PrusaSlicer color package</span>
+            </button>
+            <button id="btn-export-nose-menu" type="button" role="menuitem" class="export-menu-item">
+              <strong>Nose Cone (.STL)</strong>
+              <span class="export-menu-sub">Printable aero spinner · rear M3 trefoil lock</span>
             </button>
             <div class="export-menu-divider"></div>
             <div class="export-menu-header">CAD Solid &amp; Data</div>
@@ -4223,6 +4430,139 @@
           <button id="btn-export-gear1" class="btn-mini" type="button">G1 STL</button>
           <button id="btn-export-gear2" class="btn-mini" type="button">G2 STL</button>
           <button id="btn-export-gear3" class="btn-mini" type="button">G3 STL</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Nose Cone Studio Inspector Dock -->
+    <aside id="nosecone-inspector" aria-label="Nose Cone Studio Inspector" class="open">
+      <div class="panel-header">
+        <div class="brand-title">
+          <span class="brand-dot" style="background: var(--accent)" aria-hidden="true"></span>
+          <h2 style="flex-shrink: 0">Nose Cone</h2>
+          <span id="nose-summary" class="section-meta">Adaptive · Saddle · Ø60 mm</span>
+        </div>
+        <div class="toolbar" style="flex-shrink: 0">
+          <button id="btn-close-nose-inspector" class="btn-icon" type="button" title="Close Inspector (Esc)" aria-label="Close Nose Cone Inspector">
+            <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-scroll" id="nose-scroll-container">
+        <div class="nose-blueprint-card">
+          <canvas id="nose-preview-canvas" role="img" aria-label="Nose Cone Meridional Profile and Rear M3 Trefoil Blueprint"></canvas>
+        </div>
+
+        <div class="card-box">
+          <label class="nose-toggle-row" for="nose-enabled">
+            <span>Mount Nose Cone on Rotor</span>
+            <input id="nose-enabled" type="checkbox" checked />
+          </label>
+          <div class="field" style="margin-top: 8px">
+            <label for="nose-hub-fit">Hub Fit Datum</label>
+            <select id="nose-hub-fit">
+              <option value="kidwind4_lockrev4" selected>Kidwind4-LockRev4 (Ø60 · Trefoil + 3×M3)</option>
+              <option value="match_design">Auto-Match BladeLab Hub</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card-box">
+          <div class="field" style="margin-bottom: 5px">
+            <label>Aero Profile</label>
+          </div>
+          <div id="nose-profile-tabs" class="nose-pill-grid" role="tablist" aria-label="Aero Nose Profile">
+            <button type="button" class="btn-mini active" role="tab" aria-selected="true" data-nose-profile="adaptive">Blade-Adaptive</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-profile="vonkarman">Von Kármán</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-profile="elliptical">Elliptical</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-profile="bell">Bell Diffuser</button>
+          </div>
+
+          <div class="field" style="margin-top: 9px; margin-bottom: 5px">
+            <label>Blade Base Wrap Method</label>
+          </div>
+          <div id="nose-wrap-tabs" class="nose-pill-grid" role="tablist" aria-label="Blade Base Wrap Style">
+            <button type="button" class="btn-mini active" role="tab" aria-selected="true" data-nose-wrap="saddle">1. Rear-Open Saddle</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-wrap="closed">2. Closed Window</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-wrap="cuff">3. Rotating Cuff</button>
+            <button type="button" class="btn-mini" role="tab" aria-selected="false" data-nose-wrap="flush">Flush Spinner</button>
+          </div>
+        </div>
+
+        <div class="card-box">
+          <div class="nose-slider-list">
+            <div class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label id="nose-slide-label" for="nose-slide">Assembly Slide (Axial)</label>
+                <span id="nose-slide-val" class="nose-slider-val">0% Seated</span>
+              </div>
+              <input id="nose-slide" class="nose-range" type="range" min="0" max="100" step="1" value="0" />
+            </div>
+            <div class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-length">Nose Cone Length L</label>
+                <span id="nose-length-val" class="nose-slider-val">68 mm</span>
+              </div>
+              <input id="nose-length" class="nose-range" type="range" min="35" max="150" step="1" value="68" />
+            </div>
+            <div class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-skirt">Hub Shroud Skirt</label>
+                <span id="nose-skirt-val" class="nose-slider-val">20 mm</span>
+              </div>
+              <input id="nose-skirt" class="nose-range" type="range" min="6" max="36" step="1" value="20" />
+            </div>
+            <div class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-wall">FDM Wall Thickness</label>
+                <span id="nose-wall-val" class="nose-slider-val">2.2 mm</span>
+              </div>
+              <input id="nose-wall" class="nose-range" type="range" min="1.6" max="5.0" step="0.1" value="2.2" />
+            </div>
+            <div class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-gap">Blade Gap Tolerance</label>
+                <span id="nose-gap-val" class="nose-slider-val">0.5 mm</span>
+              </div>
+              <input id="nose-gap" class="nose-range" type="range" min="0.2" max="2.5" step="0.1" value="0.5" />
+            </div>
+            <div class="nose-slider-row">
+              <div class="nose-slider-head">
+                <label for="nose-trefoil-tol">Trefoil Fit Tolerance</label>
+                <span id="nose-trefoil-tol-val" class="nose-slider-val">0.25 mm</span>
+              </div>
+              <input id="nose-trefoil-tol" class="nose-range" type="range" min="0.10" max="0.60" step="0.05" value="0.25" />
+            </div>
+          </div>
+
+          <div class="nose-kpi-grid">
+            <div class="telemetry-card">
+              <span class="kpi-label">Forebody Cd</span>
+              <span id="nose-kpi-cd" class="kpi-val">0.088</span>
+            </div>
+            <div class="telemetry-card">
+              <span class="kpi-label">Root Flow Boost</span>
+              <span id="nose-kpi-boost" class="kpi-val">+13.4%</span>
+            </div>
+            <div class="telemetry-card">
+              <span class="kpi-label">PLA Mass</span>
+              <span id="nose-kpi-mass" class="kpi-val">26 g</span>
+            </div>
+            <div class="telemetry-card">
+              <span class="kpi-label">Mount Hardware</span>
+              <span id="nose-kpi-hardware" class="kpi-val">3× M3×30 Blind</span>
+            </div>
+          </div>
+
+          <div id="nose-fit-note" class="fit-badge" style="margin-top: 8px; white-space: normal; line-height: 1.35">
+            Slides straight on axially from the front before tightening rear M3 bolts.
+          </div>
+
+          <div class="toolbar" style="margin-top: 8px; gap: 6px">
+            <button id="btn-export-nose-stl" class="btn-primary btn-mini" type="button" style="flex: 1">Export Nose STL</button>
+            <button id="btn-export-nose-cuff-stl" class="btn-mini" type="button" style="flex: 1">Export Cuffs STL</button>
+          </div>
         </div>
       </div>
     </aside>
