@@ -5157,6 +5157,32 @@ class MeshBuilder {
     }
   }
 
+  /**
+   * Connects two rings of length `n` with an integer index shift on `ringB`
+   * (`ringB[(i + shiftB) % n]`) to minimize angular skew across helically twisted caps.
+   */
+  stitchRingsShifted(
+    ringA: number,
+    ringB: number,
+    n: number,
+    shiftB: number,
+    flipWinding = false,
+  ) {
+    const off = ((shiftB % n) + n) % n;
+    for (let i = 0; i < n; i++) {
+      const next = (i + 1) % n;
+      const a0 = ringA + i;
+      const a1 = ringA + next;
+      const b0 = ringB + ((i + off) % n);
+      const b1 = ringB + ((next + off) % n);
+      if (!flipWinding) {
+        this.addQuad(a0, a1, b1, b0);
+      } else {
+        this.addQuad(a0, b0, b1, a1);
+      }
+    }
+  }
+
   toSubMesh(meta: {
     id: string;
     gear_index: 1 | 2 | 3;
@@ -5387,10 +5413,20 @@ function buildToothedWheelMesh(opts: {
     opts.spokes >= 3 && opts.spokes <= 8 && rimInnerR > opts.hubOuterRadiusMm + 2.5;
 
   const boreRadii = sampleBoreRadiusRing(angles, opts.boreDiaMm, opts.dFlatMm);
+  let minToothR = rf;
+  let maxBoreR = 0.8;
+  for (let i = 0; i < n; i++) {
+    if (toothRadii[i]! < minToothR) minToothR = toothRadii[i]!;
+    if (boreRadii[i]! > maxBoreR) maxBoreR = boreRadii[i]!;
+  }
+
   const z0 = opts.zOffsetMm;
   const z1 = opts.zOffsetMm + opts.faceWidthMm;
   const zLayers = 6;
   const betaRad = ((opts.helixAngleDeg || 0) * Math.PI) / 180;
+  const topTwist = opts.helixHand * (opts.faceWidthMm * Math.tan(betaRad)) / Math.max(2, rp);
+  const kShift = Math.round((topTwist * n) / (2 * Math.PI));
+  const shiftB = ((-kShift % n) + n) % n;
 
   // 1. Outer involute tooth surface (helical extruded layers z0 .. z1)
   const outerRings: number[] = [];
@@ -5404,13 +5440,32 @@ function buildToothedWheelMesh(opts: {
     mb.stitchRings(outerRings[k]!, outerRings[k + 1]!, n, false);
   }
 
+  // Matches helically twisted top tooth ring without folding top-face triangles
+  const stitchTopCapToTeeth = (innerTop: number, innerMaxR: number) => {
+    if (Math.abs(topTwist) < 1e-6) {
+      mb.stitchRings(innerTop, outerRings[zLayers]!, n, true);
+      return;
+    }
+    const rRootCap = Math.min(
+      minToothR - 0.12,
+      Math.max(innerMaxR + 0.25, minToothR - 0.35 * opts.moduleMm),
+    );
+    if (rRootCap > innerMaxR + 0.15 && rRootCap < minToothR - 0.05) {
+      const rootTop = mb.addPolarRing(angles, rRootCap, z1, topTwist);
+      mb.stitchRingsShifted(innerTop, rootTop, n, shiftB, true);
+      mb.stitchRings(rootTop, outerRings[zLayers]!, n, true);
+    } else {
+      mb.stitchRingsShifted(innerTop, outerRings[zLayers]!, n, shiftB, true);
+    }
+  };
+
   if (!useCutouts) {
     // Solid gear web from bore out to outer tooth ring
     const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
     const boreTop = mb.addPolarRing(angles, boreRadii, z1, 0);
     mb.stitchRings(boreBot, boreTop, n, true);
     mb.stitchRings(boreBot, outerRings[0]!, n, false);
-    mb.stitchRings(boreTop, outerRings[zLayers]!, n, true);
+    stitchTopCapToTeeth(boreTop, maxBoreR);
     return mb;
   }
 
@@ -5444,7 +5499,7 @@ function buildToothedWheelMesh(opts: {
   mb.stitchRings(boreBot, hubBot, n, false);
   mb.stitchRings(boreTop, hubTop, n, true);
   mb.stitchRings(rimBot, outerRings[0]!, n, false);
-  mb.stitchRings(rimTop, outerRings[zLayers]!, n, true);
+  stitchTopCapToTeeth(rimTop, rimInnerR);
 
   if (canUseCircularHoles) {
     // Circular lightening holes (Gear4 style, e.g. 4 x Ø20 mm), split cleanly along exact radial rays

@@ -1403,6 +1403,27 @@ test("Task 5 gearbox: watertight outward normals (0 inconsistent edges, positive
       assert.equal(inconsistent, 0, `${label}/${sub.id}: expected 0 inconsistent shared edges, got ${inconsistent}`);
       assert.equal(boundary, 0, `${label}/${sub.id}: expected 0 boundary edges (watertight), got ${boundary}`);
       assert.ok(signedVol6 > 0, `${label}/${sub.id}: expected positive signed volume, got ${signedVol6 / 6}`);
+
+      // Verify zero folded-over (negative-area) triangles on the top planar cap (z === maxZ)
+      let maxZ = -Infinity;
+      for (let i = 2; i < positions.length; i += 3) {
+        if (positions[i] > maxZ) maxZ = positions[i];
+      }
+      let topNeg = 0;
+      for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+        if (
+          Math.abs(positions[a * 3 + 2] - maxZ) < 1e-4 &&
+          Math.abs(positions[b * 3 + 2] - maxZ) < 1e-4 &&
+          Math.abs(positions[c * 3 + 2] - maxZ) < 1e-4
+        ) {
+          const cz =
+            (positions[b * 3] - positions[a * 3]) * (positions[c * 3 + 1] - positions[a * 3 + 1]) -
+            (positions[b * 3 + 1] - positions[a * 3 + 1]) * (positions[c * 3] - positions[a * 3]);
+          if (cz < -1e-9) topNeg++;
+        }
+      }
+      assert.equal(topNeg, 0, `${label}/${sub.id}: expected 0 folded top-cap triangles, got ${topNeg}`);
     }
   };
 
@@ -1417,6 +1438,16 @@ test("Task 5 gearbox: watertight outward normals (0 inconsistent edges, positive
   const compCfg = getGearboxPreset("comp_11_2");
   const compBundle = buildGearboxMeshes(compCfg);
   assertWatertightBundle(compBundle, "comp_11_2");
+
+  // Steep helical top-cap stress check (e.g. face 5 mm @ beta 15 deg, face 8 mm @ beta 30 deg, solid & holed)
+  assertWatertightBundle(
+    buildGearboxMeshes({ ...cfg, g1_face_width_mm: 5, g2_wheel_face_mm: 5, helix_angle_deg: 15 }),
+    "gear4_face5_beta15",
+  );
+  assertWatertightBundle(
+    buildGearboxMeshes({ ...cfg, g1_face_width_mm: 8, g2_wheel_face_mm: 8, helix_angle_deg: 30, g1_spokes: 0 }),
+    "gear4_face8_beta30_solid",
+  );
 
   // Gear4 25:1 Gear 2 Pinion has Z=12 (even), so mesh_phase_rad === pi/12; comp_11_2 Z=15 (odd) -> phase === 0
   const g2Pinion = bundle.submeshes.find((s) => s.id === "gear2-pinion");
