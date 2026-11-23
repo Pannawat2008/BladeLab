@@ -62,6 +62,7 @@ import {
   KIDWIND_OFFICIAL_RULES,
   optimizeGeneratorAndGearbox,
   defaultGearboxConfig,
+  getGearboxPreset,
   computeGearboxMetrics,
   solveGearTeethForTargetRatio,
   buildGearboxMeshes,
@@ -925,80 +926,121 @@ test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimiz
 });
 
 test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL export (T-105)", () => {
+  // 1. Default Gear4 25:1 helical compound configuration (from Gear4-60 / Gear4-1260 / Gear4-12 CAD)
   const cfg = defaultGearboxConfig();
   assert.equal(cfg.g1_teeth, 60);
   assert.equal(cfg.g1_spokes, 4);
-  assert.equal(cfg.g2_wheel_teeth, 56);
+  assert.equal(cfg.g1_helix_hand, -1);
+  assert.equal(cfg.cutout_style, "circular_holes");
+  assert.equal(cfg.helix_angle_deg, 10.0);
+  assert.equal(cfg.rim_wall_mm, 3.0);
+  assert.equal(cfg.hub_ring_mm, 1.0);
+  assert.equal(cfg.g2_wheel_teeth, 60);
   assert.equal(cfg.g2_spokes, 4);
-  assert.equal(cfg.g2_pinion_teeth, 15);
-  assert.equal(cfg.g3_teeth, 20);
-  assert.equal(cfg.g3_helix_hand, 1);
-  assert.equal(cfg.spoke_width_pct, 26.0);
-  assert.equal(cfg.rim_wall_mm, 3.5);
-  assert.equal(cfg.hub_ring_mm, 2.5);
+  assert.equal(cfg.g2_pinion_teeth, 12);
+  assert.equal(cfg.g2_collar_height_mm, 2.0);
+  assert.equal(cfg.g3_teeth, 12);
+  assert.equal(cfg.g3_bore_mm, 2.25);
+  assert.equal(cfg.g3_boss_diameter_mm, 4.0);
+  assert.equal(cfg.g3_helix_hand, -1);
 
   assert.equal(cfg.stage_mode, "compound_2stage");
   const metrics = computeGearboxMetrics(cfg);
-  assert.equal(metrics.stage1_ratio, 4.0); // 60 / 15 = 4.0:1 (Gear 1 rotates on Gear 2 Pinion)
-  assert.equal(metrics.stage2_ratio, 2.8); // 56 / 20 = 2.8:1 (Gear 2 Wheel drives Gear 3)
-  assert.equal(metrics.total_ratio, 11.2); // 4.0 * 2.8 = 11.2:1 true 2-stage step-up
+  assert.equal(metrics.stage1_ratio, 5.0); // 60 / 12 = 5.0:1
+  assert.equal(metrics.stage2_ratio, 5.0); // 60 / 12 = 5.0:1
+  assert.equal(metrics.total_ratio, 25.0); // 5.0 * 5.0 = 25.0:1
   assert.equal(metrics.g1_pitch_dia_mm, 75.0);
-  assert.equal(metrics.g2_pinion_pitch_dia_mm, 18.75);
-  assert.equal(metrics.g2_wheel_pitch_dia_mm, 70.0);
-  assert.equal(metrics.g3_pitch_dia_mm, 25.0);
-  assert.equal(metrics.center_distance_12_mm, 46.88); // 0.5 * (75 + 18.75) = 46.875 -> 46.88 mm
-  assert.equal(metrics.center_distance_23_mm, 47.5);
+  assert.equal(metrics.g2_pinion_pitch_dia_mm, 15.0);
+  assert.equal(metrics.g2_wheel_pitch_dia_mm, 75.0);
+  assert.equal(metrics.g3_pitch_dia_mm, 15.0);
+  assert.equal(metrics.center_distance_12_mm, 45.0); // 0.5 * (75 + 15) = 45.00 mm
+  assert.equal(metrics.center_distance_23_mm, 45.0);
 
-  // Build 3D submeshes (Gear 1 elevated to mesh with Gear 2 Pinion, Gear 2 Compound, Gear 3 Pinion)
+  // Build 3D submeshes for Gear4 25:1
   const bundle = buildGearboxMeshes(cfg);
   assert.equal(bundle.submeshes.length, 7);
   assert.equal(bundle.submeshes.find((s) => s.id === "gear1-rim").base_z_mm, cfg.g2_wheel_face_mm);
-  assert.equal(bundle.submeshes.find((s) => s.id === "gear2-wheel").spin_ratio, -4.0);
-  assert.equal(bundle.submeshes.find((s) => s.id === "gear3-pinion").spin_ratio, 11.2);
+  assert.equal(bundle.submeshes.find((s) => s.id === "gear2-wheel").spin_ratio, -5.0);
+  assert.equal(bundle.submeshes.find((s) => s.id === "gear3-pinion").spin_ratio, 25.0);
   assert.ok(bundle.total_triangles > 3000, `expected > 3000 triangles, got ${bundle.total_triangles}`);
+
+  // 2. Built-in presets: gear4_5_direct (5:1 1-stage) and comp_11_2 (11.2:1 legacy spoke reference)
+  const g4Direct = getGearboxPreset("gear4_5_direct");
+  assert.equal(g4Direct.stage_mode, "direct_1stage");
+  assert.equal(g4Direct.g3_helix_hand, 1);
+  assert.equal(computeGearboxMetrics(g4Direct).total_ratio, 5.0);
+  assert.equal(buildGearboxMeshes(g4Direct).submeshes.length, 4);
+
+  const comp11 = getGearboxPreset("comp_11_2");
+  const comp11Metrics = computeGearboxMetrics(comp11);
+  assert.equal(comp11.cutout_style, "spokes");
+  assert.equal(comp11Metrics.total_ratio, 11.2);
+  assert.equal(comp11Metrics.center_distance_12_mm, 46.88);
+  assert.equal(comp11Metrics.center_distance_23_mm, 47.5);
 
   // Verify Gear 3 helical angle flip produces different vertex geometry
   const g3PinionMesh = bundle.submeshes.find((s) => s.id === "gear3-pinion");
   assert.ok(g3PinionMesh, "Gear 3 pinion submesh must exist");
-  const invertedG3Bundle = buildGearboxMeshes({ ...cfg, g3_helix_hand: -1 });
+  const invertedG3Bundle = buildGearboxMeshes({ ...cfg, g3_helix_hand: 1 });
   const invertedG3Mesh = invertedG3Bundle.submeshes.find((s) => s.id === "gear3-pinion");
   assert.notDeepEqual(g3PinionMesh.positions, invertedG3Mesh.positions);
 
-  // Verify Gear 2 solid vs spoked (0, 3, 4, 5, 6, 8 spokes) and custom Web Cutout geometry settings
+  // Verify Gear 2 solid vs circular holes (0, 3, 4, 5, 6, 8) and spoke cutout variants
   const g2SolidBundle = buildGearboxMeshes({ ...cfg, g2_spokes: 0 });
-  const g2Spoke6Bundle = buildGearboxMeshes({
+  const g2Hole6Bundle = buildGearboxMeshes({
     ...cfg,
     g1_spokes: 6,
     g2_spokes: 6,
-    spoke_width_pct: 20,
-    rim_wall_mm: 4.5,
-    hub_ring_mm: 3.0,
+    g1_hole_dia_mm: 16,
+    g2_hole_dia_mm: 16,
   });
   const g2WheelSolidTris = g2SolidBundle.submeshes.find((s) => s.id === "gear2-wheel").indices.length / 3;
-  const g2WheelSpokedTris = bundle.submeshes.find((s) => s.id === "gear2-wheel").indices.length / 3;
+  const g2WheelHoledTris = bundle.submeshes.find((s) => s.id === "gear2-wheel").indices.length / 3;
   assert.ok(
-    g2WheelSpokedTris > g2WheelSolidTris,
-    `spoked Gear 2 wheel (${g2WheelSpokedTris} tris) should have inner/outer cutout walls vs solid (${g2WheelSolidTris} tris)`,
+    g2WheelHoledTris > g2WheelSolidTris,
+    `perforated Gear 2 wheel (${g2WheelHoledTris} tris) should have hole bore walls vs solid (${g2WheelSolidTris} tris)`,
   );
-  assert.equal(g2Spoke6Bundle.submeshes.length, 7);
+  assert.equal(g2Hole6Bundle.submeshes.length, 7);
 
-  // Verify tooth solver for compound_2stage mode targeting 4.5:1
-  const compoundSolved = solveGearTeethForTargetRatio(
-    { ...cfg, stage_mode: "compound_2stage" },
-    4.5,
-  );
-  const compMetrics = computeGearboxMetrics(compoundSolved);
-  assert.ok(
-    Math.abs(compMetrics.total_ratio - 4.5) < 0.25,
-    `compound solved ratio ${compMetrics.total_ratio} should be close to 4.5`,
-  );
+  // Verify tooth solver for compound_2stage targeting 25.0:1 and 4.5:1
+  const solved25 = solveGearTeethForTargetRatio(cfg, 25.0);
+  assert.ok(Math.abs(computeGearboxMetrics(solved25).total_ratio - 25.0) < 0.1);
+  const compoundSolved = solveGearTeethForTargetRatio({ ...comp11, stage_mode: "compound_2stage" }, 4.5);
+  assert.ok(Math.abs(computeGearboxMetrics(compoundSolved).total_ratio - 4.5) < 0.25);
 
-  // Verify binary STL export for all 3 gears and individual gears
+  // Verify binary STL export + bounding boxes for Gear4 25:1
+  const expectedBboxZ = { gear1: 23.0, gear2: 16.0, gear3: 14.0 };
   for (const target of ["all", "gear1", "gear2", "gear3"]) {
     const stl = exportGearStlBytes(cfg, target);
-    const triCount = new DataView(stl.buffer, stl.byteOffset, stl.byteLength).getUint32(80, true);
+    const dv = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+    const triCount = dv.getUint32(80, true);
     assert.ok(triCount > 400, `STL target ${target} must have > 400 triangles`);
     assert.equal(stl.byteLength, 84 + triCount * 50, `STL byte length must match 84 + 50 * triCount`);
+    if (target !== "all") {
+      let minZ = Infinity, maxZ = -Infinity, minX = Infinity, maxX = -Infinity;
+      for (let i = 0; i < triCount; i++) {
+        for (let v = 0; v < 3; v++) {
+          const o = 84 + i * 50 + 12 + v * 12;
+          const vx = dv.getFloat32(o, true);
+          const vz = dv.getFloat32(o + 8, true);
+          assert.ok(Number.isFinite(vx) && Number.isFinite(vz));
+          if (vx < minX) minX = vx;
+          if (vx > maxX) maxX = vx;
+          if (vz < minZ) minZ = vz;
+          if (vz > maxZ) maxZ = vz;
+        }
+      }
+      assert.ok(Math.abs(minZ) < 1e-4, `${target} minZ should be 0, got ${minZ}`);
+      assert.ok(
+        Math.abs(maxZ - expectedBboxZ[target]) < 0.05,
+        `${target} height should be ${expectedBboxZ[target]} mm, got ${maxZ}`,
+      );
+      if (target !== "gear3") {
+        assert.ok(Math.abs((maxX - minX) - 77.5) < 0.1, `${target} outer dia ~77.5 mm`);
+      } else {
+        assert.ok(Math.abs((maxX - minX) - 17.5) < 0.25, `gear3 outer dia ~17.5 mm`);
+      }
+    }
   }
 });
 
@@ -1306,53 +1348,66 @@ test("Task 5 security: renderAirfoilSectionSvgMarkup escapes HTML/SVG injection 
 });
 
 test("Task 5 gearbox: watertight outward normals (0 inconsistent edges, positive volume) & exact meshing", () => {
+  const assertWatertightBundle = (bundle, label) => {
+    for (const sub of bundle.submeshes) {
+      const { positions, indices } = sub;
+      const directedEdges = new Map();
+      let signedVol6 = 0;
+
+      for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i];
+        const b = indices[i + 1];
+        const c = indices[i + 2];
+
+        const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+        const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
+        const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
+        signedVol6 +=
+          ax * (by * cz - bz * cy) +
+          ay * (bz * cx - bx * cz) +
+          az * (bx * cy - by * cx);
+
+        for (const [u, v] of [
+          [a, b],
+          [b, c],
+          [c, a],
+        ]) {
+          const key = `${u},${v}`;
+          directedEdges.set(key, (directedEdges.get(key) ?? 0) + 1);
+        }
+      }
+
+      let inconsistent = 0;
+      let boundary = 0;
+      for (const [key, count] of directedEdges.entries()) {
+        if (count > 1) inconsistent += count - 1;
+        const [u, v] = key.split(",");
+        if (!directedEdges.has(`${v},${u}`)) boundary++;
+      }
+
+      assert.equal(inconsistent, 0, `${label}/${sub.id}: expected 0 inconsistent shared edges, got ${inconsistent}`);
+      assert.equal(boundary, 0, `${label}/${sub.id}: expected 0 boundary edges (watertight), got ${boundary}`);
+      assert.ok(signedVol6 > 0, `${label}/${sub.id}: expected positive signed volume, got ${signedVol6 / 6}`);
+    }
+  };
+
   const cfg = defaultGearboxConfig();
   const bundle = buildGearboxMeshes(cfg);
+  assertWatertightBundle(bundle, "gear4_25_K4");
 
-  for (const sub of bundle.submeshes) {
-    const { positions, indices } = sub;
-    const directedEdges = new Map();
-    let signedVol6 = 0;
-
-    for (let i = 0; i < indices.length; i += 3) {
-      const a = indices[i];
-      const b = indices[i + 1];
-      const c = indices[i + 2];
-
-      const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
-      const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
-      const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
-      signedVol6 +=
-        ax * (by * cz - bz * cy) +
-        ay * (bz * cx - bx * cz) +
-        az * (bx * cy - by * cx);
-
-      for (const [u, v] of [
-        [a, b],
-        [b, c],
-        [c, a],
-      ]) {
-        const key = `${u},${v}`;
-        directedEdges.set(key, (directedEdges.get(key) ?? 0) + 1);
-      }
-    }
-
-    let inconsistent = 0;
-    let boundary = 0;
-    for (const [key, count] of directedEdges.entries()) {
-      if (count > 1) inconsistent += count - 1;
-      const [u, v] = key.split(",");
-      if (!directedEdges.has(`${v},${u}`)) boundary++;
-    }
-
-    assert.equal(inconsistent, 0, `${sub.id}: expected 0 inconsistently wound shared edges, got ${inconsistent}`);
-    assert.equal(boundary, 0, `${sub.id}: expected 0 boundary edges (watertight), got ${boundary}`);
-    assert.ok(signedVol6 > 0, `${sub.id}: expected positive signed volume (outward normals), got ${signedVol6 / 6}`);
+  for (const k of [0, 3, 5, 6, 8]) {
+    assertWatertightBundle(buildGearboxMeshes({ ...cfg, g1_spokes: k, g2_spokes: k }), `gear4_25_K${k}`);
   }
+  assertWatertightBundle(buildGearboxMeshes(getGearboxPreset("gear4_5_direct")), "gear4_5_direct");
+  const compCfg = getGearboxPreset("comp_11_2");
+  const compBundle = buildGearboxMeshes(compCfg);
+  assertWatertightBundle(compBundle, "comp_11_2");
 
-  // Default Gear 2 Pinion has Z=15 (odd), so at world theta=pi it ALREADY has a valley when mesh_phase_rad === 0
+  // Gear4 25:1 Gear 2 Pinion has Z=12 (even), so mesh_phase_rad === pi/12; comp_11_2 Z=15 (odd) -> phase === 0
   const g2Pinion = bundle.submeshes.find((s) => s.id === "gear2-pinion");
-  assert.equal(g2Pinion.mesh_phase_rad, 0, "odd-tooth Gear 2 Pinion (15T) must have mesh_phase_rad === 0 so valley sits at pi");
+  assert.ok(Math.abs(g2Pinion.mesh_phase_rad - Math.PI / 12) < 1e-9, "even-tooth Gear4 G2p (12T) must have phase pi/12");
+  const compG2Pinion = compBundle.submeshes.find((s) => s.id === "gear2-pinion");
+  assert.equal(compG2Pinion.mesh_phase_rad, 0, "odd-tooth Gear 2 Pinion (15T) must have mesh_phase_rad === 0");
 
   // Even-tooth Gear 2 Pinion (16T) must have mesh_phase_rad === pi/16, and Gear 3 phase must co-rotate by -(z2w/z3)*g2Phase
   const evenBundle = buildGearboxMeshes({ ...cfg, g2_pinion_teeth: 16 });
@@ -1362,16 +1417,29 @@ test("Task 5 gearbox: watertight outward normals (0 inconsistent edges, positive
   const expectedG3Even = Math.PI / cfg.g3_teeth - (cfg.g2_wheel_teeth / cfg.g3_teeth) * (Math.PI / 16);
   assert.ok(Math.abs(g3Even.mesh_phase_rad - expectedG3Even) < 1e-9);
 
-  // Direct 1-stage mode: Gear 3 meshes directly with Gear 1 (+1 RH), so Gear 3 must use opposing -1 LH helix
-  const directBundle = buildGearboxMeshes({ ...cfg, stage_mode: "direct_1stage", g3_helix_hand: 1 });
-  const directG3 = directBundle.submeshes.find((s) => s.id === "gear3-pinion");
-  const compoundG3Lh = buildGearboxMeshes({ ...cfg, stage_mode: "compound_2stage", g3_helix_hand: -1 }).submeshes.find(
+  // Direct 1-stage helix opposition: G1 RH (+1) -> G3 LH (-1), and G1 LH (-1) -> G3 RH (+1)
+  const directCompG3 = buildGearboxMeshes({ ...compCfg, stage_mode: "direct_1stage", g3_helix_hand: 1 }).submeshes.find(
+    (s) => s.id === "gear3-pinion",
+  );
+  const compoundCompG3Lh = buildGearboxMeshes({ ...compCfg, stage_mode: "compound_2stage", g3_helix_hand: -1 }).submeshes.find(
     (s) => s.id === "gear3-pinion",
   );
   assert.deepEqual(
-    Array.from(directG3.positions),
-    Array.from(compoundG3Lh.positions),
+    Array.from(directCompG3.positions),
+    Array.from(compoundCompG3Lh.positions),
     "direct_1stage Gear 3 must oppose Gear 1 (+1 RH) with -1 LH helix",
+  );
+
+  const directG4G3 = buildGearboxMeshes({ ...cfg, stage_mode: "direct_1stage", g3_helix_hand: -1 }).submeshes.find(
+    (s) => s.id === "gear3-pinion",
+  );
+  const compoundG4G3Rh = buildGearboxMeshes({ ...cfg, stage_mode: "compound_2stage", g3_helix_hand: 1 }).submeshes.find(
+    (s) => s.id === "gear3-pinion",
+  );
+  assert.deepEqual(
+    Array.from(directG4G3.positions),
+    Array.from(compoundG4G3Rh.positions),
+    "direct_1stage Gear4 G3 must oppose Gear 1 (-1 LH) with +1 RH helix",
   );
 
   // Exact unrounded spin_ratio (e.g. 60/14 = 4.2857142857..., not 4.286)
@@ -1458,7 +1526,7 @@ test("Task 5 snapshots, winglet geometry, printer fit, and gist safety", async (
   assert.equal(merged.workbench.winglet.enabled, true);
   assert.equal(merged.workbench.winglet.cant_angle_deg, 50.0);
   assert.equal(merged.workbench.gearbox.g1_teeth, 48);
-  assert.equal(merged.workbench.gearbox.g3_teeth, 20);
+  assert.equal(merged.workbench.gearbox.g3_teeth, 12);
 
   const zeroSweepPts = new Float32Array([0, 0, 585, 0, 0, 600]);
   applyWingletToBladeGeometry(zeroSweepPts, initialDesign, {
@@ -2097,7 +2165,7 @@ test("Task 10: Stalled-generator WASM fix, 16:1 drivetrain optimizer & official 
   assert.equal(KIDWIND_OFFICIAL_RULES.fixed_load_ohm, 30.0);
   assert.equal(KIDWIND_OFFICIAL_RULES.max_voltage_v, 30.0);
   assert.equal(KIDWIND_OFFICIAL_RULES.max_current_a, 1.0);
-  assert.equal(KIDWIND_OFFICIAL_RULES.max_gear_ratio, 16.0);
+  assert.equal(KIDWIND_OFFICIAL_RULES.max_gear_ratio, 25.0);
   assert.equal(isKidwindGeneratorPreset("kidwind_red"), true);
   assert.equal(isKidwindGeneratorPreset("kidwind_gen2"), true);
   assert.equal(isKidwindGeneratorPreset("outrunner_bldc"), false);
@@ -2250,7 +2318,18 @@ test("Task 10: Stalled-generator WASM fix, 16:1 drivetrain optimizer & official 
   assert.equal(parsedSnap.workbench.gen_r_load, 30.0);
 
   const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
-  for (const id of ["gen-kidwind-rules", "btn-gear-8", "btn-gear-12"]) {
+  for (const id of [
+    "gen-kidwind-rules",
+    "btn-gear-8",
+    "btn-gear-12",
+    "btn-gear-25",
+    "btn-gear-preset-gear4-25",
+    "btn-gear-preset-gear4-5",
+    "btn-gear-preset-comp-11",
+    "gear-cutout-style",
+    "gear-hole-dia",
+    "g1-helix-hand",
+  ]) {
     assert.ok(html.includes(`id="${id}"`), `Missing expected DOM id="${id}"`);
   }
 });
@@ -2274,6 +2353,7 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
   assert.equal(KIDWIND_ASIA_2026_RULES.max_voltage_v, 10.0);
   assert.equal(KIDWIND_ASIA_2026_RULES.max_current_a, 0.3);
   assert.equal(KIDWIND_ASIA_2026_RULES.max_rotor_radius_mm, 500.0);
+  assert.equal(KIDWIND_ASIA_2026_RULES.max_gear_ratio, 25.0);
 
   // 2. Scimitar R=490mm (hub=30mm, blade=460mm) in Tunnel B (3.5 m/s) & Tunnel A (2.5 m/s)
   let { design: scimitarAsia } = applyBladeWindPreset(initialDesign, "scimitar_belly");
@@ -2567,4 +2647,55 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
   ]) {
     assert.ok(html.includes(snippet), `Missing expected HTML marker ${snippet}`);
   }
+
+  // 10. Regression check: optimizer (G=1..25) aligned with Rust WASM equilibrium stays <= 10 V / 0.3 A
+  const { design: scimitarBelly } = applyBladeWindPreset(initialDesign, "scimitar_belly");
+  const bellyBase = JSON.parse(
+    simulate_aero(
+      JSON.stringify(scimitarBelly),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: asiaGen.kv_rpm_per_v,
+        generator_r_int: asiaGen.r_int_ohm,
+        generator_r_load: 55.0,
+        generator_gear_ratio: 1.0,
+        generator_i0: asiaGen.no_load_current_a,
+      }),
+    ),
+  );
+  const bellyOpt = optimizeGeneratorAndGearbox(scimitarBelly, bellyBase, {
+    kv: asiaGen.kv_rpm_per_v,
+    r_int: asiaGen.r_int_ohm,
+    r_load: 55.0,
+    gear_ratio: 1.0,
+    i0: asiaGen.no_load_current_a,
+    kidwind_rules: true,
+    kidwind_ruleset: "asia_2026_vesvl",
+  });
+  const bellyCheck = JSON.parse(
+    simulate_aero(
+      JSON.stringify(scimitarBelly),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: asiaGen.kv_rpm_per_v,
+        generator_r_int: asiaGen.r_int_ohm,
+        generator_r_load: bellyOpt.opt_r_load_ohm,
+        generator_gear_ratio: bellyOpt.opt_gear_ratio,
+        generator_i0: asiaGen.no_load_current_a,
+      }),
+    ),
+  );
+  assert.equal(bellyCheck.generator_match.stalled, false);
+  assert.ok(
+    bellyCheck.generator_match.generator.terminal_voltage_v <= 10.0,
+    `WASM V ${bellyCheck.generator_match.generator.terminal_voltage_v} must stay <= 10 V at opt G=${bellyOpt.opt_gear_ratio}, R=${bellyOpt.opt_r_load_ohm}`,
+  );
+  assert.ok(
+    bellyCheck.generator_match.generator.current_a <= 0.3,
+    `WASM I ${bellyCheck.generator_match.generator.current_a} must stay <= 0.3 A at opt G=${bellyOpt.opt_gear_ratio}, R=${bellyOpt.opt_r_load_ohm}`,
+  );
 });

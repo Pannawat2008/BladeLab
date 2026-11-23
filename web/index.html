@@ -3152,8 +3152,8 @@
             <span>Settings</span>
           </button>
           <div class="seg-pill">
-            <button id="btn-tb-gear-layout-side" class="btn-mini active" type="button" title="Side-by-Side Reference Layout">Side-by-Side</button>
-            <button id="btn-tb-gear-layout-mesh" class="btn-mini" type="button" title="Meshed Assembly Layout">Meshed</button>
+            <button id="btn-tb-gear-layout-side" class="btn-mini" type="button" title="Side-by-Side Reference Layout">Side-by-Side</button>
+            <button id="btn-tb-gear-layout-mesh" class="btn-mini active" type="button" title="Meshed Assembly Layout">Meshed</button>
           </div>
           <button id="btn-tb-gear-spin" class="btn-mini" type="button" title="Animate teeth mesh rotation">
             <svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="5 3 13 8 5 13 5 3" /></svg>
@@ -4110,7 +4110,7 @@
               </div>
               <div class="field">
                 <label for="gen-gear-ratio" class="scrub-label" data-scrub-for="gen-gear-ratio">Gear G (:1)</label>
-                <input id="gen-gear-ratio" type="number" min="0.25" max="16" step="0.25" value="1.0" />
+                <input id="gen-gear-ratio" type="number" min="0.25" max="30" step="0.25" value="1.0" />
               </div>
               <div class="field">
                 <label for="gen-r-load" class="scrub-label" data-scrub-for="gen-r-load">Load R (Ω)</label>
@@ -4119,13 +4119,14 @@
             </div>
             <div class="bind-row">
               <span>Quick Gear</span>
-              <div class="toolbar" style="gap: 3px; flex-wrap: nowrap">
-                <button id="btn-gear-1" class="btn-mini active" type="button" style="padding: 0 6px">1:1</button>
-                <button id="btn-gear-2" class="btn-mini" type="button" style="padding: 0 6px">2:1</button>
-                <button id="btn-gear-3" class="btn-mini" type="button" style="padding: 0 6px">3:1</button>
-                <button id="btn-gear-4" class="btn-mini" type="button" style="padding: 0 6px">4:1</button>
-                <button id="btn-gear-8" class="btn-mini" type="button" style="padding: 0 6px">8:1</button>
-                <button id="btn-gear-12" class="btn-mini" type="button" style="padding: 0 6px">12:1</button>
+              <div class="toolbar" style="gap: 3px; flex-wrap: wrap; justify-content: flex-end">
+                <button id="btn-gear-1" class="btn-mini active" type="button" style="padding: 0 5px">1:1</button>
+                <button id="btn-gear-2" class="btn-mini" type="button" style="padding: 0 5px">2:1</button>
+                <button id="btn-gear-3" class="btn-mini" type="button" style="padding: 0 5px">3:1</button>
+                <button id="btn-gear-4" class="btn-mini" type="button" style="padding: 0 5px">4:1</button>
+                <button id="btn-gear-8" class="btn-mini" type="button" style="padding: 0 5px">8:1</button>
+                <button id="btn-gear-12" class="btn-mini" type="button" style="padding: 0 5px">12:1</button>
+                <button id="btn-gear-25" class="btn-mini" type="button" style="padding: 0 5px" title="Matched Gear4 25:1 (requires +8° to +14° collective pitch on KW-GEN3)">25:1</button>
               </div>
             </div>
             <div id="gen-summary" class="fit-badge">Gen: –</div>
@@ -4253,16 +4254,22 @@
       </nav>
 
       <div class="panel-scroll" id="gearbox-scroll-container">
-        <div class="toolbar" style="margin-bottom: 8px; gap: 6px; flex-wrap: wrap">
+        <div class="toolbar" style="margin-bottom: 6px; gap: 6px; flex-wrap: wrap">
           <button id="btn-gearbox-3d-view" class="btn-primary btn-mini" type="button" style="flex: 1.3">3D Gearbox View</button>
-          <button id="btn-gear-layout-side" class="btn-mini active" type="button">Side-by-Side</button>
-          <button id="btn-gear-layout-mesh" class="btn-mini" type="button">Meshed</button>
+          <button id="btn-gear-layout-side" class="btn-mini" type="button">Side-by-Side</button>
+          <button id="btn-gear-layout-mesh" class="btn-mini active" type="button">Meshed</button>
+        </div>
+
+        <div class="toolbar" style="margin-bottom: 8px; gap: 4px; flex-wrap: wrap" role="group" aria-label="Gearbox Presets">
+          <button id="btn-gear-preset-gear4-25" class="btn-mini active" type="button" style="flex: 1" title="Matched Gear4 25:1 Helical 2-Stage Compound (60->12 / 60->12, beta=10 deg, 4x20mm holes)">Gear4 25:1</button>
+          <button id="btn-gear-preset-gear4-5" class="btn-mini" type="button" style="flex: 1" title="Gear4 5:1 Helical 1-Stage Direct Mesh (60->12, beta=10 deg)">Gear4 5:1</button>
+          <button id="btn-gear-preset-comp-11" class="btn-mini" type="button" style="flex: 1" title="Legacy 11.2:1 Compound Spoked Gearbox (60->15 / 56->20, beta=15 deg)">11.2:1 Ref</button>
         </div>
 
         <div id="gear-train-card" class="aero-subbox" style="margin-top: 0">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
             <span style="font-weight: 600; color: var(--text-primary)">Train Architecture</span>
-            <span id="gear-tooth-badge" class="section-meta">Helical 15°</span>
+            <span id="gear-tooth-badge" class="section-meta">Helical 10°</span>
           </div>
           <div class="field" style="margin-bottom: 8px">
             <label for="gear-stage-mode">Stage Topology</label>
@@ -4279,7 +4286,7 @@
             </div>
             <div class="field">
               <label for="gear-helix" class="scrub-label" data-scrub-for="gear-helix">Helix β (°)</label>
-              <input id="gear-helix" type="number" min="0" max="35" step="1" value="15" />
+              <input id="gear-helix" type="number" min="0" max="35" step="1" value="10" />
             </div>
             <div class="field">
               <label for="gear-pressure" class="scrub-label" data-scrub-for="gear-pressure">Pressure α (°)</label>
@@ -4287,7 +4294,7 @@
             </div>
             <div class="field">
               <label for="gear-backlash" class="scrub-label" data-scrub-for="gear-backlash">FDM Backlash</label>
-              <input id="gear-backlash" type="number" min="0" max="0.6" step="0.02" value="0.15" />
+              <input id="gear-backlash" type="number" min="0" max="0.6" step="0.02" value="0.2" />
             </div>
           </div>
           <div class="toolbar" style="margin-top: 8px">
@@ -4299,7 +4306,20 @@
         <div id="gear-cutouts-card" class="aero-subbox" style="margin-top: 8px; border-left: 3px solid var(--accent-solid)">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
             <span style="font-weight: 600; color: var(--text-primary)">Web Cutouts (G1 &amp; G2)</span>
-            <span id="gear-cutout-badge" class="section-meta">26% Spoke</span>
+            <span id="gear-cutout-badge" class="section-meta">4×Ø20 Holes</span>
+          </div>
+          <div class="grid-2" style="margin-bottom: 6px">
+            <div class="field">
+              <label for="gear-cutout-style">Cutout Type</label>
+              <select id="gear-cutout-style">
+                <option value="circular_holes" selected>Circular Holes (Gear4)</option>
+                <option value="spokes">Spoke Windows</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="gear-hole-dia" class="scrub-label" data-scrub-for="gear-hole-dia">Hole Ø (mm)</label>
+              <input id="gear-hole-dia" type="number" min="4" max="36" step="1" value="20" />
+            </div>
           </div>
           <div class="grid-3">
             <div class="field">
@@ -4308,11 +4328,11 @@
             </div>
             <div class="field">
               <label for="gear-rim-wall" class="scrub-label" data-scrub-for="gear-rim-wall">Rim (mm)</label>
-              <input id="gear-rim-wall" type="number" min="1.5" max="12" step="0.25" value="3.5" />
+              <input id="gear-rim-wall" type="number" min="1.5" max="12" step="0.25" value="3.0" />
             </div>
             <div class="field">
               <label for="gear-hub-ring" class="scrub-label" data-scrub-for="gear-hub-ring">Margin (mm)</label>
-              <input id="gear-hub-ring" type="number" min="1.0" max="12" step="0.25" value="2.5" />
+              <input id="gear-hub-ring" type="number" min="1.0" max="12" step="0.25" value="1.0" />
             </div>
           </div>
         </div>
@@ -4329,34 +4349,41 @@
             </div>
             <div class="field">
               <label for="g1-face" class="scrub-label" data-scrub-for="g1-face">Face (mm)</label>
-              <input id="g1-face" type="number" min="2" max="30" step="0.5" value="5.0" />
+              <input id="g1-face" type="number" min="2" max="30" step="0.5" value="3.0" />
             </div>
             <div class="field">
-              <label for="g1-spokes">Spokes</label>
+              <label for="g1-spokes">Web Cutouts</label>
               <select id="g1-spokes">
-                <option value="3">3 Spokes</option>
-                <option value="4" selected>4 Spokes</option>
-                <option value="5">5 Spokes</option>
-                <option value="6">6 Spokes</option>
-                <option value="8">8 Spokes</option>
+                <option value="3">3 Cutouts</option>
+                <option value="4" selected>4 Cutouts</option>
+                <option value="5">5 Cutouts</option>
+                <option value="6">6 Cutouts</option>
+                <option value="8">8 Cutouts</option>
                 <option value="0">Solid (0)</option>
               </select>
             </div>
             <div class="field">
               <label for="g1-bore" class="scrub-label" data-scrub-for="g1-bore">Bore Ø (mm)</label>
-              <input id="g1-bore" type="number" min="2" max="20" step="0.2" value="6.0" />
+              <input id="g1-bore" type="number" min="2" max="20" step="0.1" value="5.3" />
             </div>
             <div class="field">
               <label for="g1-dflat" class="scrub-label" data-scrub-for="g1-dflat">D-Flat (mm)</label>
-              <input id="g1-dflat" type="number" min="0" max="3" step="0.1" value="0.5" />
+              <input id="g1-dflat" type="number" min="0" max="3" step="0.1" value="0.9" />
             </div>
             <div class="field">
               <label for="g1-hub-dia" class="scrub-label" data-scrub-for="g1-hub-dia">Hub Ø (mm)</label>
-              <input id="g1-hub-dia" type="number" min="8" max="50" step="1" value="24.0" />
+              <input id="g1-hub-dia" type="number" min="8" max="50" step="1" value="20.0" />
             </div>
             <div class="field">
               <label for="g1-hub-h" class="scrub-label" data-scrub-for="g1-hub-h">Hub H (mm)</label>
-              <input id="g1-hub-h" type="number" min="0" max="40" step="1" value="18.0" />
+              <input id="g1-hub-h" type="number" min="0" max="40" step="1" value="20.0" />
+            </div>
+            <div class="field">
+              <label for="g1-helix-hand">G1 Helix Hand</label>
+              <select id="g1-helix-hand">
+                <option value="-1" selected>Left Hand (LH -β)</option>
+                <option value="1">Right Hand (RH +β)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -4364,39 +4391,39 @@
         <div id="gear2-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #b84ba1">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px">
             <span style="font-weight: 600; color: var(--text-primary)">G2 · Compound Idler</span>
-            <span id="g2-dia-badge" class="section-meta">Øp 70.0 / 18.8 mm</span>
+            <span id="g2-dia-badge" class="section-meta">Øp 75.0 / 15.0 mm</span>
           </div>
           <div class="grid-2">
             <div class="field">
               <label for="g2-wheel-teeth" class="scrub-label" data-scrub-for="g2-wheel-teeth">Wheel Z2w</label>
-              <input id="g2-wheel-teeth" type="number" min="12" max="120" step="1" value="56" />
+              <input id="g2-wheel-teeth" type="number" min="12" max="120" step="1" value="60" />
             </div>
             <div class="field">
               <label for="g2-wheel-face" class="scrub-label" data-scrub-for="g2-wheel-face">Wheel Face</label>
-              <input id="g2-wheel-face" type="number" min="2" max="25" step="0.5" value="5.0" />
+              <input id="g2-wheel-face" type="number" min="2" max="25" step="0.5" value="3.0" />
             </div>
             <div class="field">
               <label for="g2-spokes">Web Cutouts</label>
               <select id="g2-spokes">
-                <option value="3">3 Spokes</option>
-                <option value="4" selected>4 Spokes</option>
-                <option value="5">5 Spokes</option>
-                <option value="6">6 Spokes</option>
-                <option value="8">8 Spokes</option>
+                <option value="3">3 Cutouts</option>
+                <option value="4" selected>4 Cutouts</option>
+                <option value="5">5 Cutouts</option>
+                <option value="6">6 Cutouts</option>
+                <option value="8">8 Cutouts</option>
                 <option value="0">Solid (0)</option>
               </select>
             </div>
             <div class="field">
               <label for="g2-pinion-teeth" class="scrub-label" data-scrub-for="g2-pinion-teeth">Pinion Z2p</label>
-              <input id="g2-pinion-teeth" type="number" min="8" max="60" step="1" value="15" />
+              <input id="g2-pinion-teeth" type="number" min="8" max="60" step="1" value="12" />
             </div>
             <div class="field">
               <label for="g2-pinion-face" class="scrub-label" data-scrub-for="g2-pinion-face">Pinion Face</label>
-              <input id="g2-pinion-face" type="number" min="3" max="30" step="0.5" value="14.0" />
+              <input id="g2-pinion-face" type="number" min="3" max="30" step="0.5" value="11.0" />
             </div>
             <div class="field">
               <label for="g2-bore" class="scrub-label" data-scrub-for="g2-bore">Idler Bore</label>
-              <input id="g2-bore" type="number" min="1.5" max="16" step="0.2" value="5.0" />
+              <input id="g2-bore" type="number" min="1.5" max="16" step="0.1" value="5.3" />
             </div>
             <div class="field">
               <label for="g2-dflat" class="scrub-label" data-scrub-for="g2-dflat">D-Flat (mm)</label>
@@ -4408,41 +4435,41 @@
         <div id="gear3-card" class="aero-subbox gear-card" style="margin-top: 8px; border-left: 3px solid #6d8388">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px">
             <span style="font-weight: 600; color: var(--text-primary)">G3 · Motor Pinion</span>
-            <span id="g3-dia-badge" class="section-meta">Øp 25.0 mm</span>
+            <span id="g3-dia-badge" class="section-meta">Øp 15.0 mm</span>
           </div>
           <div class="grid-2">
             <div class="field">
               <label for="g3-teeth" class="scrub-label" data-scrub-for="g3-teeth">Teeth Z3</label>
-              <input id="g3-teeth" type="number" min="8" max="60" step="1" value="20" />
+              <input id="g3-teeth" type="number" min="8" max="60" step="1" value="12" />
             </div>
             <div class="field">
               <label for="g3-face" class="scrub-label" data-scrub-for="g3-face">Face (mm)</label>
-              <input id="g3-face" type="number" min="3" max="30" step="0.5" value="14.0" />
+              <input id="g3-face" type="number" min="3" max="30" step="0.5" value="10.0" />
             </div>
             <div class="field">
               <label for="g3-bore" class="scrub-label" data-scrub-for="g3-bore">Motor Bore</label>
-              <input id="g3-bore" type="number" min="1.5" max="12" step="0.1" value="3.0" />
+              <input id="g3-bore" type="number" min="1.5" max="12" step="0.05" value="2.25" />
             </div>
             <div class="field">
               <label for="g3-dflat" class="scrub-label" data-scrub-for="g3-dflat">D-Flat (mm)</label>
-              <input id="g3-dflat" type="number" min="0" max="2.0" step="0.1" value="0.4" />
+              <input id="g3-dflat" type="number" min="0" max="2.0" step="0.1" value="0.0" />
             </div>
             <div class="field">
-              <label for="g3-boss-h" class="scrub-label" data-scrub-for="g3-boss-h">Collar H</label>
-              <input id="g3-boss-h" type="number" min="0" max="15" step="0.5" value="4.5" />
+              <label for="g3-boss-h" class="scrub-label" data-scrub-for="g3-boss-h">Boss H (mm)</label>
+              <input id="g3-boss-h" type="number" min="0" max="15" step="0.5" value="4.0" />
             </div>
             <div class="field">
-              <label for="g3-helix-hand">Helical Hand</label>
+              <label for="g3-helix-hand">G3 Helix Hand</label>
               <select id="g3-helix-hand">
-                <option value="1" selected>Right Hand (RH +β)</option>
-                <option value="-1">Left Hand (LH -β)</option>
+                <option value="-1" selected>Left Hand (LH -β)</option>
+                <option value="1">Right Hand (RH +β)</option>
               </select>
             </div>
           </div>
         </div>
 
         <div id="gearbox-metrics-readout" class="fit-badge ok" style="margin-top: 8px">
-          Total Ratio G = 3.00:1 · a₁₂ = 72.50 mm · a₂₃ = 47.50 mm
+          Total Ratio G = 25.00:1 · a₁₂ = 45.00 mm · a₂₃ = 45.00 mm
         </div>
 
         <div class="toolbar" style="margin-top: 8px; gap: 5px; flex-wrap: wrap">

@@ -3944,7 +3944,7 @@ export const KIDWIND_OFFICIAL_RULES = {
   fixed_load_ohm: 30.0,
   max_voltage_v: 30.0,
   max_current_a: 1.0,
-  max_gear_ratio: 16.0,
+  max_gear_ratio: 25.0,
 } as const;
 
 export const KIDWIND_ASIA_2026_RULES = {
@@ -3954,7 +3954,7 @@ export const KIDWIND_ASIA_2026_RULES = {
   max_voltage_v: 10.0,
   max_current_a: 0.3,
   max_rotor_radius_mm: 500.0,
-  max_gear_ratio: 16.0,
+  max_gear_ratio: 25.0,
 } as const;
 
 export function isKidwindGeneratorPreset(key: GeneratorPresetKey): boolean {
@@ -4106,15 +4106,14 @@ function evalCoupledPointOnSweep(
 } {
   const kt = 60.0 / (2.0 * Math.PI * Math.max(1e-3, kv));
   const totalR = Math.max(0.05, rInt + rLoad);
-  const gearEff = computeGearMeshEfficiency(gearRatio);
 
   const genReactionTorque = (rotorRpm: number) => {
     if (rotorRpm <= 0) return 0;
     const genRpm = rotorRpm * gearRatio;
     const emf = genRpm / kv;
     const current = emf / totalR;
-    // Gear step-up reflects Gx torque to rotor shaft, divided by gearbox mesh efficiency
-    return (gearRatio * kt * (current + i0)) / gearEff;
+    // Matches crates/blade-aero/src/generator.rs::eval_generator_at_rpm equilibrium equation
+    return gearRatio * kt * (current + i0);
   };
 
   if (sweep.length === 0) {
@@ -4189,8 +4188,8 @@ function evalCoupledPointOnSweep(
   const currentA = emfV / totalR;
   const voltageV = currentA * rLoad;
   const rawElecW = voltageV * currentA;
-  const elecPowerW = Math.min(Math.max(0, eqMechW * gearEff * 0.94), rawElecW);
-  const efficiency = eqMechW > 1e-6 ? Math.min(0.95, elecPowerW / eqMechW) : 0;
+  const elecPowerW = Math.min(Math.max(0, eqMechW), rawElecW);
+  const efficiency = eqMechW > 1e-6 ? Math.min(1.0, elecPowerW / eqMechW) : 0;
 
   return {
     tsr: eqTsr,
@@ -4206,7 +4205,7 @@ function evalCoupledPointOnSweep(
 }
 
 /**
- * Solves for the optimal Gear Ratio (`G:1` up to `16:1`) and Load Resistance (`R_load` in Ω)
+ * Solves for the optimal Gear Ratio (`G:1` up to `25:1`) and Load Resistance (`R_load` in Ω)
  * that maximize electrical power output ($P_{\text{elec}} = V_{\text{load}} I$)
  * for the active blade BEM sweep and generator specification, enforcing official
  * KidWind rulesets (`us_30ohm`: `30 Ω` <= 30 V <= 1 A, or `asia_2026_vesvl`: `2–200 Ω` <= 10 V <= 0.3 A, R <= 500 mm)
@@ -4363,10 +4362,11 @@ export function optimizeGeneratorAndGearbox(
     bestRLoadAtCurGear,
   );
 
-  // 2. Global search over Gear Ratio G in [1.0 .. 16.0] and Load R_load
+  // 2. Global search over Gear Ratio G in [1.0 .. 25.0] and Load R_load
   const gearCandidates = [
     1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0,
     4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+    18.0, 20.0, 22.0, 25.0,
   ];
   const candidateLoads = usRulesActive
     ? [KIDWIND_OFFICIAL_RULES.fixed_load_ohm]
@@ -4415,7 +4415,7 @@ export function optimizeGeneratorAndGearbox(
       foundLegal = true;
       // Prefer operating near or slightly above peak_tsr (0.92..1.18 * peakTsr) so the turbine never stalls in tunnel gusts
       const inSweetSpot = ev.tsr >= 0.92 * peakTsr && ev.tsr <= 1.18 * peakTsr;
-      const score = ev.elec_power_w * (inSweetSpot ? 1.05 : 0.9);
+      const score = ev.elec_power_w * computeGearMeshEfficiency(g) * (inSweetSpot ? 1.05 : 0.9);
       if (score > bestStrictScore) {
         bestStrictScore = score;
         optStrictGear = g;
@@ -4643,6 +4643,8 @@ export function optimizeGeneratorAndGearbox(
 export type GearboxStageMode = "compound_2stage" | "idler_reference" | "direct_1stage";
 export type GearboxLayoutMode = "side_by_side" | "meshed";
 export type GearExportTarget = "all" | "gear1" | "gear2" | "gear3";
+export type GearboxCutoutStyle = "circular_holes" | "spokes";
+export type GearboxPresetKey = "gear4_25" | "gear4_5_direct" | "comp_11_2";
 
 export interface GearboxConfig {
   stage_mode: GearboxStageMode;
@@ -4652,28 +4654,36 @@ export interface GearboxConfig {
   helix_angle_deg: number;
   backlash_mm: number;
 
-  // Web Cutout Geometry (shared across Spoked Gears 1 & 2)
+  // Web Cutout Geometry (shared across Spoked / Perforated Gears 1 & 2)
+  cutout_style?: GearboxCutoutStyle; // "circular_holes" (Gear4 4xØ20mm) or "spokes" (pie-wedge)
   spoke_width_pct: number; // 10..65% of each sector occupied by solid spoke arm (default 26%)
-  rim_wall_mm: number; // radial rim thickness inside tooth root circle r_f (default 3.5 mm)
-  hub_ring_mm: number; // radial solid margin outside hub skirt / coaxial pinion (default 2.5 mm)
+  rim_wall_mm: number; // radial rim thickness inside tooth root circle r_f (default 3.0 mm)
+  hub_ring_mm: number; // radial solid margin outside hub skirt / coaxial pinion (default 1.0 mm)
 
-  // Gear 1: Rotor Bull Gear (Mint 4-spoke wheel + Orange stepped hub boss)
+  // Gear 1: Rotor Bull Gear (Mint 4-hole/spoke wheel + Orange stepped hub boss)
   g1_teeth: number;
   g1_face_width_mm: number;
-  g1_spokes: number; // 0 = solid, 3..8 = spoked cutouts (default 4)
+  g1_spokes: number; // 0 = solid, 3..8 = holes / spoke cutouts (default 4)
   g1_bore_mm: number;
   g1_d_flat_mm: number;
   g1_hub_diameter_mm: number;
   g1_hub_height_mm: number;
+  g1_helix_hand?: 1 | -1; // -1 = Left Hand (LH -β, Gear4 default), 1 = Right Hand (RH +β)
+  g1_hole_dia_mm?: number;
+  g1_hole_bcd_radius_mm?: number;
 
   // Gear 2: Compound Idler Gear (Purple Wheel + Lime-Green Coaxial Pinion)
   g2_wheel_teeth: number;
   g2_wheel_face_mm: number;
-  g2_spokes: number; // 0 = solid, 3..8 = spoked cutouts on Purple Wheel (default 4)
+  g2_spokes: number; // 0 = solid, 3..8 = holes / spoke cutouts on Purple Wheel (default 4)
   g2_pinion_teeth: number;
   g2_pinion_face_mm: number;
   g2_bore_mm: number;
   g2_d_flat_mm: number;
+  g2_hole_dia_mm?: number;
+  g2_hole_bcd_radius_mm?: number;
+  g2_collar_height_mm?: number;
+  g2_collar_dia_mm?: number;
 
   // Gear 3: Generator Output Pinion (Slate-Grey Pinion + Motor Shaft Boss)
   g3_teeth: number;
@@ -4681,7 +4691,8 @@ export interface GearboxConfig {
   g3_bore_mm: number;
   g3_d_flat_mm: number;
   g3_boss_height_mm: number;
-  g3_helix_hand?: 1 | -1; // 1 = Right Hand (RH +β), -1 = Left Hand (LH -β). Flipped to 1 so Gear 3 meshes properly
+  g3_boss_diameter_mm?: number;
+  g3_helix_hand?: 1 | -1; // -1 = Left Hand (LH -β, Gear4 default for 2-stage), 1 = Right Hand (RH +β)
 }
 
 export interface GearboxMetrics {
@@ -4726,14 +4737,65 @@ export interface GearboxMeshBundle {
   total_triangles: number;
 }
 
+const GEAR4_25_SPEC: GearboxConfig = {
+  stage_mode: "compound_2stage",
+  layout_mode: "meshed",
+  module_mm: 1.25,
+  pressure_angle_deg: 20.0,
+  helix_angle_deg: 10.0,
+  backlash_mm: 0.2,
+
+  cutout_style: "circular_holes",
+  spoke_width_pct: 26.0,
+  rim_wall_mm: 3.0,
+  hub_ring_mm: 1.0,
+
+  g1_teeth: 60,
+  g1_face_width_mm: 3.0,
+  g1_spokes: 4,
+  g1_bore_mm: 5.3,
+  g1_d_flat_mm: 0.9,
+  g1_hub_diameter_mm: 20.0,
+  g1_hub_height_mm: 20.0,
+  g1_helix_hand: -1,
+  g1_hole_dia_mm: 20.0,
+  g1_hole_bcd_radius_mm: 22.0,
+
+  g2_wheel_teeth: 60,
+  g2_wheel_face_mm: 3.0,
+  g2_spokes: 4,
+  g2_pinion_teeth: 12,
+  g2_pinion_face_mm: 11.0,
+  g2_bore_mm: 5.3,
+  g2_d_flat_mm: 0.0,
+  g2_hole_dia_mm: 20.0,
+  g2_hole_bcd_radius_mm: 21.0,
+  g2_collar_height_mm: 2.0,
+  g2_collar_dia_mm: 8.0,
+
+  g3_teeth: 12,
+  g3_face_width_mm: 10.0,
+  g3_bore_mm: 2.25,
+  g3_d_flat_mm: 0.0,
+  g3_boss_height_mm: 4.0,
+  g3_boss_diameter_mm: 4.0,
+  g3_helix_hand: -1,
+};
+
 /**
- * Returns default Gearbox Prototype settings matching the 3-gear reference CAD:
- * - Gear 1: 60T Mint 4-spoked bull gear + Orange stepped hub boss
- * - Gear 2: 54T Purple wheel + 16T Lime-green coaxial tall helical pinion
- * - Gear 3: 20T Slate-grey generator pinion with motor shaft collar
+ * Built-in Gearbox Presets:
+ * - `gear4_25`: Matched `Gear4` 25:1 2-stage compound helical system (60→12 / 60→12, β=10°, LH/RH/LH, 4×Ø20 holes)
+ * - `gear4_5_direct`: `Gear4` 5:1 1-stage direct mesh (60→12, β=10°, LH/RH)
+ * - `comp_11_2`: Legacy 11.2:1 compound spoke-cutout reference (60→15 / 56→20, β=15°)
  */
-export function defaultGearboxConfig(): GearboxConfig {
-  return {
+export const GEARBOX_PRESETS: Record<GearboxPresetKey, GearboxConfig> = {
+  gear4_25: GEAR4_25_SPEC,
+  gear4_5_direct: {
+    ...GEAR4_25_SPEC,
+    stage_mode: "direct_1stage",
+    g3_helix_hand: 1,
+  },
+  comp_11_2: {
     stage_mode: "compound_2stage",
     layout_mode: "meshed",
     module_mm: 1.25,
@@ -4741,6 +4803,7 @@ export function defaultGearboxConfig(): GearboxConfig {
     helix_angle_deg: 15.0,
     backlash_mm: 0.15,
 
+    cutout_style: "spokes",
     spoke_width_pct: 26.0,
     rim_wall_mm: 3.5,
     hub_ring_mm: 2.5,
@@ -4752,6 +4815,9 @@ export function defaultGearboxConfig(): GearboxConfig {
     g1_d_flat_mm: 0.5,
     g1_hub_diameter_mm: 24.0,
     g1_hub_height_mm: 18.0,
+    g1_helix_hand: 1,
+    g1_hole_dia_mm: 18.0,
+    g1_hole_bcd_radius_mm: 24.0,
 
     g2_wheel_teeth: 56,
     g2_wheel_face_mm: 5.0,
@@ -4760,14 +4826,36 @@ export function defaultGearboxConfig(): GearboxConfig {
     g2_pinion_face_mm: 14.0,
     g2_bore_mm: 5.0,
     g2_d_flat_mm: 0.0,
+    g2_hole_dia_mm: 16.0,
+    g2_hole_bcd_radius_mm: 22.0,
+    g2_collar_height_mm: 2.2,
+    g2_collar_dia_mm: 11.6,
 
     g3_teeth: 20,
     g3_face_width_mm: 14.0,
     g3_bore_mm: 3.0,
     g3_d_flat_mm: 0.4,
     g3_boss_height_mm: 4.5,
-    g3_helix_hand: 1, // Flipped from legacy -1 to 1 (Right Hand RH) so Gear 3 meshes properly
-  };
+    g3_boss_diameter_mm: 10.5,
+    g3_helix_hand: 1,
+  },
+};
+
+/**
+ * Returns a fresh copy of a named built-in Gearbox Preset.
+ */
+export function getGearboxPreset(key: GearboxPresetKey): GearboxConfig {
+  return { ...(GEARBOX_PRESETS[key] ?? GEARBOX_PRESETS.gear4_25) };
+}
+
+/**
+ * Returns default Gearbox Studio settings matching the uploaded `Gear4` 25:1 CAD:
+ * - Gear 1 (`Gear4-60`): 60T Mint 4-hole wheel (4×Ø20 @ r=22) + Orange stepped Ø20×20 hub boss (Ø5.30/0.9 D-bore), LH -10°
+ * - Gear 2 (`Gear4-1260`): 60T Purple 4-hole wheel (4×Ø20 @ r=21) + 12T Lime coaxial pinion (11 mm) + Ø8×2 collar (Ø5.30 bore), RH +10°
+ * - Gear 3 (`Gear4-12`): 12T Slate generator pinion (10 mm + Ø4×4 boss, Ø2.25 motor bore), LH -10°
+ */
+export function defaultGearboxConfig(): GearboxConfig {
+  return getGearboxPreset("gear4_25");
 }
 
 /**
@@ -4776,10 +4864,10 @@ export function defaultGearboxConfig(): GearboxConfig {
  */
 export function computeGearboxMetrics(cfg: GearboxConfig): GearboxMetrics {
   const m = Math.max(0.4, cfg.module_mm || 1.25);
-  const z1 = Math.max(10, Math.round(cfg.g1_teeth || 60));
-  const z2w = Math.max(10, Math.round(cfg.g2_wheel_teeth || 56));
-  const z2p = Math.max(8, Math.round(cfg.g2_pinion_teeth || 15));
-  const z3 = Math.max(8, Math.round(cfg.g3_teeth || 20));
+  const z1 = Math.max(8, Math.round(cfg.g1_teeth || 60));
+  const z2w = Math.max(8, Math.round(cfg.g2_wheel_teeth || 60));
+  const z2p = Math.max(8, Math.round(cfg.g2_pinion_teeth || 12));
+  const z3 = Math.max(8, Math.round(cfg.g3_teeth || 12));
 
   const d1 = m * z1;
   const da1 = d1 + 2 * m;
@@ -4811,9 +4899,7 @@ export function computeGearboxMetrics(cfg: GearboxConfig): GearboxMetrics {
     a23 = 0.5 * (d2w + d3);
     effPct = 93.5;
   } else {
-    // "idler_reference": Reference CAD layout where Gear 1 (z1) meshes with Purple Wheel (z2w)
-    // and Coaxial Green Pinion (z2p) or Purple Wheel drives Generator Pinion (z3).
-    // In Idler Reference mode: Stage 1 = z1 / z2w, Stage 2 = z2w / z3 => Total = z1 / z3
+    // "idler_reference": Gear 1 (z1) meshes with Purple Wheel (z2w) which drives Generator Pinion (z3)
     stage1 = z1 / z2w;
     stage2 = z2w / z3;
     a12 = 0.5 * (d1 + d2w);
@@ -4828,7 +4914,7 @@ export function computeGearboxMetrics(cfg: GearboxConfig): GearboxMetrics {
       : 0.5 * da1 + a12 + a23 + 0.5 * da3;
   const maxZ = Math.max(
     cfg.g1_face_width_mm + cfg.g1_hub_height_mm,
-    cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm + 2.5,
+    cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm + (cfg.g2_collar_height_mm ?? 2.0),
     cfg.g3_face_width_mm + cfg.g3_boss_height_mm,
   );
 
@@ -4854,13 +4940,13 @@ export function computeGearboxMetrics(cfg: GearboxConfig): GearboxMetrics {
 
 /**
  * Automatically solves for integer tooth counts `(g1_teeth, g2_wheel_teeth, g2_pinion_teeth, g3_teeth)`
- * that best match `targetRatio` ($G \in [0.5, 20]$) while keeping pinion teeth $\ge 12$ to avoid undercutting.
+ * that best match `targetRatio` ($G \in [0.5, 30]$) while keeping pinion teeth $\ge 12$ to avoid undercutting.
  */
 export function solveGearTeethForTargetRatio(
   cfg: GearboxConfig,
   targetRatio: number,
 ): GearboxConfig {
-  const goal = Math.max(0.5, Math.min(20.0, targetRatio || 3.0));
+  const goal = Math.max(0.5, Math.min(30.0, targetRatio || 3.0));
   const next: GearboxConfig = { ...cfg };
 
   if (cfg.stage_mode === "direct_1stage" || cfg.stage_mode === "idler_reference") {
@@ -4868,7 +4954,7 @@ export function solveGearTeethForTargetRatio(
     let bestZ1 = next.g1_teeth;
     let bestZ3 = next.g3_teeth;
     let bestErr = Number.POSITIVE_INFINITY;
-    for (let z3 = 14; z3 <= 30; z3++) {
+    for (let z3 = 12; z3 <= 30; z3++) {
       const z1 = Math.max(16, Math.min(96, Math.round(z3 * goal)));
       const ratio = z1 / z3;
       const err = Math.abs(ratio - goal) + 0.002 * Math.abs(z1 - 60);
@@ -4896,16 +4982,16 @@ export function solveGearTeethForTargetRatio(
   };
   let bestScore = Number.POSITIVE_INFINITY;
 
-  for (let z2p = 13; z2p <= 24; z2p++) {
-    for (let z3 = 14; z3 <= 26; z3++) {
+  for (let z2p = 12; z2p <= 24; z2p++) {
+    for (let z3 = 12; z3 <= 26; z3++) {
       const z1 = Math.max(20, Math.min(84, Math.round(z2p * targetPerStage)));
       const remRatio = goal / (z1 / z2p);
-      const z2w = Math.max(20, Math.min(80, Math.round(z3 * remRatio)));
+      const z2w = Math.max(20, Math.min(84, Math.round(z3 * remRatio)));
       const achieved = (z1 / z2p) * (z2w / z3);
       const err =
         Math.abs(achieved - goal) +
         0.015 * Math.abs(z1 / z2p - z2w / z3) +
-        0.001 * Math.abs(z1 - 56);
+        0.001 * Math.abs(z1 - 60);
       if (err < bestScore) {
         bestScore = err;
         best = { z1, z2p, z2w, z3 };
@@ -5150,8 +5236,234 @@ function computeVertexNormals(positions: Float32Array, indices: Uint32Array): Fl
   return normals;
 }
 
+interface PolyNode2D {
+  vIdx: number;
+  x: number;
+  y: number;
+  prev: PolyNode2D;
+  next: PolyNode2D;
+}
+
+function sameXY2D(ax: number, ay: number, bx: number, by: number): boolean {
+  return Math.abs(ax - bx) <= 1e-8 && Math.abs(ay - by) <= 1e-8;
+}
+
+function cross2D(ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number {
+  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+}
+
+function segmentsProperlyCross2D(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+): boolean {
+  const c1 = cross2D(ax, ay, bx, by, cx, cy);
+  const c2 = cross2D(ax, ay, bx, by, dx, dy);
+  const c3 = cross2D(cx, cy, dx, dy, ax, ay);
+  const c4 = cross2D(cx, cy, dx, dy, bx, by);
+  const eps = 1e-9;
+  return (
+    ((c1 > eps && c2 < -eps) || (c1 < -eps && c2 > eps)) &&
+    ((c3 > eps && c4 < -eps) || (c3 < -eps && c4 > eps))
+  );
+}
+
+function pointOnSegment2D(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): boolean {
+  if (Math.abs(cross2D(ax, ay, bx, by, px, py)) > 1e-8) return false;
+  const minX = Math.min(ax, bx) - 1e-8;
+  const maxX = Math.max(ax, bx) + 1e-8;
+  const minY = Math.min(ay, by) - 1e-8;
+  const maxY = Math.max(ay, by) + 1e-8;
+  return px >= minX && px <= maxX && py >= minY && py <= maxY;
+}
+
+function pointInOrOnTri2D(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+): boolean {
+  const eps = -1e-9;
+  return (
+    cross2D(ax, ay, bx, by, px, py) >= eps &&
+    cross2D(bx, by, cx, cy, px, py) >= eps &&
+    cross2D(cx, cy, ax, ay, px, py) >= eps
+  );
+}
+
 /**
- * Builds a watertight involute gear ring (with optional `spokes` quadrant cutouts!)
+ * Triangulates a single-hole planar region by finding a mutually visible exterior bridge
+ * from `outerCCW` to `holeCW`, splicing with zero-width twin bridge edges, and running a
+ * multi-pass CCW ear-clipper. Returned triangles are `[a, b, c]` in CCW (`+z`) order.
+ */
+function triangulateSectorWithHole2D(
+  outerCCW: Array<{ vIdx: number; x: number; y: number }>,
+  holeCW: Array<{ vIdx: number; x: number; y: number }>,
+  holeCenterX: number,
+  holeCenterY: number,
+): Array<[number, number, number]> {
+  const nO = outerCCW.length;
+  const nH = holeCW.length;
+
+  const isValidBridge = (io: number, ih: number): boolean => {
+    const o = outerCCW[io]!;
+    const h = holeCW[ih]!;
+    // Bridge must leave hole radially into metal exterior, never through the hole interior.
+    const dotOut = (o.x - h.x) * (h.x - holeCenterX) + (o.y - h.y) * (h.y - holeCenterY);
+    if (dotOut <= 1e-6) return false;
+
+    for (let k = 0; k < nO; k++) {
+      const kNext = (k + 1) % nO;
+      if (k === io || kNext === io) continue;
+      const p0 = outerCCW[k]!;
+      const p1 = outerCCW[kNext]!;
+      if (segmentsProperlyCross2D(o.x, o.y, h.x, h.y, p0.x, p0.y, p1.x, p1.y)) return false;
+      if (pointOnSegment2D(p0.x, p0.y, o.x, o.y, h.x, h.y)) return false;
+    }
+    for (let k = 0; k < nH; k++) {
+      const kNext = (k + 1) % nH;
+      if (k === ih || kNext === ih) continue;
+      const q0 = holeCW[k]!;
+      const q1 = holeCW[kNext]!;
+      if (segmentsProperlyCross2D(o.x, o.y, h.x, h.y, q0.x, q0.y, q1.x, q1.y)) return false;
+      if (pointOnSegment2D(q0.x, q0.y, o.x, o.y, h.x, h.y)) return false;
+    }
+    return true;
+  };
+
+  // Prefer shortest visible bridge (often hole[0] at thetaMid to the adjacent rim vertex).
+  const pairs: Array<{ io: number; ih: number; d2: number }> = [];
+  for (let io = 0; io < nO; io++) {
+    const o = outerCCW[io]!;
+    for (let ih = 0; ih < nH; ih++) {
+      const h = holeCW[ih]!;
+      const dx = o.x - h.x;
+      const dy = o.y - h.y;
+      pairs.push({ io, ih, d2: dx * dx + dy * dy });
+    }
+  }
+  pairs.sort((a, b) => a.d2 - b.d2);
+
+  let bestIo = 0;
+  let bestIh = 0;
+  let found = false;
+  for (const cand of pairs) {
+    if (isValidBridge(cand.io, cand.ih)) {
+      bestIo = cand.io;
+      bestIh = cand.ih;
+      found = true;
+      break;
+    }
+  }
+  if (!found && pairs.length > 0) {
+    bestIo = pairs[0]!.io;
+    bestIh = pairs[0]!.ih;
+  }
+
+  // Splice outerCCW[bestIo] -> holeCW[bestIh..bestIh-1] -> holeCW[bestIh] -> outerCCW[bestIo..bestIo-1]
+  const loop: Array<{ vIdx: number; x: number; y: number }> = [];
+  loop.push(outerCCW[bestIo]!);
+  for (let k = 0; k <= nH; k++) {
+    loop.push(holeCW[(bestIh + k) % nH]!);
+  }
+  for (let k = 0; k < nO; k++) {
+    loop.push(outerCCW[(bestIo + k) % nO]!);
+  }
+
+  const m = loop.length;
+  const nodes: PolyNode2D[] = loop.map((p) => ({
+    vIdx: p.vIdx,
+    x: p.x,
+    y: p.y,
+    prev: null as unknown as PolyNode2D,
+    next: null as unknown as PolyNode2D,
+  }));
+  for (let i = 0; i < m; i++) {
+    nodes[i]!.prev = nodes[(i - 1 + m) % m]!;
+    nodes[i]!.next = nodes[(i + 1) % m]!;
+  }
+
+  const tris: Array<[number, number, number]> = [];
+  let head = nodes[0]!;
+  let remaining = m;
+
+  const earValid = (cur: PolyNode2D, areaEps: number, checkPoints: boolean): boolean => {
+    const a = cur.prev;
+    const b = cur;
+    const c = cur.next;
+    if (sameXY2D(a.x, a.y, c.x, c.y)) return false;
+    const area2 = cross2D(a.x, a.y, b.x, b.y, c.x, c.y);
+    if (area2 <= areaEps) return false;
+    if (!checkPoints) return true;
+
+    let q = c.next;
+    while (q !== a) {
+      if (
+        !sameXY2D(q.x, q.y, a.x, a.y) &&
+        !sameXY2D(q.x, q.y, b.x, b.y) &&
+        !sameXY2D(q.x, q.y, c.x, c.y) &&
+        pointInOrOnTri2D(q.x, q.y, a.x, a.y, b.x, b.y, c.x, c.y)
+      ) {
+        return false;
+      }
+      q = q.next;
+    }
+    return true;
+  };
+
+  for (let pass = 0; pass < 3 && remaining >= 3; pass++) {
+    const areaEps = pass === 0 ? 1e-8 : 1e-12;
+    const checkPts = pass < 2;
+    let cur = head;
+    let stallCount = 0;
+    const maxIters = remaining * remaining + 16;
+    let iters = 0;
+    while (remaining >= 3 && stallCount < remaining && iters < maxIters) {
+      iters++;
+      if (remaining === 3) {
+        const area2 = cross2D(cur.prev.x, cur.prev.y, cur.x, cur.y, cur.next.x, cur.next.y);
+        if (Math.abs(area2) > 1e-12) {
+          tris.push([cur.prev.vIdx, cur.vIdx, cur.next.vIdx]);
+        }
+        remaining = 0;
+        break;
+      }
+      if (earValid(cur, areaEps, checkPts)) {
+        tris.push([cur.prev.vIdx, cur.vIdx, cur.next.vIdx]);
+        cur.prev.next = cur.next;
+        cur.next.prev = cur.prev;
+        head = cur.next;
+        cur = head;
+        remaining--;
+        stallCount = 0;
+      } else {
+        cur = cur.next;
+        stallCount++;
+      }
+    }
+  }
+
+  return tris;
+}
+
+/**
+ * Builds a watertight involute gear ring (with optional `spokes` pie wedges or `circular_holes` cutouts)
  * between `innerRadius` (or bore ring) and the outer involute tooth profile.
  */
 function buildToothedWheelMesh(opts: {
@@ -5165,7 +5477,10 @@ function buildToothedWheelMesh(opts: {
   boreDiaMm: number;
   dFlatMm: number;
   spokes: number;
+  cutoutStyle?: GearboxCutoutStyle;
   spokeWidthPct?: number;
+  holeDiameterMm?: number;
+  holeBcdRadiusMm?: number;
   rimWallMm?: number;
   hubOuterRadiusMm: number;
   zOffsetMm: number;
@@ -5184,7 +5499,8 @@ function buildToothedWheelMesh(opts: {
   const rf = Math.max(0.35 * rp, rp - 1.2 * opts.moduleMm);
   const rimWall = Math.max(1.2, opts.rimWallMm ?? 2.8 * opts.moduleMm);
   const rimInnerR = Math.max(opts.hubOuterRadiusMm + 2.0, rf - rimWall);
-  const useSpokes =
+  const cutoutStyle: GearboxCutoutStyle = opts.cutoutStyle ?? "spokes";
+  const useCutouts =
     opts.spokes >= 3 && opts.spokes <= 8 && rimInnerR > opts.hubOuterRadiusMm + 2.5;
 
   const boreRadii = sampleBoreRadiusRing(angles, opts.boreDiaMm, opts.dFlatMm);
@@ -5205,21 +5521,34 @@ function buildToothedWheelMesh(opts: {
     mb.stitchRings(outerRings[k]!, outerRings[k + 1]!, n, false);
   }
 
-  if (!useSpokes) {
+  if (!useCutouts) {
     // Solid gear web from bore out to outer tooth ring
     const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
     const boreTop = mb.addPolarRing(angles, boreRadii, z1, 0);
-    // Inner bore wall (normals pointing inward toward shaft axis)
     mb.stitchRings(boreBot, boreTop, n, true);
-    // Bottom cap (z = z0, normal -z: t_theta x +r = -z -> flipWinding = false)
     mb.stitchRings(boreBot, outerRings[0]!, n, false);
-    // Top cap (z = z1, normal +z: flipWinding = true)
     mb.stitchRings(boreTop, outerRings[zLayers]!, n, true);
     return mb;
   }
 
-  // Spoked Gear Web (4 quadrant windows between hubOuterR and rimInnerR, matching Reference Gear 1!)
   const hubR = Math.max(opts.boreDiaMm * 0.65, opts.hubOuterRadiusMm);
+  const minHoleMargin = 0.45;
+  const holeCount = Math.round(opts.spokes);
+
+  // Check if circular holes fit cleanly inside each sector without overlapping hub/rim/adjacent holes
+  let canUseCircularHoles = cutoutStyle === "circular_holes" && holeCount >= 3;
+  const holeBcdTarget = opts.holeBcdRadiusMm ?? 0.5 * (hubR + rimInnerR);
+  const bcdR = Math.max(hubR + minHoleMargin + 1.0, Math.min(rimInnerR - minHoleMargin - 1.0, holeBcdTarget));
+  const reqRHole = 0.5 * (opts.holeDiameterMm ?? 20.0);
+
+  if (canUseCircularHoles) {
+    const radialClear = Math.min(bcdR - hubR - minHoleMargin, rimInnerR - bcdR - minHoleMargin);
+    const angularClear = bcdR * Math.sin(Math.PI / holeCount - Math.PI / n) - minHoleMargin;
+    if (Math.min(reqRHole, radialClear, angularClear) < 1.2 || rimInnerR - hubR < 3.4) {
+      canUseCircularHoles = false;
+    }
+  }
+
   const boreBot = mb.addPolarRing(angles, boreRadii, z0, 0);
   const boreTop = mb.addPolarRing(angles, boreRadii, z1, 0);
   const hubBot = mb.addPolarRing(angles, hubR, z0, 0);
@@ -5227,14 +5556,103 @@ function buildToothedWheelMesh(opts: {
   const rimBot = mb.addPolarRing(angles, rimInnerR, z0, 0);
   const rimTop = mb.addPolarRing(angles, rimInnerR, z1, 0);
 
-  // Inner bore wall
+  // Inner bore wall + inner hub annulus (bore -> hubR) + outer rim annulus (rimInnerR -> toothRadii)
   mb.stitchRings(boreBot, boreTop, n, true);
-  // Inner solid hub collar annulus (bore -> hubR)
   mb.stitchRings(boreBot, hubBot, n, false);
   mb.stitchRings(boreTop, hubTop, n, true);
-  // Outer solid rim annulus (rimInnerR -> toothRadii)
   mb.stitchRings(rimBot, outerRings[0]!, n, false);
   mb.stitchRings(rimTop, outerRings[zLayers]!, n, true);
+
+  if (canUseCircularHoles) {
+    // Circular lightening holes (Gear4 style, e.g. 4 x Ø20 mm), partitioned along exact existing ring vertices
+    const nHole = 32;
+    for (let s = 0; s < holeCount; s++) {
+      const iStart = Math.round((s * n) / holeCount);
+      const iEnd = Math.round(((s + 1) * n) / holeCount);
+      const theta0 = (2 * Math.PI * iStart) / n;
+      const theta1 = (2 * Math.PI * iEnd) / n;
+      const thetaMid = 0.5 * (theta0 + theta1);
+      const dThetaHalf = 0.5 * (theta1 - theta0);
+
+      const radialClear = Math.min(bcdR - hubR - minHoleMargin, rimInnerR - bcdR - minHoleMargin);
+      const angularClear = bcdR * Math.sin(Math.min(Math.PI * 0.48, dThetaHalf)) - minHoleMargin;
+      const rHole = Math.max(1.2, Math.min(reqRHole, radialClear, angularClear));
+
+      const cx = bcdR * Math.cos(thetaMid);
+      const cy = bcdR * Math.sin(thetaMid);
+
+      // Build bottom & top hole vertex rings in CCW order around (cx, cy) starting at thetaMid
+      const holeBot = mb.positions.length / 3;
+      for (let k = 0; k < nHole; k++) {
+        const phi = thetaMid + (2 * Math.PI * k) / nHole;
+        mb.addVertex(cx + rHole * Math.cos(phi), cy + rHole * Math.sin(phi), z0);
+      }
+      const holeTop = mb.positions.length / 3;
+      for (let k = 0; k < nHole; k++) {
+        const phi = thetaMid + (2 * Math.PI * k) / nHole;
+        mb.addVertex(cx + rHole * Math.cos(phi), cy + rHole * Math.sin(phi), z1);
+      }
+
+      // Hole cylindrical bore wall (normals inward toward hole center (cx, cy))
+      mb.stitchRings(holeBot, holeTop, nHole, true);
+
+      // Assemble CCW outer sector polygon on hub [iStart..iEnd] and rim [iStart..iEnd]
+      const buildSectorLoop = (hubBase: number, rimBase: number) => {
+        const outerCCW: Array<{ vIdx: number; x: number; y: number }> = [];
+        const pushRingV = (vIdx: number) => {
+          outerCCW.push({
+            vIdx,
+            x: mb.positions[vIdx * 3]!,
+            y: mb.positions[vIdx * 3 + 1]!,
+          });
+        };
+        pushRingV(hubBase + (iStart % n));
+        for (let i = iStart; i <= iEnd; i++) {
+          pushRingV(rimBase + (i % n));
+        }
+        for (let i = iEnd; i > iStart; i--) {
+          pushRingV(hubBase + (i % n));
+        }
+        return outerCCW;
+      };
+
+      const buildHoleCW = (holeBase: number) => {
+        const holeCW: Array<{ vIdx: number; x: number; y: number }> = [];
+        for (let k = 0; k < nHole; k++) {
+          const idx = holeBase + ((nHole - k) % nHole);
+          holeCW.push({
+            vIdx: idx,
+            x: mb.positions[idx * 3]!,
+            y: mb.positions[idx * 3 + 1]!,
+          });
+        }
+        return holeCW;
+      };
+
+      // Top planar face (+z normal, CCW triangles)
+      const topTris = triangulateSectorWithHole2D(
+        buildSectorLoop(hubTop, rimTop),
+        buildHoleCW(holeTop),
+        cx,
+        cy,
+      );
+      for (const [a, b, c] of topTris) {
+        mb.addTri(a, b, c);
+      }
+
+      // Bottom planar face (-z normal, reversed winding)
+      const botTris = triangulateSectorWithHole2D(
+        buildSectorLoop(hubBot, rimBot),
+        buildHoleCW(holeBot),
+        cx,
+        cy,
+      );
+      for (const [a, b, c] of botTris) {
+        mb.addTri(a, c, b);
+      }
+    }
+    return mb;
+  }
 
   // Classify each angular sector i into spoke vs window cutout
   const spokeCount = opts.spokes;
@@ -5277,8 +5695,8 @@ function buildToothedWheelMesh(opts: {
 }
 
 /**
- * Builds the Orange Stepped Hub Boss on top of Gear 1 (matching Reference Images 1, 2, 3:
- * flared conical base skirt -> tall cylindrical collar -> 3 concentric stepped top rings + D-bore).
+ * Builds an axisymmetric hub boss or shaft collar on top of a gear
+ * (`rotor_hub`: flared stepped orange rotor mount with D-bore; `collar`: chamfered cylindrical collar).
  */
 function buildSteppedRotorHubBossMesh(opts: {
   boreDiaMm: number;
@@ -5286,6 +5704,7 @@ function buildSteppedRotorHubBossMesh(opts: {
   hubDiaMm: number;
   hubHeightMm: number;
   zBaseMm: number;
+  style?: "rotor_hub" | "collar";
 }): MeshBuilder {
   const mb = new MeshBuilder();
   const n = 96;
@@ -5294,21 +5713,34 @@ function buildSteppedRotorHubBossMesh(opts: {
     angles[i] = (2 * Math.PI * i) / n;
   }
   const boreRadii = sampleBoreRadiusRing(angles, opts.boreDiaMm, opts.dFlatMm);
-  const rMain = Math.max(opts.boreDiaMm * 0.8, 0.5 * opts.hubDiaMm);
+  let boreMaxR = 0.8;
+  for (let i = 0; i < n; i++) {
+    if (boreRadii[i]! > boreMaxR) boreMaxR = boreRadii[i]!;
+  }
+  const style = opts.style ?? "rotor_hub";
+  const minMargin = style === "collar" ? 0.35 : 0.6;
+  const rMain = Math.max(boreMaxR + minMargin, 0.5 * opts.hubDiaMm);
   const rSkirt = rMain * 1.24;
-  const h = Math.max(4.0, opts.hubHeightMm);
+  const h = Math.max(0.5, opts.hubHeightMm);
   const z0 = opts.zBaseMm;
 
-  // Stepped axisymmetric profile from z0 up to z0 + h (matching the orange hub in Image 1 & 3)
-  const profile: Array<{ z: number; r: number }> = [
-    { z: z0, r: rSkirt },
-    { z: z0 + 0.22 * h, r: rMain },
-    { z: z0 + 0.78 * h, r: rMain },
-    { z: z0 + 0.84 * h, r: rMain * 0.86 },
-    { z: z0 + 0.90 * h, r: rMain * 0.86 },
-    { z: z0 + 0.94 * h, r: rMain * 0.68 },
-    { z: z0 + 1.00 * h, r: rMain * 0.68 },
-  ];
+  const profile: Array<{ z: number; r: number }> =
+    style === "collar"
+      ? [
+          { z: z0, r: rMain * 1.12 },
+          { z: z0 + 0.25 * h, r: rMain },
+          { z: z0 + 0.88 * h, r: rMain },
+          { z: z0 + 1.0 * h, r: Math.max(boreMaxR + 0.25, rMain * 0.92) },
+        ]
+      : [
+          { z: z0, r: rSkirt },
+          { z: z0 + 0.22 * h, r: rMain },
+          { z: z0 + 0.78 * h, r: rMain },
+          { z: z0 + 0.84 * h, r: Math.max(boreMaxR + 0.35, rMain * 0.86) },
+          { z: z0 + 0.9 * h, r: Math.max(boreMaxR + 0.35, rMain * 0.86) },
+          { z: z0 + 0.94 * h, r: Math.max(boreMaxR + 0.3, rMain * 0.68) },
+          { z: z0 + 1.0 * h, r: Math.max(boreMaxR + 0.3, rMain * 0.68) },
+        ];
 
   const extRings: number[] = [];
   for (const pt of profile) {
@@ -5409,11 +5841,14 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     }
   }
 
+  const cutoutStyle: GearboxCutoutStyle = cfg.cutout_style ?? "circular_holes";
   const spokeWidthPct = Math.max(10, Math.min(65, cfg.spoke_width_pct ?? 26));
-  const rimWallMm = Math.max(1.5, Math.min(12.0, cfg.rim_wall_mm ?? 3.5));
-  const hubRingMm = Math.max(1.0, Math.min(12.0, cfg.hub_ring_mm ?? 2.5));
+  const rimWallMm = Math.max(1.5, Math.min(12.0, cfg.rim_wall_mm ?? 3.0));
+  const hubRingMm = Math.max(1.0, Math.min(12.0, cfg.hub_ring_mm ?? 1.0));
+  const g1HelixHand: 1 | -1 = cfg.g1_helix_hand === 1 ? 1 : -1;
+  const g2HelixHand: 1 | -1 = g1HelixHand === 1 ? -1 : 1;
 
-  // ---- Gear 1: Mint-Green Spoked Bull Gear + Orange Stepped Hub Boss ----
+  // ---- Gear 1: Mint-Green Bull Gear + Orange Stepped Hub Boss ----
   const g1BossBaseR = cfg.g1_hub_height_mm > 0.5 ? 0.5 * cfg.g1_hub_diameter_mm : 0.5 * cfg.g1_bore_mm;
   const hubOuterR = Math.max(cfg.g1_bore_mm * 0.75, g1BossBaseR + hubRingMm);
   const g1RimBuilder = buildToothedWheelMesh({
@@ -5421,13 +5856,16 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     moduleMm: cfg.module_mm,
     pressureAngleDeg: cfg.pressure_angle_deg,
     helixAngleDeg: cfg.helix_angle_deg,
-    helixHand: 1,
+    helixHand: g1HelixHand,
     backlashMm: cfg.backlash_mm,
     faceWidthMm: cfg.g1_face_width_mm,
     boreDiaMm: cfg.g1_bore_mm,
     dFlatMm: cfg.g1_d_flat_mm,
     spokes: cfg.g1_spokes,
+    cutoutStyle,
     spokeWidthPct,
+    holeDiameterMm: cfg.g1_hole_dia_mm ?? 20.0,
+    holeBcdRadiusMm: cfg.g1_hole_bcd_radius_mm ?? 22.0,
     rimWallMm,
     hubOuterRadiusMm: hubOuterR,
     zOffsetMm: 0,
@@ -5436,7 +5874,7 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     g1RimBuilder.toSubMesh({
       id: "gear1-rim",
       gear_index: 1,
-      label: `Gear 1 · Rotor Spoked Wheel (${cfg.g1_teeth}T)`,
+      label: `Gear 1 · Rotor ${cutoutStyle === "circular_holes" && cfg.g1_spokes >= 3 ? "Perforated" : "Spoked"} Wheel (${cfg.g1_teeth}T)`,
       color_hex: 0x8fd9b6, // Mint green from Reference CAD
       metalness: 0.18,
       roughness: 0.36,
@@ -5455,6 +5893,7 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       hubDiaMm: cfg.g1_hub_diameter_mm,
       hubHeightMm: cfg.g1_hub_height_mm,
       zBaseMm: cfg.g1_face_width_mm,
+      style: "rotor_hub",
     });
     submeshes.push(
       g1BossBuilder.toSubMesh({
@@ -5493,13 +5932,16 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       moduleMm: cfg.module_mm,
       pressureAngleDeg: cfg.pressure_angle_deg,
       helixAngleDeg: cfg.helix_angle_deg,
-      helixHand: -1,
+      helixHand: g2HelixHand,
       backlashMm: cfg.backlash_mm,
       faceWidthMm: cfg.g2_wheel_face_mm,
       boreDiaMm: cfg.g2_bore_mm,
       dFlatMm: cfg.g2_d_flat_mm,
       spokes: cfg.g2_spokes ?? 0,
+      cutoutStyle,
       spokeWidthPct,
+      holeDiameterMm: cfg.g2_hole_dia_mm ?? 20.0,
+      holeBcdRadiusMm: cfg.g2_hole_bcd_radius_mm ?? 21.0,
       rimWallMm,
       hubOuterRadiusMm: g2HubOuterR,
       zOffsetMm: 0,
@@ -5525,7 +5967,7 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       moduleMm: cfg.module_mm,
       pressureAngleDeg: cfg.pressure_angle_deg,
       helixAngleDeg: cfg.helix_angle_deg,
-      helixHand: -1, // Flipped to -1 (LH) so it mates with Gear 1 (RH +1)
+      helixHand: g2HelixHand, // Mates cleanly with Gear 1's opposing helix hand
       backlashMm: cfg.backlash_mm,
       faceWidthMm: cfg.g2_pinion_face_mm,
       boreDiaMm: cfg.g2_bore_mm,
@@ -5550,29 +5992,32 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       }),
     );
 
-    // Small top collar on the lime-green coaxial pinion (matching Image 1 & 3)
-    const g2CollarBuilder = buildSteppedRotorHubBossMesh({
-      boreDiaMm: cfg.g2_bore_mm,
-      dFlatMm: cfg.g2_d_flat_mm,
-      hubDiaMm: Math.max(cfg.g2_bore_mm + 3.0, 2 * r2p * 0.62),
-      hubHeightMm: 2.2,
-      zBaseMm: cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm,
-    });
-    submeshes.push(
-      g2CollarBuilder.toSubMesh({
-        id: "gear2-collar",
-        gear_index: 2,
-        label: "Gear 2 · Pinion Collar",
-        color_hex: 0x72c455,
-        metalness: 0.22,
-        roughness: 0.34,
-        center_x_mm: x2,
-        center_y_mm: 0,
-        base_z_mm: z2Base,
-        mesh_phase_rad: g2Phase,
-        spin_ratio: g2SpinRatio,
-      }),
-    );
+    const g2CollarH = cfg.g2_collar_height_mm ?? 2.0;
+    if (g2CollarH > 0.4) {
+      const g2CollarBuilder = buildSteppedRotorHubBossMesh({
+        boreDiaMm: cfg.g2_bore_mm,
+        dFlatMm: cfg.g2_d_flat_mm,
+        hubDiaMm: cfg.g2_collar_dia_mm ?? Math.max(cfg.g2_bore_mm + 2.4, 8.0),
+        hubHeightMm: g2CollarH,
+        zBaseMm: cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm,
+        style: "collar",
+      });
+      submeshes.push(
+        g2CollarBuilder.toSubMesh({
+          id: "gear2-collar",
+          gear_index: 2,
+          label: "Gear 2 · Pinion Collar",
+          color_hex: 0x72c455,
+          metalness: 0.22,
+          roughness: 0.34,
+          center_x_mm: x2,
+          center_y_mm: 0,
+          base_z_mm: z2Base,
+          mesh_phase_rad: g2Phase,
+          spin_ratio: g2SpinRatio,
+        }),
+      );
+    }
   }
 
   // ---- Gear 3: Slate-Grey Generator Pinion + Motor Shaft Collar ----
@@ -5585,7 +6030,7 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       : g3BasePhase - (z2w / z3) * g2Phase;
 
   const g3HelixHand: 1 | -1 =
-    cfg.stage_mode === "direct_1stage" ? -1 : cfg.g3_helix_hand === -1 ? -1 : 1;
+    cfg.stage_mode === "direct_1stage" ? g2HelixHand : cfg.g3_helix_hand === 1 ? 1 : -1;
   const g3PinionBuilder = buildToothedWheelMesh({
     teeth: cfg.g3_teeth,
     moduleMm: cfg.module_mm,
@@ -5620,9 +6065,10 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     const g3BossBuilder = buildSteppedRotorHubBossMesh({
       boreDiaMm: cfg.g3_bore_mm,
       dFlatMm: cfg.g3_d_flat_mm,
-      hubDiaMm: Math.max(cfg.g3_bore_mm + 3.2, 2 * r3 * 0.42),
+      hubDiaMm: cfg.g3_boss_diameter_mm ?? 4.0,
       hubHeightMm: cfg.g3_boss_height_mm,
       zBaseMm: cfg.g3_face_width_mm,
+      style: "collar",
     });
     submeshes.push(
       g3BossBuilder.toSubMesh({

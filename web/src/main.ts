@@ -71,9 +71,12 @@ import {
   computeGearboxMetrics,
   defaultGearboxConfig,
   exportGearStlBytes,
+  getGearboxPreset,
   type GearExportTarget,
   type GearboxConfig,
+  type GearboxCutoutStyle,
   type GearboxLayoutMode,
+  type GearboxPresetKey,
   type GearboxStageMode,
   solveGearTeethForTargetRatio,
   defaultRulesetForGeneratorPreset,
@@ -543,6 +546,7 @@ const btnGear3 = document.getElementById("btn-gear-3") as HTMLButtonElement | nu
 const btnGear4 = document.getElementById("btn-gear-4") as HTMLButtonElement | null;
 const btnGear8 = document.getElementById("btn-gear-8") as HTMLButtonElement | null;
 const btnGear12 = document.getElementById("btn-gear-12") as HTMLButtonElement | null;
+const btnGear25 = document.getElementById("btn-gear-25") as HTMLButtonElement | null;
 const genSummary = document.getElementById("gen-summary")!;
 const genOptTarget = document.getElementById("gen-opt-target");
 const genRegimeBadge = document.getElementById("gen-regime-badge");
@@ -679,6 +683,9 @@ const gearboxSummary = document.getElementById("gearbox-summary");
 const btnGearbox3dView = document.getElementById("btn-gearbox-3d-view") as HTMLButtonElement | null;
 const btnGearLayoutSide = document.getElementById("btn-gear-layout-side") as HTMLButtonElement | null;
 const btnGearLayoutMesh = document.getElementById("btn-gear-layout-mesh") as HTMLButtonElement | null;
+const btnGearPresetGear425 = document.getElementById("btn-gear-preset-gear4-25") as HTMLButtonElement | null;
+const btnGearPresetGear45 = document.getElementById("btn-gear-preset-gear4-5") as HTMLButtonElement | null;
+const btnGearPresetComp11 = document.getElementById("btn-gear-preset-comp-11") as HTMLButtonElement | null;
 const gearToothBadge = document.getElementById("gear-tooth-badge");
 const selectGearStageMode = document.getElementById("gear-stage-mode") as HTMLSelectElement | null;
 const inputGearModule = document.getElementById("gear-module") as HTMLInputElement | null;
@@ -688,6 +695,8 @@ const inputGearBacklash = document.getElementById("gear-backlash") as HTMLInputE
 const btnGearSolveRatio = document.getElementById("btn-gear-solve-ratio") as HTMLButtonElement | null;
 const btnGearSyncAero = document.getElementById("btn-gear-sync-aero") as HTMLButtonElement | null;
 const gearCutoutBadge = document.getElementById("gear-cutout-badge");
+const selectGearCutoutStyle = document.getElementById("gear-cutout-style") as HTMLSelectElement | null;
+const inputGearHoleDia = document.getElementById("gear-hole-dia") as HTMLInputElement | null;
 const inputGearSpokeWidth = document.getElementById("gear-spoke-width") as HTMLInputElement | null;
 const inputGearRimWall = document.getElementById("gear-rim-wall") as HTMLInputElement | null;
 const inputGearHubRing = document.getElementById("gear-hub-ring") as HTMLInputElement | null;
@@ -700,6 +709,7 @@ const inputG1Bore = document.getElementById("g1-bore") as HTMLInputElement | nul
 const inputG1DFlat = document.getElementById("g1-dflat") as HTMLInputElement | null;
 const inputG1HubDia = document.getElementById("g1-hub-dia") as HTMLInputElement | null;
 const inputG1HubH = document.getElementById("g1-hub-h") as HTMLInputElement | null;
+const selectG1HelixHand = document.getElementById("g1-helix-hand") as HTMLSelectElement | null;
 
 const gear2Card = document.getElementById("gear2-card");
 const g2DiaBadge = document.getElementById("g2-dia-badge");
@@ -724,7 +734,8 @@ const btnExportGearsAll = document.getElementById("btn-export-gears-all") as HTM
 const btnExportGear1 = document.getElementById("btn-export-gear1") as HTMLButtonElement | null;
 const btnExportGear2 = document.getElementById("btn-export-gear2") as HTMLButtonElement | null;
 const btnExportGear3 = document.getElementById("btn-export-gear3") as HTMLButtonElement | null;
-let activeGearLayoutMode: GearboxLayoutMode = "side_by_side";
+let activeGearLayoutMode: GearboxLayoutMode = defaultGearboxConfig().layout_mode;
+let activeGearExtraSpec: Partial<GearboxConfig> = { ...defaultGearboxConfig() };
 
 function isStationLocked(spanRatio: number): boolean {
   return lockedSpanRatios.some((r) => Math.abs(r - spanRatio) <= RATIO_EPS);
@@ -1178,8 +1189,39 @@ function buildCleanBladeGeometry(
   return geo;
 }
 
+function syncGearPresetButtons(cfg: GearboxConfig) {
+  const matchPreset = (key: GearboxPresetKey): boolean => {
+    const p = getGearboxPreset(key);
+    return (
+      cfg.stage_mode === p.stage_mode &&
+      cfg.g1_teeth === p.g1_teeth &&
+      cfg.g2_wheel_teeth === p.g2_wheel_teeth &&
+      cfg.g2_pinion_teeth === p.g2_pinion_teeth &&
+      cfg.g3_teeth === p.g3_teeth &&
+      (cfg.cutout_style ?? "circular_holes") === (p.cutout_style ?? "circular_holes") &&
+      Math.abs(cfg.helix_angle_deg - p.helix_angle_deg) < 0.25 &&
+      (cfg.g1_helix_hand ?? -1) === (p.g1_helix_hand ?? -1)
+    );
+  };
+  btnGearPresetGear425?.classList.toggle("active", matchPreset("gear4_25"));
+  btnGearPresetGear45?.classList.toggle("active", matchPreset("gear4_5_direct"));
+  btnGearPresetComp11?.classList.toggle("active", matchPreset("comp_11_2"));
+}
+
 function readCurrentGearboxConfig(): GearboxConfig {
   const def = defaultGearboxConfig();
+  const cutoutStyle: GearboxCutoutStyle =
+    selectGearCutoutStyle?.value === "spokes" ? "spokes" : "circular_holes";
+  const holeDia = Math.max(
+    4,
+    Math.min(36, Number.parseFloat(inputGearHoleDia?.value || "") || (def.g1_hole_dia_mm ?? 20.0)),
+  );
+  const baseG1Hole = activeGearExtraSpec.g1_hole_dia_mm ?? def.g1_hole_dia_mm ?? 20.0;
+  const g2HoleDia =
+    activeGearExtraSpec.g2_hole_dia_mm !== undefined && Math.abs(holeDia - baseG1Hole) < 0.05
+      ? activeGearExtraSpec.g2_hole_dia_mm
+      : holeDia;
+
   return {
     stage_mode: (selectGearStageMode?.value as GearboxStageMode) || def.stage_mode,
     layout_mode: activeGearLayoutMode,
@@ -1196,6 +1238,7 @@ function readCurrentGearboxConfig(): GearboxConfig {
       0,
       Math.min(0.6, Number.parseFloat(inputGearBacklash?.value || "0") || 0),
     ),
+    cutout_style: cutoutStyle,
     spoke_width_pct: Math.max(
       10,
       Math.min(65, Number.parseFloat(inputGearSpokeWidth?.value || "") || def.spoke_width_pct),
@@ -1222,6 +1265,9 @@ function readCurrentGearboxConfig(): GearboxConfig {
       Number.parseFloat(inputG1HubDia?.value || "") || def.g1_hub_diameter_mm,
     ),
     g1_hub_height_mm: Math.max(0, Number.parseFloat(inputG1HubH?.value || "0") || 0),
+    g1_helix_hand: selectG1HelixHand?.value === "1" ? 1 : -1,
+    g1_hole_dia_mm: holeDia,
+    g1_hole_bcd_radius_mm: activeGearExtraSpec.g1_hole_bcd_radius_mm ?? def.g1_hole_bcd_radius_mm,
 
     g2_wheel_teeth: Math.max(
       10,
@@ -1242,6 +1288,10 @@ function readCurrentGearboxConfig(): GearboxConfig {
     ),
     g2_bore_mm: Math.max(1.5, Number.parseFloat(inputG2Bore?.value || "") || def.g2_bore_mm),
     g2_d_flat_mm: Math.max(0, Number.parseFloat(inputG2DFlat?.value || "0") || 0),
+    g2_hole_dia_mm: g2HoleDia,
+    g2_hole_bcd_radius_mm: activeGearExtraSpec.g2_hole_bcd_radius_mm ?? def.g2_hole_bcd_radius_mm,
+    g2_collar_height_mm: activeGearExtraSpec.g2_collar_height_mm ?? def.g2_collar_height_mm,
+    g2_collar_dia_mm: activeGearExtraSpec.g2_collar_dia_mm ?? def.g2_collar_dia_mm,
 
     g3_teeth: Math.max(8, Math.round(Number.parseFloat(inputG3Teeth?.value || "") || def.g3_teeth)),
     g3_face_width_mm: Math.max(
@@ -1251,22 +1301,44 @@ function readCurrentGearboxConfig(): GearboxConfig {
     g3_bore_mm: Math.max(1.2, Number.parseFloat(inputG3Bore?.value || "") || def.g3_bore_mm),
     g3_d_flat_mm: Math.max(0, Number.parseFloat(inputG3DFlat?.value || "0") || 0),
     g3_boss_height_mm: Math.max(0, Number.parseFloat(inputG3BossH?.value || "0") || 0),
-    g3_helix_hand: (selectG3HelixHand?.value === "-1" ? -1 : 1),
+    g3_boss_diameter_mm: activeGearExtraSpec.g3_boss_diameter_mm ?? def.g3_boss_diameter_mm,
+    g3_helix_hand: selectG3HelixHand?.value === "1" ? 1 : -1,
   };
 }
 
 function applyGearboxConfigToDom(cfg: GearboxConfig) {
-  activeGearLayoutMode = cfg.layout_mode || "side_by_side";
+  const def = defaultGearboxConfig();
+  const inferredCutoutStyle: GearboxCutoutStyle =
+    cfg.cutout_style ?? (cfg.g2_wheel_teeth === 56 && cfg.g3_teeth === 20 ? "spokes" : "circular_holes");
+  const inferredG1Hand: 1 | -1 =
+    cfg.g1_helix_hand ?? (cfg.g2_wheel_teeth === 56 && cfg.g3_teeth === 20 ? 1 : -1);
+
+  activeGearLayoutMode = cfg.layout_mode || def.layout_mode;
+  activeGearExtraSpec = {
+    g1_hole_dia_mm: cfg.g1_hole_dia_mm ?? def.g1_hole_dia_mm,
+    g1_hole_bcd_radius_mm: cfg.g1_hole_bcd_radius_mm ?? def.g1_hole_bcd_radius_mm,
+    g2_hole_dia_mm: cfg.g2_hole_dia_mm ?? def.g2_hole_dia_mm,
+    g2_hole_bcd_radius_mm: cfg.g2_hole_bcd_radius_mm ?? def.g2_hole_bcd_radius_mm,
+    g2_collar_height_mm: cfg.g2_collar_height_mm ?? def.g2_collar_height_mm,
+    g2_collar_dia_mm: cfg.g2_collar_dia_mm ?? def.g2_collar_dia_mm,
+    g3_boss_diameter_mm:
+      cfg.g3_boss_diameter_mm ?? (cfg.g3_teeth >= 18 ? Math.max(cfg.g3_bore_mm + 3.2, 10.5) : def.g3_boss_diameter_mm),
+  };
+
   btnGearLayoutSide?.classList.toggle("active", activeGearLayoutMode === "side_by_side");
   btnGearLayoutMesh?.classList.toggle("active", activeGearLayoutMode === "meshed");
+  btnTbGearLayoutSide?.classList.toggle("active", activeGearLayoutMode === "side_by_side");
+  btnTbGearLayoutMesh?.classList.toggle("active", activeGearLayoutMode === "meshed");
   if (selectGearStageMode) selectGearStageMode.value = cfg.stage_mode;
   if (inputGearModule) inputGearModule.value = String(cfg.module_mm);
   if (inputGearHelix) inputGearHelix.value = String(cfg.helix_angle_deg);
   if (inputGearPressure) inputGearPressure.value = String(cfg.pressure_angle_deg);
   if (inputGearBacklash) inputGearBacklash.value = String(cfg.backlash_mm);
-  if (inputGearSpokeWidth) inputGearSpokeWidth.value = String(cfg.spoke_width_pct ?? 26);
-  if (inputGearRimWall) inputGearRimWall.value = String(cfg.rim_wall_mm ?? 3.5);
-  if (inputGearHubRing) inputGearHubRing.value = String(cfg.hub_ring_mm ?? 2.5);
+  if (selectGearCutoutStyle) selectGearCutoutStyle.value = inferredCutoutStyle;
+  if (inputGearHoleDia) inputGearHoleDia.value = String(cfg.g1_hole_dia_mm ?? def.g1_hole_dia_mm ?? 20);
+  if (inputGearSpokeWidth) inputGearSpokeWidth.value = String(cfg.spoke_width_pct ?? def.spoke_width_pct);
+  if (inputGearRimWall) inputGearRimWall.value = String(cfg.rim_wall_mm ?? def.rim_wall_mm);
+  if (inputGearHubRing) inputGearHubRing.value = String(cfg.hub_ring_mm ?? def.hub_ring_mm);
 
   if (inputG1Teeth) inputG1Teeth.value = String(cfg.g1_teeth);
   if (inputG1Face) inputG1Face.value = String(cfg.g1_face_width_mm);
@@ -1275,6 +1347,7 @@ function applyGearboxConfigToDom(cfg: GearboxConfig) {
   if (inputG1DFlat) inputG1DFlat.value = String(cfg.g1_d_flat_mm);
   if (inputG1HubDia) inputG1HubDia.value = String(cfg.g1_hub_diameter_mm);
   if (inputG1HubH) inputG1HubH.value = String(cfg.g1_hub_height_mm);
+  if (selectG1HelixHand) selectG1HelixHand.value = String(inferredG1Hand);
 
   if (inputG2WheelTeeth) inputG2WheelTeeth.value = String(cfg.g2_wheel_teeth);
   if (inputG2WheelFace) inputG2WheelFace.value = String(cfg.g2_wheel_face_mm);
@@ -1289,12 +1362,15 @@ function applyGearboxConfigToDom(cfg: GearboxConfig) {
   if (inputG3Bore) inputG3Bore.value = String(cfg.g3_bore_mm);
   if (inputG3DFlat) inputG3DFlat.value = String(cfg.g3_d_flat_mm);
   if (inputG3BossH) inputG3BossH.value = String(cfg.g3_boss_height_mm);
-  if (selectG3HelixHand) selectG3HelixHand.value = String(cfg.g3_helix_hand ?? 1);
+  if (selectG3HelixHand) selectG3HelixHand.value = String(cfg.g3_helix_hand ?? def.g3_helix_hand ?? -1);
+
+  syncGearPresetButtons({ ...cfg, cutout_style: inferredCutoutStyle, g1_helix_hand: inferredG1Hand });
 }
 
 function updateGearboxPanelUi(): GearboxConfig {
   const cfg = readCurrentGearboxConfig();
   const m = computeGearboxMetrics(cfg);
+  syncGearPresetButtons(cfg);
 
   if (gearboxSummary) {
     gearboxSummary.textContent = `${m.total_ratio.toFixed(2)}:1 · m ${cfg.module_mm}`;
@@ -1306,8 +1382,14 @@ function updateGearboxPanelUi(): GearboxConfig {
         : `Spur 0°`;
   }
   if (gearCutoutBadge) {
-    const sw = Math.round(cfg.spoke_width_pct);
-    gearCutoutBadge.textContent = `${sw}% Spoke · ${100 - sw}% Window`;
+    if (cfg.g1_spokes < 3 && cfg.g2_spokes < 3) {
+      gearCutoutBadge.textContent = "Solid Web";
+    } else if ((cfg.cutout_style ?? "circular_holes") === "circular_holes") {
+      gearCutoutBadge.textContent = `${cfg.g1_spokes}×Ø${Math.round(cfg.g1_hole_dia_mm ?? 20)} Holes`;
+    } else {
+      const sw = Math.round(cfg.spoke_width_pct);
+      gearCutoutBadge.textContent = `${sw}% Spoke · ${100 - sw}% Window`;
+    }
   }
   if (g1DiaBadge) {
     g1DiaBadge.textContent = `Øp ${m.g1_pitch_dia_mm.toFixed(1)} · Øo ${m.g1_outer_dia_mm.toFixed(1)} mm`;
@@ -2333,6 +2415,7 @@ function syncGearQuickButtons(gearRatio: number) {
     [btnGear4, 4.0],
     [btnGear8, 8.0],
     [btnGear12, 12.0],
+    [btnGear25, 25.0],
   ] as const) {
     if (btn) {
       btn.classList.toggle("active", Math.abs(gearRatio - val) < 0.04);
@@ -3929,12 +4012,47 @@ btnGearLayoutMesh?.addEventListener("click", () => {
   }
 });
 
+function applyGearboxPresetAndRefresh(key: GearboxPresetKey) {
+  const preset = getGearboxPreset(key);
+  applyGearboxConfigToDom({
+    ...preset,
+    layout_mode: activeGearLayoutMode,
+  });
+  if (viewMode !== "gearbox") {
+    updateGearboxPanelUi();
+  }
+  rebuild3D(workingDesign);
+  scheduleAutoSave();
+}
+
+btnGearPresetGear425?.addEventListener("click", () => applyGearboxPresetAndRefresh("gear4_25"));
+btnGearPresetGear45?.addEventListener("click", () => applyGearboxPresetAndRefresh("gear4_5_direct"));
+btnGearPresetComp11?.addEventListener("click", () => applyGearboxPresetAndRefresh("comp_11_2"));
+
+selectG1HelixHand?.addEventListener("change", () => {
+  if (selectG3HelixHand) {
+    const g1Hand = selectG1HelixHand.value === "1" ? "1" : "-1";
+    const stage = (selectGearStageMode?.value as GearboxStageMode) || "compound_2stage";
+    selectG3HelixHand.value = stage === "direct_1stage" ? (g1Hand === "1" ? "-1" : "1") : g1Hand;
+  }
+});
+
+selectGearStageMode?.addEventListener("change", () => {
+  if (selectG3HelixHand && selectG1HelixHand) {
+    const g1Hand = selectG1HelixHand.value === "1" ? "1" : "-1";
+    const stage = (selectGearStageMode.value as GearboxStageMode) || "compound_2stage";
+    selectG3HelixHand.value = stage === "direct_1stage" ? (g1Hand === "1" ? "-1" : "1") : g1Hand;
+  }
+});
+
 [
   selectGearStageMode,
   inputGearModule,
   inputGearHelix,
   inputGearPressure,
   inputGearBacklash,
+  selectGearCutoutStyle,
+  inputGearHoleDia,
   inputGearSpokeWidth,
   inputGearRimWall,
   inputGearHubRing,
@@ -3945,6 +4063,7 @@ btnGearLayoutMesh?.addEventListener("click", () => {
   inputG1DFlat,
   inputG1HubDia,
   inputG1HubH,
+  selectG1HelixHand,
   inputG2WheelTeeth,
   inputG2WheelFace,
   selectG2Spokes,
@@ -5451,7 +5570,7 @@ selectGenKidwindRuleSet?.addEventListener("change", () => {
       selectGenPreset.value = "custom";
     }
     if (el === inputGenGearRatio) {
-      const g = Math.max(0.25, Math.min(16, parseFloat(inputGenGearRatio.value) || 1.0));
+      const g = Math.max(0.25, Math.min(30, parseFloat(inputGenGearRatio.value) || 1.0));
       inputGenGearRatio.value = String(g);
       syncGearQuickButtons(g);
     }
@@ -5478,6 +5597,7 @@ selectGenKidwindRuleSet?.addEventListener("change", () => {
   { btn: btnGear4, g: 4 },
   { btn: btnGear8, g: 8 },
   { btn: btnGear12, g: 12 },
+  { btn: btnGear25, g: 25 },
 ].forEach(({ btn, g }) => {
   btn?.addEventListener("click", () => {
     inputGenGearRatio.value = String(g);
