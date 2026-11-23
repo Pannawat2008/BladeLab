@@ -112,6 +112,42 @@ fn match_generator_handles_high_tsr_runaway_above_tsr_12() {
     );
 }
 
+#[test]
+fn match_generator_reports_stalled_zero_power_when_overloaded() {
+    let raw = include_str!("../../../fixtures/naca4412-linear.json");
+    let blade = resolve(&Design::from_json(raw).unwrap()).unwrap();
+    let polars = PolarSet::builtin();
+
+    // Heavy overloaded PMG (low Kv 35, 16:1 step-up, 2 ohm load) at 2.0 m/s wind stalls the rotor.
+    let stalled_spec = GeneratorSpec {
+        kv_rpm_per_v: 35.0,
+        internal_resistance_ohm: 0.8,
+        no_load_current_a: 0.08,
+        gear_ratio: 16.0,
+    };
+    let stalled = match_generator(&blade, &polars, 2.0, 0.0, &stalled_spec, 2.0).unwrap();
+    assert!(stalled.stalled, "expected stalled equilibrium");
+    assert_eq!(stalled.tip_speed_ratio, 0.0);
+    assert_eq!(stalled.generator.rotor_rpm, 0.0);
+    assert_eq!(stalled.generator.terminal_voltage_v, 0.0);
+    assert_eq!(stalled.generator.current_a, 0.0);
+    assert_eq!(stalled.generator.electrical_power_w, 0.0);
+    assert_eq!(stalled.net_cp_electrical, 0.0);
+    assert_eq!(stalled.aero.power_w, 0.0);
+
+    // Legal KidWind operating point (Kv 240, 6.2 ohm, 12:1 gear, 30 ohm fixed load) at 2.5 m/s runs.
+    let kidwind_spec = GeneratorSpec {
+        kv_rpm_per_v: 240.0,
+        internal_resistance_ohm: 6.2,
+        no_load_current_a: 0.03,
+        gear_ratio: 12.0,
+    };
+    let ok = match_generator(&blade, &polars, 2.5, 0.0, &kidwind_spec, 30.0).unwrap();
+    assert!(!ok.stalled);
+    assert!(ok.generator.electrical_power_w > 0.0);
+    assert!(ok.generator.electrical_power_w <= ok.aero.power_w + 1e-4);
+}
+
 proptest! {
     #[test]
     fn prop_generator_state_conserves_energy_and_voltage_divider_laws(
@@ -149,9 +185,10 @@ proptest! {
         let spec = GeneratorSpec::new(kv, r_int, 0.05);
 
         let matched = match_generator(&blade, &polars, 8.0, 0.0, &spec, r_load).unwrap();
-        prop_assert!(matched.tip_speed_ratio.is_finite() && matched.tip_speed_ratio > 0.0);
+        prop_assert!(matched.tip_speed_ratio.is_finite() && matched.tip_speed_ratio >= 0.0);
         prop_assert!(matched.generator.terminal_voltage_v.is_finite() && matched.generator.terminal_voltage_v >= 0.0);
         prop_assert!(matched.generator.electrical_power_w.is_finite() && matched.generator.electrical_power_w >= 0.0);
+        prop_assert!(matched.generator.electrical_power_w <= matched.aero.power_w + 1e-4);
         prop_assert!(matched.net_cp_electrical < 16.0 / 27.0);
     }
 }

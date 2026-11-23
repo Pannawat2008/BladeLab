@@ -110,6 +110,10 @@ pub struct GeneratorMatchResult {
     pub aero: AeroResult,
     /// Overall wind-to-electric power coefficient $C_{p,\text{elec}} = C_p \cdot \eta_{\text{gen}}$.
     pub net_cp_electrical: f64,
+    /// `true` when generator counter-torque exceeds rotor aerodynamic torque
+    /// across the entire operating envelope (rotor cannot turn, 0 W output).
+    #[serde(default)]
+    pub stalled: bool,
 }
 
 /// Evaluates the generator electrical state and shaft reaction torque at a given
@@ -201,9 +205,9 @@ pub fn match_generator(
         });
     }
 
-    let tsr_min = 0.4_f64;
+    let tsr_min = 0.2_f64;
     let tsr_max = 12.0_f64;
-    let n_scan = 48usize;
+    let n_scan = 60usize;
 
     let torque_balance = |tsr: f64| -> Result<(f64, AeroResult, GeneratorState), AeroError> {
         let mut op = OperatingPoint::new(wind_speed_mps, tsr);
@@ -222,10 +226,14 @@ pub fn match_generator(
     let (mut prev_diff, _, _) = torque_balance(prev_tsr)?;
     let mut best_tsr = prev_tsr;
     let mut best_abs_diff = prev_diff.abs();
+    let mut any_positive = prev_diff >= 0.0;
 
     for i in 1..=n_scan {
         let cur_tsr = tsr_min + (tsr_max - tsr_min) * (i as f64 / n_scan as f64);
         let (cur_diff, _, _) = torque_balance(cur_tsr)?;
+        if cur_diff >= 0.0 {
+            any_positive = true;
+        }
         if cur_diff.abs() < best_abs_diff {
             best_abs_diff = cur_diff.abs();
             best_tsr = cur_tsr;
@@ -243,6 +251,9 @@ pub fn match_generator(
     while stable_bracket.is_none() && prev_diff > 0.0 && prev_tsr < 30.0 {
         let cur_tsr = (prev_tsr + 0.5).min(30.0);
         let (cur_diff, _, _) = torque_balance(cur_tsr)?;
+        if cur_diff >= 0.0 {
+            any_positive = true;
+        }
         if cur_diff.abs() < best_abs_diff {
             best_abs_diff = cur_diff.abs();
             best_tsr = cur_tsr;
@@ -255,23 +266,48 @@ pub fn match_generator(
         prev_diff = cur_diff;
     }
 
-    let eq_tsr = if let Some((lo, hi)) = stable_bracket.or(any_bracket) {
-        brent_root(lo, hi, 1e-7, 60, |tsr| {
+    if let Some((lo, hi)) = stable_bracket.or(any_bracket) {
+        let eq_tsr = brent_root(lo, hi, 1e-7, 60, |tsr| {
             torque_balance(tsr).map(|t| t.0).unwrap_or(0.0)
+        });
+        let (_, aero, generator) = torque_balance(eq_tsr)?;
+        let net_cp_electrical = aero.cp * generator.efficiency;
+
+        Ok(GeneratorMatchResult {
+            tip_speed_ratio: eq_tsr,
+            generator,
+            aero,
+            net_cp_electrical,
+            stalled: false,
+        })
+    } else if !any_positive {
+        let (_, mut aero, _) = torque_balance(tsr_min)?;
+        aero.operating_point.tip_speed_ratio = 0.0;
+        aero.omega_rad_s = 0.0;
+        aero.rpm = 0.0;
+        aero.power_w = 0.0;
+        aero.cp = 0.0;
+        let generator = eval_generator_at_rpm(spec, 0.0, load_resistance_ohm)?;
+
+        Ok(GeneratorMatchResult {
+            tip_speed_ratio: 0.0,
+            generator,
+            aero,
+            net_cp_electrical: 0.0,
+            stalled: true,
         })
     } else {
-        best_tsr
-    };
+        let (_, aero, generator) = torque_balance(best_tsr)?;
+        let net_cp_electrical = aero.cp * generator.efficiency;
 
-    let (_, aero, generator) = torque_balance(eq_tsr)?;
-    let net_cp_electrical = aero.cp * generator.efficiency;
-
-    Ok(GeneratorMatchResult {
-        tip_speed_ratio: eq_tsr,
-        generator,
-        aero,
-        net_cp_electrical,
-    })
+        Ok(GeneratorMatchResult {
+            tip_speed_ratio: best_tsr,
+            generator,
+            aero,
+            net_cp_electrical,
+            stalled: false,
+        })
+    }
 }
 
 /// Evaluates the coupled rotor–generator operating point across a sequence of

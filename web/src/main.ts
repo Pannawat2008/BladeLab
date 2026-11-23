@@ -80,6 +80,8 @@ import {
   type HeatmapMode,
   inspectCpTsrAtSvgX,
   inspectWindPowerAtSvgX,
+  isKidwindGeneratorPreset,
+  KIDWIND_OFFICIAL_RULES,
   optimizeGeneratorAndGearbox,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
@@ -521,6 +523,7 @@ const btnPresetRef = document.getElementById("btn-preset-ref") as HTMLButtonElem
 const bladePresetDesc = document.getElementById("blade-preset-desc");
 
 const selectGenPreset = document.getElementById("gen-preset") as HTMLSelectElement;
+const inputGenKidwindRules = document.getElementById("gen-kidwind-rules") as HTMLInputElement | null;
 const inputGenKv = document.getElementById("gen-kv") as HTMLInputElement;
 const inputGenRInt = document.getElementById("gen-r-int") as HTMLInputElement;
 const inputGenGearRatio = document.getElementById("gen-gear-ratio") as HTMLInputElement;
@@ -529,6 +532,8 @@ const btnGear1 = document.getElementById("btn-gear-1") as HTMLButtonElement | nu
 const btnGear2 = document.getElementById("btn-gear-2") as HTMLButtonElement | null;
 const btnGear3 = document.getElementById("btn-gear-3") as HTMLButtonElement | null;
 const btnGear4 = document.getElementById("btn-gear-4") as HTMLButtonElement | null;
+const btnGear8 = document.getElementById("btn-gear-8") as HTMLButtonElement | null;
+const btnGear12 = document.getElementById("btn-gear-12") as HTMLButtonElement | null;
 const genSummary = document.getElementById("gen-summary")!;
 const genOptTarget = document.getElementById("gen-opt-target");
 const genRegimeBadge = document.getElementById("gen-regime-badge");
@@ -2315,6 +2320,8 @@ function syncGearQuickButtons(gearRatio: number) {
     [btnGear2, 2.0],
     [btnGear3, 3.0],
     [btnGear4, 4.0],
+    [btnGear8, 8.0],
+    [btnGear12, 12.0],
   ] as const) {
     if (btn) {
       btn.classList.toggle("active", Math.abs(gearRatio - val) < 0.04);
@@ -2322,12 +2329,53 @@ function syncGearQuickButtons(gearRatio: number) {
   }
 }
 
+function syncKidwindRulesUiState() {
+  const rulesOn = Boolean(inputGenKidwindRules?.checked);
+  const presetKey = (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey;
+  const lockMotorFields = rulesOn && isKidwindGeneratorPreset(presetKey);
+  if (inputGenRLoad) {
+    if (rulesOn) {
+      inputGenRLoad.value = String(KIDWIND_OFFICIAL_RULES.fixed_load_ohm);
+      inputGenRLoad.disabled = true;
+      inputGenRLoad.title =
+        "Locked at 30 Ω by KidWind Generator Division rules (Vernier Go Direct Energy Sensor)";
+    } else {
+      inputGenRLoad.disabled = false;
+      inputGenRLoad.title = "External resistive load in Ohms (Ω)";
+    }
+  }
+  if (inputGenKv) {
+    inputGenKv.disabled = lockMotorFields;
+    inputGenKv.title = lockMotorFields
+      ? "Locked to stock KidWind generator Kv under KidWind Generator Division rules"
+      : "";
+  }
+  if (inputGenRInt) {
+    inputGenRInt.disabled = lockMotorFields;
+    inputGenRInt.title = lockMotorFields
+      ? "Locked to stock KidWind generator R_int under KidWind Generator Division rules"
+      : "";
+  }
+  if (btnMaxOutDrivetrain) {
+    btnMaxOutDrivetrain.textContent = rulesOn ? "Max Out Gear (30 Ω)" : "Max Out Gear & Load";
+  }
+  if (btnMatchLoadOnly) {
+    btnMatchLoadOnly.disabled = rulesOn;
+    btnMatchLoadOnly.title = rulesOn
+      ? "Load R is fixed at 30 Ω under KidWind Generator Division rules"
+      : "Set Load R to optimal match at current gear ratio";
+  }
+}
+
 function updateAeroPanel(design: Design) {
   try {
+    const kidwindRules = Boolean(inputGenKidwindRules?.checked);
     const kv = Number.parseFloat(inputGenKv.value) || 35;
     const rInt = Number.parseFloat(inputGenRInt.value) || 0.8;
     const gearRatio = Math.max(0.25, Number.parseFloat(inputGenGearRatio.value) || 1.0);
-    const rLoad = Number.parseFloat(inputGenRLoad.value) || 5.0;
+    const rLoad = kidwindRules
+      ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm
+      : Math.max(0.1, Number.parseFloat(inputGenRLoad.value) || 5.0);
     const presetKey = (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey;
     const presetI0 = GENERATOR_PRESETS[presetKey]?.no_load_current_a ?? 0.05;
     syncGearQuickButtons(gearRatio);
@@ -2380,16 +2428,23 @@ function updateAeroPanel(design: Design) {
     if (bundle.generator_match) {
       const gm = bundle.generator_match;
       const st = gm.generator;
-      const genRpm = st.generator_rpm ?? st.rotor_rpm * gearRatio;
-      kpiGenElec.textContent = `${st.electrical_power_w.toFixed(1)} W`;
-      kpiGenElec.title = `${st.terminal_voltage_v.toFixed(1)} V · ${st.current_a.toFixed(2)} A · η ${(st.efficiency * 100).toFixed(0)}%`;
-      genSummary.textContent = `Rotor ${st.rotor_rpm.toFixed(0)} RPM · Gen ${genRpm.toFixed(0)} RPM (${gearRatio.toFixed(2)}:1, λ=${gm.tip_speed_ratio.toFixed(
-        2,
-      )}) / V=${st.terminal_voltage_v.toFixed(1)} V / I=${st.current_a.toFixed(
-        2,
-      )} A / P=${st.electrical_power_w.toFixed(1)} W (η=${(st.efficiency * 100).toFixed(
-        0,
-      )}%)`;
+      const stalled = Boolean(gm.stalled);
+      const genRpm = stalled ? 0 : (st.generator_rpm ?? st.rotor_rpm * gearRatio);
+      if (stalled) {
+        kpiGenElec.textContent = "0.0 W";
+        kpiGenElec.title = "Stalled — generator braking torque exceeds rotor torque";
+        genSummary.textContent = `STALLED (0 RPM · ${gearRatio.toFixed(2)}:1) / V=0.0 V / I=0.00 A / P=0.0 W — lower gear ratio or raise Load R`;
+      } else {
+        kpiGenElec.textContent = `${st.electrical_power_w.toFixed(1)} W`;
+        kpiGenElec.title = `${st.terminal_voltage_v.toFixed(1)} V · ${st.current_a.toFixed(2)} A · η ${(st.efficiency * 100).toFixed(0)}%`;
+        genSummary.textContent = `Rotor ${st.rotor_rpm.toFixed(0)} RPM · Gen ${genRpm.toFixed(0)} RPM (${gearRatio.toFixed(2)}:1, λ=${gm.tip_speed_ratio.toFixed(
+          2,
+        )}) / V=${st.terminal_voltage_v.toFixed(1)} V / I=${st.current_a.toFixed(
+          2,
+        )} A / P=${st.electrical_power_w.toFixed(1)} W (η=${(st.efficiency * 100).toFixed(
+          0,
+        )}%)`;
+      }
     } else {
       kpiGenElec.textContent = "–";
       kpiGenElec.title = "";
@@ -2403,20 +2458,32 @@ function updateAeroPanel(design: Design) {
       r_load: rLoad,
       gear_ratio: gearRatio,
       i0: presetI0,
+      kidwind_rules: kidwindRules,
     });
     latestMaxOutReport = maxOut;
     if (genOptTarget) {
       genOptTarget.textContent = `${maxOut.opt_gear_ratio.toFixed(1)}:1 · ${maxOut.opt_r_load_ohm.toFixed(0)}Ω (${maxOut.opt_elec_power_w.toFixed(1)}W)`;
     }
     if (genRegimeBadge) {
-      const gainTag =
-        maxOut.gain_power_w >= 0.15
-          ? ` — Max-Out adds +${maxOut.gain_power_w.toFixed(1)} W (+${maxOut.gain_pct.toFixed(0)}%)`
-          : " — Drivetrain at peak output";
-      genRegimeBadge.textContent = `${maxOut.regime_label}${gainTag}`;
-      genRegimeBadge.classList.toggle("ok", maxOut.regime === "optimal_band");
-      genRegimeBadge.classList.toggle("warn", maxOut.regime === "overspeed_underload");
-      genRegimeBadge.classList.toggle("crit", maxOut.regime === "stalled_overload");
+      if (maxOut.current_over_voltage || maxOut.current_over_current) {
+        genRegimeBadge.textContent = maxOut.compliance_note;
+        genRegimeBadge.classList.toggle("ok", false);
+        genRegimeBadge.classList.toggle("warn", false);
+        genRegimeBadge.classList.toggle("crit", true);
+      } else {
+        const gainTag =
+          maxOut.gain_power_w >= 0.15
+            ? ` — Max-Out adds +${maxOut.gain_power_w.toFixed(1)} W (+${maxOut.gain_pct.toFixed(0)}%)`
+            : maxOut.current_stalled
+              ? " — Wind too weak or load too heavy to turn"
+              : " — Drivetrain at peak output";
+        const ruleTag =
+          kidwindRules && maxOut.compliance_note ? ` · ${maxOut.compliance_note}` : "";
+        genRegimeBadge.textContent = `${maxOut.regime_label}${gainTag}${ruleTag}`;
+        genRegimeBadge.classList.toggle("ok", maxOut.regime === "optimal_band");
+        genRegimeBadge.classList.toggle("warn", maxOut.regime === "overspeed_underload");
+        genRegimeBadge.classList.toggle("crit", maxOut.regime === "stalled_overload");
+      }
     }
     if (genMaxoutGuide) {
       genMaxoutGuide.textContent = maxOut.how_to_max_out_steps.join("\n");
@@ -3203,6 +3270,7 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     printer_max_z_mm: Number.parseFloat(inputPrinterMaxZ.value) || 256,
     blade_preset: activeBladePreset,
     gen_preset: (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey,
+    gen_kidwind_rules: Boolean(inputGenKidwindRules?.checked),
     gen_gear_ratio: Math.max(0.25, Number.parseFloat(inputGenGearRatio?.value) || 1.0),
     gen_kv: Number.parseFloat(inputGenKv.value) || 35,
     gen_r_int: Number.parseFloat(inputGenRInt.value) || 0.8,
@@ -3356,8 +3424,15 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   inputPrinterMaxZ.value = String(wb.printer_max_z_mm ?? 256);
 
   syncBladePresetButtons(wb.blade_preset || "schmitz_600");
+  const presetKey = (wb.gen_preset || "low_rpm_pmg") as GeneratorPresetKey;
   if (selectGenPreset) {
-    selectGenPreset.value = wb.gen_preset || "low_rpm_pmg";
+    selectGenPreset.value = presetKey;
+  }
+  if (inputGenKidwindRules) {
+    inputGenKidwindRules.checked =
+      wb.gen_kidwind_rules !== undefined
+        ? Boolean(wb.gen_kidwind_rules)
+        : isKidwindGeneratorPreset(presetKey);
   }
   if (inputGenGearRatio) {
     inputGenGearRatio.value = String(wb.gen_gear_ratio ?? 1.0);
@@ -3366,6 +3441,7 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
   inputGenKv.value = String(wb.gen_kv ?? 35);
   inputGenRInt.value = String(wb.gen_r_int ?? 0.8);
   inputGenRLoad.value = String(wb.gen_r_load ?? 12.0);
+  syncKidwindRulesUiState();
   inputExpData.value = wb.exp_data_log ?? "";
   setCollectivePitch(wb.collective_pitch_deg ?? 0.0, false);
   applyWingletConfigToDom(wb.winglet);
@@ -5098,6 +5174,7 @@ document.querySelectorAll<HTMLElement>("[data-scrub-for]").forEach((labelEl) => 
   if (!inputEl) return;
 
   labelEl.addEventListener("pointerdown", (ev) => {
+    if (inputEl.disabled) return;
     ev.preventDefault();
     labelEl.setPointerCapture(ev.pointerId);
     const startX = ev.clientX;
@@ -5213,6 +5290,9 @@ function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
   const genPresetKey = preset.recommended_drivetrain.gen_preset;
   const genSpec = GENERATOR_PRESETS[genPresetKey];
   selectGenPreset.value = genPresetKey;
+  if (inputGenKidwindRules) {
+    inputGenKidwindRules.checked = isKidwindGeneratorPreset(genPresetKey);
+  }
   if (genSpec) {
     inputGenKv.value = String(genSpec.kv_rpm_per_v);
     inputGenRInt.value = String(genSpec.r_int_ohm);
@@ -5224,6 +5304,7 @@ function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
     inputSparHoleEnabled.checked = true;
     inputSparHoleDiameter.value = String(preset.recommended_spar_mm);
   }
+  syncKidwindRulesUiState();
   syncGearQuickButtons(preset.recommended_drivetrain.gear_ratio);
   syncBladePresetButtons(presetKey);
   commitDesign(design);
@@ -5238,6 +5319,9 @@ btnPresetRef?.addEventListener("click", () => applySelectedBladePreset("schmitz_
 selectGenPreset.addEventListener("change", () => {
   const key = selectGenPreset.value as GeneratorPresetKey;
   const spec = GENERATOR_PRESETS[key];
+  if (inputGenKidwindRules) {
+    inputGenKidwindRules.checked = isKidwindGeneratorPreset(key);
+  }
   if (spec && key !== "custom") {
     inputGenKv.value = String(spec.kv_rpm_per_v);
     inputGenRInt.value = String(spec.r_int_ohm);
@@ -5245,6 +5329,13 @@ selectGenPreset.addEventListener("change", () => {
     inputGenRLoad.value = String(spec.default_r_load_ohm);
     syncGearQuickButtons(spec.default_gear_ratio);
   }
+  syncKidwindRulesUiState();
+  updateAeroPanel(workingDesign);
+  scheduleAutoSave();
+});
+
+inputGenKidwindRules?.addEventListener("change", () => {
+  syncKidwindRulesUiState();
   updateAeroPanel(workingDesign);
   scheduleAutoSave();
 });
@@ -5255,7 +5346,7 @@ selectGenPreset.addEventListener("change", () => {
       selectGenPreset.value = "custom";
     }
     if (el === inputGenGearRatio) {
-      const g = Math.max(0.25, Math.min(20, parseFloat(inputGenGearRatio.value) || 1.0));
+      const g = Math.max(0.25, Math.min(16, parseFloat(inputGenGearRatio.value) || 1.0));
       inputGenGearRatio.value = String(g);
       syncGearQuickButtons(g);
     }
@@ -5269,6 +5360,8 @@ selectGenPreset.addEventListener("change", () => {
   { btn: btnGear2, g: 2 },
   { btn: btnGear3, g: 3 },
   { btn: btnGear4, g: 4 },
+  { btn: btnGear8, g: 8 },
+  { btn: btnGear12, g: 12 },
 ].forEach(({ btn, g }) => {
   btn?.addEventListener("click", () => {
     inputGenGearRatio.value = String(g);
@@ -5282,6 +5375,7 @@ btnMaxOutDrivetrain?.addEventListener("click", () => {
   if (!latestMaxOutReport) return;
   inputGenGearRatio.value = String(latestMaxOutReport.opt_gear_ratio);
   inputGenRLoad.value = String(latestMaxOutReport.opt_r_load_ohm);
+  syncKidwindRulesUiState();
   syncGearQuickButtons(latestMaxOutReport.opt_gear_ratio);
   if (
     latestBundleB &&

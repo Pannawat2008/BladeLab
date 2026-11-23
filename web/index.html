@@ -1818,8 +1818,10 @@
         border-radius: var(--radius-tag);
       }
       .sec-num:disabled,
-      #sec-thick:disabled {
-        opacity: 0.45;
+      #sec-thick:disabled,
+      .field input:disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
       }
       #sec-stack {
         display: block;
@@ -4081,6 +4083,12 @@
                 <option value="custom">Custom Generator Spec</option>
               </select>
             </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px">
+              <label class="toggle-label" for="gen-kidwind-rules" title="Official KidWind Generator Division rules: fixed 30 Ω Vernier Go Direct Energy Sensor load, ≤30 V &amp; ≤1 A limit, single unmodified KidWind generator">
+                <input id="gen-kidwind-rules" class="switch-toggle" type="checkbox" />
+                <span>KidWind Rules (30 Ω · ≤30 V · ≤1 A)</span>
+              </label>
+            </div>
             <div class="grid-2">
               <div class="field">
                 <label for="gen-kv" class="scrub-label" data-scrub-for="gen-kv">Gen Kv (RPM/V)</label>
@@ -4101,11 +4109,13 @@
             </div>
             <div class="bind-row">
               <span>Quick Gear</span>
-              <div class="toolbar">
-                <button id="btn-gear-1" class="btn-mini active" type="button">1:1</button>
-                <button id="btn-gear-2" class="btn-mini" type="button">2:1</button>
-                <button id="btn-gear-3" class="btn-mini" type="button">3:1</button>
-                <button id="btn-gear-4" class="btn-mini" type="button">4:1</button>
+              <div class="toolbar" style="gap: 3px; flex-wrap: nowrap">
+                <button id="btn-gear-1" class="btn-mini active" type="button" style="padding: 0 6px">1:1</button>
+                <button id="btn-gear-2" class="btn-mini" type="button" style="padding: 0 6px">2:1</button>
+                <button id="btn-gear-3" class="btn-mini" type="button" style="padding: 0 6px">3:1</button>
+                <button id="btn-gear-4" class="btn-mini" type="button" style="padding: 0 6px">4:1</button>
+                <button id="btn-gear-8" class="btn-mini" type="button" style="padding: 0 6px">8:1</button>
+                <button id="btn-gear-12" class="btn-mini" type="button" style="padding: 0 6px">12:1</button>
               </div>
             </div>
             <div id="gen-summary" class="fit-badge">Gen: –</div>

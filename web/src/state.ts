@@ -1327,6 +1327,7 @@ export interface TsrSweepPoint {
 export interface GeneratorMatchSummary {
   tip_speed_ratio: number;
   net_cp_electrical: number;
+  stalled?: boolean;
   generator: {
     rotor_rpm: number;
     generator_rpm?: number;
@@ -2011,6 +2012,7 @@ export interface WorkbenchUiSnapshot {
   printer_max_z_mm?: number;
   blade_preset?: BladeWindPresetKey;
   gen_preset?: GeneratorPresetKey;
+  gen_kidwind_rules?: boolean;
   gen_gear_ratio?: number;
   gen_kv: number;
   gen_r_int: number;
@@ -2094,6 +2096,7 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     printer_max_z_mm: 256,
     blade_preset: "schmitz_600",
     gen_preset: "low_rpm_pmg",
+    gen_kidwind_rules: false,
     gen_gear_ratio: 1.0,
     gen_kv: 35,
     gen_r_int: 0.8,
@@ -3100,10 +3103,7 @@ export function evaluateWindSpeedCurveAndAep(
   const rInt = Math.max(0.02, genSpec.r_int || 0.8);
   const rLoad = Math.max(0.1, genSpec.r_load || 12.0);
   const rTot = rInt + rLoad;
-  const gearMeshEff =
-    Math.abs(gearRatio - 1.0) < 1e-3
-      ? 1.0
-      : Math.max(0.85, 0.97 - 0.012 * Math.abs(gearRatio - 1.0));
+  const gearMeshEff = computeGearMeshEfficiency(gearRatio);
 
   const points: WindCurvePoint[] = [];
   for (let v = 2; v <= 18; v += 1) {
@@ -3593,17 +3593,17 @@ export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec>
     },
     recommended_drivetrain: {
       gen_preset: "kidwind_red",
-      gear_ratio: 3.0,
-      r_load_ohm: 12.0,
+      gear_ratio: 4.0,
+      r_load_ohm: 30.0,
       site_avg_wind_mps: 3.5,
     },
   },
   med_kidwind: {
     key: "med_kidwind",
-    name: "KidWind Competition Standard (4.5 m/s · Geared 3:1 · λ 4.2)",
+    name: "KidWind Competition Standard (4.5 m/s · Geared 6:1 · λ 4.2)",
     badge: "4.5 m/s KidWind",
     description:
-      "Balanced 350 mm radius competition rotor (64→48→25 mm cosine planform, S833 root + SG6043 mid/tip) tuned for 4.0–5.0 m/s KidWind tunnels with a 2.5:1–3.5:1 gear stage.",
+      "Balanced 350 mm radius competition rotor (64→48→25 mm cosine planform, S833 root + SG6043 mid/tip) tuned for 4.0–5.0 m/s KidWind tunnels with a 6:1 compound gear stage on the 30 Ω sensor load.",
     rotor: {
       radius_mm: 350,
       hub_radius_mm: 40,
@@ -3637,8 +3637,8 @@ export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec>
     },
     recommended_drivetrain: {
       gen_preset: "kidwind_red",
-      gear_ratio: 3.0,
-      r_load_ohm: 10.0,
+      gear_ratio: 6.0,
+      r_load_ohm: 30.0,
       site_avg_wind_mps: 4.5,
     },
   },
@@ -3681,8 +3681,8 @@ export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec>
     },
     recommended_drivetrain: {
       gen_preset: "kidwind_red",
-      gear_ratio: 3.0,
-      r_load_ohm: 10.0,
+      gear_ratio: 6.0,
+      r_load_ohm: 30.0,
       site_avg_wind_mps: 4.5,
     },
     recommended_spar_mm: 5.0,
@@ -3841,6 +3841,17 @@ export function applyBladeWindPreset(
   return { design: next, spec };
 }
 
+export const KIDWIND_OFFICIAL_RULES = {
+  fixed_load_ohm: 30.0,
+  max_voltage_v: 30.0,
+  max_current_a: 1.0,
+  max_gear_ratio: 16.0,
+} as const;
+
+export function isKidwindGeneratorPreset(key: GeneratorPresetKey): boolean {
+  return key === "kidwind_red" || key === "kidwind_gen2";
+}
+
 export interface GeneratorPresetSpec {
   key: GeneratorPresetKey;
   name: string;
@@ -3859,10 +3870,10 @@ export const GENERATOR_PRESETS: Record<GeneratorPresetKey, GeneratorPresetSpec> 
     kv_rpm_per_v: 240,
     r_int_ohm: 6.2,
     no_load_current_a: 0.03,
-    default_gear_ratio: 3.0,
-    default_r_load_ohm: 10.0,
+    default_gear_ratio: 4.0,
+    default_r_load_ohm: 30.0,
     notes:
-      "Standard KidWind DC generator. Because Kv=240 RPM/V is high and R_int=6.2 Ω, use a 2.5:1–4:1 gear ratio and 8–15 Ω load resistor so voltage isn't lost as heat.",
+      "Single unmodified KidWind Red DC generator for the KidWind Generator Division. Official testing uses the fixed 30 Ω Vernier Go Direct Energy Sensor load (≤30 V, ≤1 A; no MPPT/variable resistors), so tune Gear Ratio G:1 (up to 16:1 2-stage compound) to maximize output.",
   },
   kidwind_gen2: {
     key: "kidwind_gen2",
@@ -3870,10 +3881,10 @@ export const GENERATOR_PRESETS: Record<GeneratorPresetKey, GeneratorPresetSpec> 
     kv_rpm_per_v: 320,
     r_int_ohm: 4.8,
     no_load_current_a: 0.035,
-    default_gear_ratio: 3.5,
-    default_r_load_ohm: 12.0,
+    default_gear_ratio: 6.0,
+    default_r_load_ohm: 30.0,
     notes:
-      "Fast small DC armature (320 RPM/V). Needs 3:1–5:1 step-up gearing in 3.5–4.5 m/s wind tunnels to spin the generator fast enough for high voltage.",
+      "Fast small DC armature (320 RPM/V). Under the official KidWind 30 Ω Vernier sensor load (≤30 V, ≤1 A), use >4:1–16:1 2-stage compound gearing in 2.0–4.5 m/s tunnels so generator voltage rises without stalling.",
   },
   outrunner_bldc: {
     key: "outrunner_bldc",
@@ -3931,7 +3942,21 @@ export interface DrivetrainMaxOutReport {
   opt_efficiency_pct: number;
   gain_power_w: number;
   gain_pct: number;
+  kidwind_rules_active: boolean;
+  current_stalled: boolean;
+  current_over_voltage: boolean;
+  current_over_current: boolean;
+  kidwind_compliant: boolean;
+  compliance_note: string;
   how_to_max_out_steps: string[];
+}
+
+function computeGearMeshEfficiency(gearRatio: number): number {
+  const g = Math.max(0.25, gearRatio || 1.0);
+  if (Math.abs(g - 1.0) < 1e-3) return 1.0;
+  if (g <= 4.0) return Math.max(0.92, 0.97 - 0.008 * Math.abs(g - 1.0));
+  // 2-stage compound mesh losses above 4:1 (~93.5% Gearbox Studio baseline tapering down to 84% at 16:1)
+  return Math.max(0.84, 0.94 - 0.008 * (g - 4.0));
 }
 
 function evalCoupledPointOnSweep(
@@ -3955,10 +3980,7 @@ function evalCoupledPointOnSweep(
 } {
   const kt = 60.0 / (2.0 * Math.PI * Math.max(1e-3, kv));
   const totalR = Math.max(0.05, rInt + rLoad);
-  const gearEff =
-    Math.abs(gearRatio - 1.0) < 1e-3
-      ? 1.0
-      : Math.max(0.85, 0.97 - 0.012 * Math.abs(gearRatio - 1.0));
+  const gearEff = computeGearMeshEfficiency(gearRatio);
 
   const genReactionTorque = (rotorRpm: number) => {
     if (rotorRpm <= 0) return 0;
@@ -3971,7 +3993,7 @@ function evalCoupledPointOnSweep(
 
   if (sweep.length === 0) {
     return {
-      tsr: peakTsr,
+      tsr: 0,
       rotor_rpm: 0,
       gen_rpm: 0,
       voltage_v: 0,
@@ -4015,16 +4037,25 @@ function evalCoupledPointOnSweep(
     }
   }
 
-  // Check if generator braking torque exceeds blade torque everywhere (stalled)
+  // Check if generator braking torque exceeds blade torque everywhere (stalled -> 0 W output)
   const maxAeroTorque = Math.max(...sweep.map((s) => s.torque_nm));
   const peakRow = sweep.reduce((b, c) => (c.cp > b.cp ? c : b), sweep[0]!);
   const genTorqueAtPeak = genReactionTorque(peakRow.rpm);
-  const stalled = !foundCrossing && genTorqueAtPeak > maxAeroTorque;
+  const allNegative = sweep.every((s) => s.torque_nm < genReactionTorque(s.rpm));
+  const stalled = !foundCrossing && (allNegative || genTorqueAtPeak > maxAeroTorque);
 
   if (stalled) {
-    eqTsr = sweep[0]!.tsr * 0.55;
-    eqRpm = sweep[0]!.rpm * 0.55;
-    eqMechW = sweep[0]!.power_w * 0.35;
+    return {
+      tsr: 0,
+      rotor_rpm: 0,
+      gen_rpm: 0,
+      voltage_v: 0,
+      current_a: 0,
+      elec_power_w: 0,
+      mech_power_w: 0,
+      efficiency: 0,
+      stalled: true,
+    };
   }
 
   const genRpm = eqRpm * gearRatio;
@@ -4044,15 +4075,16 @@ function evalCoupledPointOnSweep(
     elec_power_w: elecPowerW,
     mech_power_w: eqMechW,
     efficiency,
-    stalled,
+    stalled: false,
   };
 }
 
 /**
- * Solves for the optimal Gear Ratio (`G:1`) and Load Resistance (`R_load` in Ω)
+ * Solves for the optimal Gear Ratio (`G:1` up to `16:1`) and Load Resistance (`R_load` in Ω)
  * that maximize electrical power output ($P_{\text{elec}} = V_{\text{load}} I$)
- * for the active blade BEM sweep and generator specification, and returns
- * step-by-step competition tuning instructions on how to max out output.
+ * for the active blade BEM sweep and generator specification, enforcing official
+ * KidWind Generator Division rules (`30 Ω` Vernier sensor load, `<= 30 V`, `<= 1 A`)
+ * when `spec.kidwind_rules` is enabled.
  */
 export function optimizeGeneratorAndGearbox(
   design: Design,
@@ -4063,10 +4095,12 @@ export function optimizeGeneratorAndGearbox(
     r_load: number;
     gear_ratio: number;
     i0?: number;
+    kidwind_rules?: boolean;
   },
 ): DrivetrainMaxOutReport {
   const kv = Math.max(1, spec.kv || 35);
   const rInt = Math.max(0.05, spec.r_int || 0.8);
+  const kidwindRules = Boolean(spec.kidwind_rules);
   const curRLoad = Math.max(0.1, spec.r_load || 5.0);
   const curGear = Math.max(0.25, spec.gear_ratio || 1.0);
   const i0 = Math.max(0, spec.i0 ?? 0.04);
@@ -4082,33 +4116,49 @@ export function optimizeGeneratorAndGearbox(
     curRLoad,
   );
 
-  // Use wasm generator_match for current point if available, blended with gear efficiency
-  const curTsr = bundle.generator_match?.tip_speed_ratio ?? curEval.tsr;
-  const curRotorRpm = bundle.generator_match?.generator.rotor_rpm ?? curEval.rotor_rpm;
-  const curGenRpm =
-    bundle.generator_match?.generator.generator_rpm ?? curRotorRpm * curGear;
-  const curVolt = bundle.generator_match?.generator.terminal_voltage_v ?? curEval.voltage_v;
-  const curCurr = bundle.generator_match?.generator.current_a ?? curEval.current_a;
-  const curElecW = bundle.generator_match?.generator.electrical_power_w ?? curEval.elec_power_w;
-  const curEffPct =
-    (bundle.generator_match?.generator.efficiency ?? curEval.efficiency) * 100;
+  // Use wasm generator_match for current point if available; clamp to zero when stalled
+  const curStalled = bundle.generator_match
+    ? Boolean(bundle.generator_match.stalled)
+    : curEval.stalled;
+  const curTsr = curStalled ? 0 : (bundle.generator_match?.tip_speed_ratio ?? curEval.tsr);
+  const curRotorRpm = curStalled
+    ? 0
+    : (bundle.generator_match?.generator.rotor_rpm ?? curEval.rotor_rpm);
+  const curGenRpm = curStalled
+    ? 0
+    : (bundle.generator_match?.generator.generator_rpm ?? curRotorRpm * curGear);
+  const curVolt = curStalled
+    ? 0
+    : (bundle.generator_match?.generator.terminal_voltage_v ?? curEval.voltage_v);
+  const curCurr = curStalled
+    ? 0
+    : (bundle.generator_match?.generator.current_a ?? curEval.current_a);
+  const curElecW = curStalled
+    ? 0
+    : (bundle.generator_match?.generator.electrical_power_w ?? curEval.elec_power_w);
+  const curEffPct = curStalled
+    ? 0
+    : (bundle.generator_match?.generator.efficiency ?? curEval.efficiency) * 100;
 
-  // Candidate load resistances from 0.5 Ω to 120 Ω
+  // Candidate load resistances from 0.5 Ω to 120 Ω (locked to 30 Ω under KidWind Rules)
   const loadGrid: number[] = [];
   for (let r = 0.5; r <= 15.0; r += 0.5) loadGrid.push(Number(r.toFixed(2)));
   for (let r = 16.0; r <= 50.0; r += 1.0) loadGrid.push(Number(r.toFixed(2)));
   for (let r = 55.0; r <= 120.0; r += 5.0) loadGrid.push(Number(r.toFixed(2)));
 
   // 1. Best load resistor at current gear ratio
-  let bestRLoadAtCurGear = curRLoad;
-  let bestPowerAtCurGear = -1;
-  for (const rL of loadGrid) {
-    const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, curGear, rL);
-    const stabilityBonus = !ev.stalled && ev.tsr >= 0.9 * peakTsr ? 1.0 : 0.72;
-    const score = ev.elec_power_w * stabilityBonus;
-    if (score > bestPowerAtCurGear) {
-      bestPowerAtCurGear = score;
-      bestRLoadAtCurGear = rL;
+  let bestRLoadAtCurGear = kidwindRules ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm : curRLoad;
+  if (!kidwindRules) {
+    let bestPowerAtCurGear = -1;
+    for (const rL of loadGrid) {
+      const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, curGear, rL);
+      if (ev.stalled) continue;
+      const stabilityBonus = ev.tsr >= 0.9 * peakTsr ? 1.0 : 0.72;
+      const score = ev.elec_power_w * stabilityBonus;
+      if (score > bestPowerAtCurGear) {
+        bestPowerAtCurGear = score;
+        bestRLoadAtCurGear = rL;
+      }
     }
   }
   const curGearOptEval = evalCoupledPointOnSweep(
@@ -4121,21 +4171,48 @@ export function optimizeGeneratorAndGearbox(
     bestRLoadAtCurGear,
   );
 
-  // 2. Global search over Gear Ratio G in [1.0 .. 8.0] and Load R_load
+  // 2. Global search over Gear Ratio G in [1.0 .. 16.0] and Load R_load
   const gearCandidates = [
-    1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0,
+    1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0,
+    4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
   ];
+  const candidateLoads = kidwindRules ? [KIDWIND_OFFICIAL_RULES.fixed_load_ohm] : loadGrid;
+
   let optGear = curGear;
   let optRLoad = bestRLoadAtCurGear;
   let optEval = curGearOptEval;
   let bestGlobalScore = -1;
+  let foundLegal = false;
+
+  let lowestVolt = Number.POSITIVE_INFINITY;
+  let lowestVoltGear = curGear;
+  let lowestVoltLoad = bestRLoadAtCurGear;
+  let lowestVoltEval = curGearOptEval;
 
   for (const g of gearCandidates) {
-    for (const rL of loadGrid) {
+    for (const rL of candidateLoads) {
       const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, g, rL);
-      // Prefer operating near or slightly above peak_tsr (0.94..1.14 * peakTsr) so the turbine never stalls in tunnel gusts
-      const inSweetSpot = !ev.stalled && ev.tsr >= 0.92 * peakTsr && ev.tsr <= 1.18 * peakTsr;
-      const score = ev.elec_power_w * (inSweetSpot ? 1.05 : ev.stalled ? 0.5 : 0.9);
+      if (ev.stalled || ev.elec_power_w <= 0) continue;
+
+      if (kidwindRules && ev.voltage_v < lowestVolt) {
+        lowestVolt = ev.voltage_v;
+        lowestVoltGear = g;
+        lowestVoltLoad = rL;
+        lowestVoltEval = ev;
+      }
+
+      if (
+        kidwindRules &&
+        (ev.voltage_v > KIDWIND_OFFICIAL_RULES.max_voltage_v ||
+          ev.current_a > KIDWIND_OFFICIAL_RULES.max_current_a)
+      ) {
+        continue;
+      }
+
+      foundLegal = true;
+      // Prefer operating near or slightly above peak_tsr (0.92..1.18 * peakTsr) so the turbine never stalls in tunnel gusts
+      const inSweetSpot = ev.tsr >= 0.92 * peakTsr && ev.tsr <= 1.18 * peakTsr;
+      const score = ev.elec_power_w * (inSweetSpot ? 1.05 : 0.9);
       if (score > bestGlobalScore) {
         bestGlobalScore = score;
         optGear = g;
@@ -4145,10 +4222,46 @@ export function optimizeGeneratorAndGearbox(
     }
   }
 
+  if (!foundLegal) {
+    if (kidwindRules && Number.isFinite(lowestVolt)) {
+      optGear = lowestVoltGear;
+      optRLoad = lowestVoltLoad;
+      optEval = lowestVoltEval;
+    } else {
+      optGear = 1.0;
+      optRLoad = kidwindRules ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm : curRLoad;
+      optEval = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, optGear, optRLoad);
+    }
+  }
+
+  const currentOverVoltage = curVolt > KIDWIND_OFFICIAL_RULES.max_voltage_v + 1e-6;
+  const currentOverCurrent = curCurr > KIDWIND_OFFICIAL_RULES.max_current_a + 1e-6;
+  const loadMatchesRule =
+    !kidwindRules || Math.abs(curRLoad - KIDWIND_OFFICIAL_RULES.fixed_load_ohm) < 0.05;
+  const kidwindCompliant = !currentOverVoltage && !currentOverCurrent && loadMatchesRule;
+
+  let complianceNote = "";
+  if (kidwindRules) {
+    if (currentOverVoltage || currentOverCurrent) {
+      complianceNote = `DQ RISK: ${curVolt.toFixed(1)} V / ${(curCurr * 1000).toFixed(0)} mA exceeds KidWind 30 V / 1000 mA limit — lower Gear Ratio, pitch blades (+°), or shrink R`;
+    } else if (!loadMatchesRule) {
+      complianceNote = `Rule Check: Load R=${curRLoad.toFixed(1)} Ω must be fixed at 30 Ω (Vernier Go Direct Energy Sensor)`;
+    } else if (curStalled) {
+      complianceNote = "30 Ω Compliant · Stalled — lower Gear G (:1) so rotor can spin";
+    } else {
+      complianceNote = `KidWind Legal (${curVolt.toFixed(1)} V ≤ 30 V · ${(curCurr * 1000).toFixed(0)} mA ≤ 1000 mA @ 30 Ω)`;
+    }
+  } else if (currentOverVoltage || currentOverCurrent) {
+    complianceNote = `Vernier 30 V / 1 A sensor limit exceeded (${curVolt.toFixed(1)} V · ${(curCurr * 1000).toFixed(0)} mA)`;
+  }
+
   // Classify current operating regime relative to blade peak TSR
   let regime: "stalled_overload" | "overspeed_underload" | "optimal_band" = "optimal_band";
   let regimeLabel = `Matched near Peak Cp (λ=${curTsr.toFixed(2)} vs Opt λ=${peakTsr.toFixed(2)})`;
-  if (curEval.stalled || curTsr < 0.88 * peakTsr) {
+  if (curStalled) {
+    regime = "stalled_overload";
+    regimeLabel = "Stalled / Over-Loaded (0.0 W · Braking > Blade Torque)";
+  } else if (curTsr < 0.88 * peakTsr) {
     regime = "stalled_overload";
     regimeLabel = `Over-Loaded / Braking Stall (λ=${curTsr.toFixed(2)} < Opt λ=${peakTsr.toFixed(2)})`;
   } else if (curTsr > 1.14 * peakTsr) {
@@ -4159,11 +4272,33 @@ export function optimizeGeneratorAndGearbox(
   const gainPowerW = Math.max(0, optEval.elec_power_w - curElecW);
   const gainPct = curElecW > 1e-3 ? (gainPowerW / curElecW) * 100 : 0;
 
-  // Build 3 clear "How to Max Out" steps tailored to current state
+  // Build 3 clear "How to Max Out" steps tailored to current state & rules
   const steps: string[] = [];
-  if (regime === "stalled_overload") {
+  if (kidwindRules) {
+    if (
+      !foundLegal &&
+      (optEval.voltage_v > KIDWIND_OFFICIAL_RULES.max_voltage_v ||
+        optEval.current_a > KIDWIND_OFFICIAL_RULES.max_current_a)
+    ) {
+      steps.push(
+        `1. Avoid KidWind Sensor DQ (>30 V / >1 A): Even at ${optGear.toFixed(2)}:1 on the fixed 30 Ω Vernier load, output reaches ${optEval.voltage_v.toFixed(1)} V / ${(optEval.current_a * 1000).toFixed(0)} mA. Pitch blades positive (+3° to +8°) or reduce rotor radius.`,
+      );
+    } else if (regime === "stalled_overload") {
+      steps.push(
+        `1. Un-Stall on Fixed 30 Ω Load: Keep Load R = 30 Ω (MPPT/variable loads prohibited) and lower Gear Ratio to ${optGear.toFixed(2)}:1 so the rotor spins at Peak λ=${peakTsr.toFixed(2)} (${optEval.rotor_rpm.toFixed(0)} RPM, ${optEval.elec_power_w.toFixed(2)} W).`,
+      );
+    } else if (regime === "overspeed_underload") {
+      steps.push(
+        `1. Step Up Gear for Fixed 30 Ω Load: Keep Load R = 30 Ω and increase Gear Ratio to ${optGear.toFixed(2)}:1 (Gen ${optEval.gen_rpm.toFixed(0)} RPM, ${optEval.voltage_v.toFixed(1)} V) to reach ${optEval.elec_power_w.toFixed(2)} W inside 30 V / 1 A limits.`,
+      );
+    } else {
+      steps.push(
+        `1. Fine-Tune Gear Ratio on 30 Ω Load: Keep Load R = 30 Ω (Vernier Go Direct Sensor) and set Gear Ratio = ${optGear.toFixed(2)}:1 for ${optEval.elec_power_w.toFixed(2)} W (${optEval.voltage_v.toFixed(1)} V, ${(optEval.current_a * 1000).toFixed(0)} mA).`,
+      );
+    }
+  } else if (regime === "stalled_overload") {
     steps.push(
-      `1. Relieve Generator Braking: Your load pulls rotor TSR down to λ=${curTsr.toFixed(2)} (stalling the blades). Increase Load R_load toward ${optRLoad.toFixed(1)} Ω or reduce Gear Ratio to ${optGear.toFixed(2)}:1 so the rotor can spin up to Peak λ=${peakTsr.toFixed(2)} (${optEval.rotor_rpm.toFixed(0)} RPM).`,
+      `1. Relieve Generator Braking: Current load stalls the blades (${curStalled ? "0 W" : `λ=${curTsr.toFixed(2)}`}). Increase Load R_load toward ${optRLoad.toFixed(1)} Ω or adjust Gear Ratio to ${optGear.toFixed(2)}:1 so the rotor spins up to Peak λ=${peakTsr.toFixed(2)} (${optEval.rotor_rpm.toFixed(0)} RPM).`,
     );
   } else if (regime === "overspeed_underload") {
     steps.push(
@@ -4175,11 +4310,25 @@ export function optimizeGeneratorAndGearbox(
     );
   }
 
+  const gearboxNote =
+    optGear > 4.05
+      ? ` Open the Gearbox tab (2-Stage Compound + Solve Teeth) to build printable ${optGear.toFixed(1)}:1 gears.`
+      : "";
   steps.push(
-    `2. Match Blade Design TSR to Tunnel Equilibrium: Set Rotor Design TSR λ = ${peakTsr.toFixed(2)} and click "Auto-Optimize Blade (Max Cp)" in the BEM section so every station sits at its peak Cl/Cd glide angle (~6°).`,
+    `2. Match Blade Design TSR to Tunnel Equilibrium: Set Rotor Design TSR λ = ${peakTsr.toFixed(2)} and click "Auto-Optimize Cp" so every station sits at its peak Cl/Cd glide angle (~6°).${gearboxNote}`,
   );
 
-  if (design.rotor.wind_speed_mps <= 4.5) {
+  if (kidwindRules) {
+    if (design.rotor.wind_speed_mps <= 4.5) {
+      steps.push(
+        `3. Low-Wind KidWind Tunnel Rule Tip: You must start connected to the fixed 30 Ω Vernier load on a single unmodified KidWind generator. At ${design.rotor.wind_speed_mps.toFixed(1)} m/s, check that blades self-start against ${optGear.toFixed(1)}× gearbox friction.`,
+      );
+    } else {
+      steps.push(
+        `3. High-Wind KidWind Rule Tip: Stay strictly below Vernier sensor DQ caps (30 V, 1000 mA); optimized point predicts ${optEval.voltage_v.toFixed(1)} V / ${(optEval.current_a * 1000).toFixed(0)} mA @ 30 Ω. Enable a CF spar tube in 04 Print.`,
+      );
+    }
+  } else if (design.rotor.wind_speed_mps <= 4.5) {
     steps.push(
       `3. Low-Wind Tunnel Tip: At ${design.rotor.wind_speed_mps.toFixed(1)} m/s, keep R_load ≥ ${(1.6 * rInt).toFixed(1)} Ω during start-up so current draw doesn't brake the hub before the blades pass Cut-In.`,
     );
@@ -4211,6 +4360,12 @@ export function optimizeGeneratorAndGearbox(
     opt_efficiency_pct: optEval.efficiency * 100,
     gain_power_w: gainPowerW,
     gain_pct: gainPct,
+    kidwind_rules_active: kidwindRules,
+    current_stalled: curStalled,
+    current_over_voltage: currentOverVoltage,
+    current_over_current: currentOverCurrent,
+    kidwind_compliant: kidwindCompliant,
+    compliance_note: complianceNote,
     how_to_max_out_steps: steps,
   };
 }

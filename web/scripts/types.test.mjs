@@ -55,6 +55,8 @@ import {
   applyBladeWindPreset,
   BLADE_WIND_PRESETS,
   GENERATOR_PRESETS,
+  isKidwindGeneratorPreset,
+  KIDWIND_OFFICIAL_RULES,
   optimizeGeneratorAndGearbox,
   defaultGearboxConfig,
   computeGearboxMetrics,
@@ -909,7 +911,7 @@ test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimiz
     r_load: 2.0,
     gear_ratio: 1.0,
   });
-  assert.ok(maxOut.opt_gear_ratio >= 1.0 && maxOut.opt_gear_ratio <= 8.0);
+  assert.ok(maxOut.opt_gear_ratio >= 1.0 && maxOut.opt_gear_ratio <= 16.0);
   assert.ok(maxOut.opt_r_load_ohm >= 0.5 && maxOut.opt_r_load_ohm <= 120.0);
   assert.ok(
     maxOut.opt_elec_power_w >= maxOut.current_elec_power_w,
@@ -2080,5 +2082,171 @@ test("Task 9: Nose Cone Studio HTML DOM integrity", () => {
     "btn-export-nose-menu",
   ]) {
     assert.ok(html.includes(`id="${id}"`), `Missing expected Nose Cone Studio element id="${id}"`);
+  }
+});
+
+test("Task 10: Stalled-generator WASM fix, 16:1 drivetrain optimizer & official KidWind rules (T-105)", () => {
+  const require = createRequire(import.meta.url);
+  const { simulate_aero } = require("../../target/glue-node/blade_wasm.js");
+
+  // 1. Constants & preset helper
+  assert.equal(KIDWIND_OFFICIAL_RULES.fixed_load_ohm, 30.0);
+  assert.equal(KIDWIND_OFFICIAL_RULES.max_voltage_v, 30.0);
+  assert.equal(KIDWIND_OFFICIAL_RULES.max_current_a, 1.0);
+  assert.equal(KIDWIND_OFFICIAL_RULES.max_gear_ratio, 16.0);
+  assert.equal(isKidwindGeneratorPreset("kidwind_red"), true);
+  assert.equal(isKidwindGeneratorPreset("kidwind_gen2"), true);
+  assert.equal(isKidwindGeneratorPreset("outrunner_bldc"), false);
+  assert.equal(isKidwindGeneratorPreset("low_rpm_pmg"), false);
+
+  // 2. WASM stalled-generator fix: overloaded PMG at 2.0 m/s reports stalled === true and exact 0 W output
+  const lowWindRef = updateRotorField(initialDesign, "wind_speed_mps", 2.0);
+  const pmg = GENERATOR_PRESETS.low_rpm_pmg;
+  const stalledBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(lowWindRef),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: pmg.kv_rpm_per_v,
+        generator_r_int: pmg.r_int_ohm,
+        generator_r_load: 2.0,
+        generator_gear_ratio: 16.0,
+        generator_i0: pmg.no_load_current_a,
+      }),
+    ),
+  );
+  assert.equal(stalledBundle.generator_match.stalled, true);
+  assert.equal(stalledBundle.generator_match.tip_speed_ratio, 0);
+  assert.equal(stalledBundle.generator_match.generator.rotor_rpm, 0);
+  assert.equal(stalledBundle.generator_match.generator.terminal_voltage_v, 0);
+  assert.equal(stalledBundle.generator_match.generator.current_a, 0);
+  assert.equal(stalledBundle.generator_match.generator.electrical_power_w, 0);
+  assert.equal(stalledBundle.generator_match.net_cp_electrical, 0);
+
+  const stalledOpt = optimizeGeneratorAndGearbox(lowWindRef, stalledBundle, {
+    kv: pmg.kv_rpm_per_v,
+    r_int: pmg.r_int_ohm,
+    r_load: 2.0,
+    gear_ratio: 16.0,
+    i0: pmg.no_load_current_a,
+    kidwind_rules: false,
+  });
+  assert.equal(stalledOpt.current_stalled, true);
+  assert.equal(stalledOpt.regime, "stalled_overload");
+  assert.equal(stalledOpt.current_elec_power_w, 0);
+
+  // 3. KidWind Rules (30 ohm fixed load, <= 30 V, <= 1 A) + >8:1 drivetrain search
+  let { design: scimitarLow } = applyBladeWindPreset(initialDesign, "scimitar_belly");
+  scimitarLow = updateRotorField(scimitarLow, "hub_radius_mm", 30);
+  scimitarLow = updateBladeLengthMm(scimitarLow, 500);
+  scimitarLow = updateRotorField(scimitarLow, "wind_speed_mps", 2.0);
+  const red = GENERATOR_PRESETS.kidwind_red;
+  const kwLowBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(scimitarLow),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: red.kv_rpm_per_v,
+        generator_r_int: red.r_int_ohm,
+        generator_r_load: 30.0,
+        generator_gear_ratio: 8.0,
+        generator_i0: red.no_load_current_a,
+      }),
+    ),
+  );
+  const kwLowOpt = optimizeGeneratorAndGearbox(scimitarLow, kwLowBundle, {
+    kv: red.kv_rpm_per_v,
+    r_int: red.r_int_ohm,
+    r_load: 30.0,
+    gear_ratio: 8.0,
+    i0: red.no_load_current_a,
+    kidwind_rules: true,
+  });
+  assert.equal(kwLowOpt.kidwind_rules_active, true);
+  assert.equal(kwLowOpt.opt_r_load_ohm, 30.0);
+  assert.equal(kwLowOpt.best_r_load_at_current_gear_ohm, 30.0);
+  assert.ok(
+    kwLowOpt.opt_gear_ratio > 8.0 && kwLowOpt.opt_gear_ratio <= 16.0,
+    `expected >8:1 optimal KidWind gear ratio in 2 m/s wind, got ${kwLowOpt.opt_gear_ratio}`,
+  );
+  assert.ok(kwLowOpt.opt_gear_ratio < 16.0, `expected optimizer to avoid stalled 16:1 ratio at 2 m/s, got ${kwLowOpt.opt_gear_ratio}`);
+  assert.ok(kwLowOpt.opt_voltage_v <= 30.0);
+  assert.ok(kwLowOpt.opt_elec_power_w / Math.max(1e-6, kwLowOpt.opt_voltage_v) <= 1.0);
+  assert.equal(kwLowOpt.how_to_max_out_steps.length, 3);
+  assert.ok(kwLowOpt.how_to_max_out_steps[0].includes("30 Ω"));
+
+  // 4. High-wind KidWind 30 V / 1 A sensor limit enforcement (avoid Vernier DQ)
+  let { design: scimitarHigh } = applyBladeWindPreset(initialDesign, "scimitar_belly");
+  scimitarHigh = updateRotorField(scimitarHigh, "hub_radius_mm", 30);
+  scimitarHigh = updateBladeLengthMm(scimitarHigh, 470);
+  scimitarHigh = updateRotorField(scimitarHigh, "wind_speed_mps", 12.0);
+  const kwHighBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(scimitarHigh),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: red.kv_rpm_per_v,
+        generator_r_int: red.r_int_ohm,
+        generator_r_load: 30.0,
+        generator_gear_ratio: 8.0,
+        generator_i0: red.no_load_current_a,
+      }),
+    ),
+  );
+  const kwHighOpt = optimizeGeneratorAndGearbox(scimitarHigh, kwHighBundle, {
+    kv: red.kv_rpm_per_v,
+    r_int: red.r_int_ohm,
+    r_load: 30.0,
+    gear_ratio: 8.0,
+    i0: red.no_load_current_a,
+    kidwind_rules: true,
+  });
+  assert.equal(kwHighOpt.opt_r_load_ohm, 30.0);
+  assert.equal(kwHighOpt.current_over_voltage, true);
+  assert.equal(kwHighOpt.kidwind_compliant, false);
+  assert.ok(
+    kwHighOpt.opt_voltage_v <= 30.0,
+    `expected legal KidWind recommendation <= 30 V, got ${kwHighOpt.opt_voltage_v}`,
+  );
+  assert.ok(kwHighOpt.opt_elec_power_w / Math.max(1e-6, kwHighOpt.opt_voltage_v) <= 1.0);
+
+  // 5. Open Division (kidwind_rules: false) searches up to 16:1 with variable Load R
+  const openOpt = optimizeGeneratorAndGearbox(scimitarLow, kwLowBundle, {
+    kv: red.kv_rpm_per_v,
+    r_int: red.r_int_ohm,
+    r_load: 10.0,
+    gear_ratio: 3.0,
+    i0: red.no_load_current_a,
+    kidwind_rules: false,
+  });
+  assert.equal(openOpt.kidwind_rules_active, false);
+  assert.ok(openOpt.opt_gear_ratio >= 8.0 && openOpt.opt_gear_ratio <= 16.0);
+  assert.notEqual(openOpt.best_r_load_at_current_gear_ohm, 30.0);
+
+  // 6. Snapshot round-trip & HTML DOM elements
+  const snap = createWorkbenchSnapshot(
+    scimitarLow,
+    {},
+    {
+      gen_preset: "kidwind_red",
+      gen_kidwind_rules: true,
+      gen_gear_ratio: 10.0,
+      gen_r_load: 30.0,
+    },
+  );
+  const parsedSnap = parseLoadedProjectJson(JSON.stringify(snap));
+  assert.equal(parsedSnap.workbench.gen_kidwind_rules, true);
+  assert.equal(parsedSnap.workbench.gen_gear_ratio, 10.0);
+  assert.equal(parsedSnap.workbench.gen_r_load, 30.0);
+
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
+  for (const id of ["gen-kidwind-rules", "btn-gear-8", "btn-gear-12"]) {
+    assert.ok(html.includes(`id="${id}"`), `Missing expected DOM id="${id}"`);
   }
 });
