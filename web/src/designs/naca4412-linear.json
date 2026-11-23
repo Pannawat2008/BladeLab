@@ -48,7 +48,7 @@
     "length_mm": 50.0
   },
   "manufacturing": {
-    "min_trailing_edge_mm": 0.05,
+    "min_trailing_edge_mm": 0.8,
     "wall_thickness_mm": 1.2
   }
 }

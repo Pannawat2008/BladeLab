@@ -3900,7 +3900,7 @@
               <span style="font-size: 12px; font-weight: 600; color: var(--text-primary)">3D Printer Fit Check</span>
               <button id="btn-auto-fit-printer" class="btn-mini" type="button">Auto-Fit Split</button>
             </div>
-            <div class="grid-2">
+            <div class="grid-3" style="margin-top: 8px">
               <div class="field">
                 <label for="printer-preset">Printer Profile</label>
                 <select id="printer-preset">
@@ -3914,6 +3914,10 @@
               <div class="field">
                 <label for="printer-max-z" class="scrub-label" data-scrub-for="printer-max-z">Max Print Z (mm)</label>
                 <input id="printer-max-z" type="number" min="60" max="1000" step="5" value="256" />
+              </div>
+              <div class="field">
+                <label for="mfg-min-te" class="scrub-label" data-scrub-for="mfg-min-te" title="Minimum printable trailing-edge and thin aft-side thickness (0.8 mm recommended for 0.4 mm FDM nozzle)">Min TE / Thin (mm)</label>
+                <input id="mfg-min-te" type="number" min="0.05" max="2.5" step="0.05" value="0.80" />
               </div>
             </div>
             <div id="printer-fit-status" class="fit-badge">Checking segment heights...</div>

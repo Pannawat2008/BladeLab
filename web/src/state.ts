@@ -597,6 +597,20 @@ export function updatePitchAxisRatio(design: Design, pitchAxisRatio: number): De
 }
 
 /**
+ * Updates the minimum printable trailing-edge and thin aft-side thickness
+ * (`manufacturing.min_trailing_edge_mm`, in mm) for 3D-printer FDM slicing.
+ */
+export function updateMinTrailingEdgeMm(design: Design, minTeMm: number): Design {
+  const next = cloneDesign(design);
+  const clamped = Number.isFinite(minTeMm) ? Math.min(2.5, Math.max(0.05, minTeMm)) : 0.8;
+  next.manufacturing = {
+    ...next.manufacturing,
+    min_trailing_edge_mm: Number(clamped.toFixed(2)),
+  };
+  return next;
+}
+
+/**
  * Scales all chord widths across the blade by `factor` (e.g. `1.1` = +10%,
  * `0.9` = -10%), preserving any locked stations.
  */
@@ -931,6 +945,7 @@ export function renderSectionStackSvgMarkup(
   sections: Record<SectionKey, SectionState>,
   active: SectionKey,
   theme: UiStyleMode = "dark",
+  minTrailingEdgeMm = 0.05,
 ): string {
   const isAtelier = theme === "atelier";
   const w = 320;
@@ -947,7 +962,11 @@ export function renderSectionStackSvgMarkup(
   const outline = (key: SectionKey): string => {
     const sec = sections[key];
     const { m, p, t } = airfoilShapeParams(sec.airfoil);
-    const c = sec.chord_mm * scale;
+    const chordMm = Math.max(1, sec.chord_mm);
+    const c = chordMm * scale;
+    const minTeRatio = Math.min(0.65 * t, Math.max(0, minTrailingEdgeMm) / chordMm);
+    const rawTeRatio = 0.021 * t;
+    const deltaTeRatio = Math.max(0, minTeRatio - rawTeRatio);
     const th = (sec.twist_deg * Math.PI) / 180;
     const cosT = Math.cos(th);
     const sinT = Math.sin(th);
@@ -955,8 +974,17 @@ export function renderSectionStackSvgMarkup(
     const lower: [number, number][] = [];
     for (let i = 0; i <= samples; i++) {
       const xc = 0.5 * (1 - Math.cos((Math.PI * i) / samples));
-      const yt =
+      let yt =
         5 * t * (0.2969 * Math.sqrt(xc) - 0.126 * xc - 0.3516 * xc ** 2 + 0.2843 * xc ** 3 - 0.1015 * xc ** 4);
+      if (minTrailingEdgeMm > 0.055 && deltaTeRatio > 0) {
+        yt += 0.5 * deltaTeRatio * Math.pow(xc, 1.25);
+        if (xc >= 0.3) {
+          const u = Math.min(1, Math.max(0, (xc - 0.3) / 0.7));
+          const r = Math.min(1, u / 0.25);
+          const sr = r * r * (3 - 2 * r);
+          yt = Math.max(yt, 0.5 * minTeRatio * sr);
+        }
+      }
       let yc = 0;
       if (m > 0 && p > 0 && p < 1) {
         yc = xc < p ? (m / (p * p)) * (2 * p * xc - xc * xc) : (m / ((1 - p) ** 2)) * (1 - 2 * p + 2 * p * xc - xc * xc);
@@ -1802,10 +1830,17 @@ export function renderAirfoilSectionSvgMarkup(
   const lowerPts: string[] = [];
   const camberPts: string[] = [];
 
+  const stations = resolveStationsPreview(design);
+  const rootChordMm = Math.max(stations[0]?.effective_chord_mm ?? 70, 5);
+  const minTeMm = Math.max(0, design.manufacturing?.min_trailing_edge_mm ?? 0.05);
+  const minTeRatio = Math.min(0.65 * t, minTeMm / rootChordMm);
+  const rawTeRatio = 0.021 * t;
+  const deltaTeRatio = Math.max(0, minTeRatio - rawTeRatio);
+
   for (let i = 0; i <= samples; i++) {
     const beta = (Math.PI * i) / samples;
     const xc = 0.5 * (1 - Math.cos(beta));
-    const yt =
+    let yt =
       5 *
       t *
       (0.2969 * Math.sqrt(xc) -
@@ -1813,6 +1848,15 @@ export function renderAirfoilSectionSvgMarkup(
         0.3516 * xc * xc +
         0.2843 * xc * xc * xc -
         0.1015 * xc * xc * xc * xc);
+    if (minTeMm > 0.055 && deltaTeRatio > 0) {
+      yt += 0.5 * deltaTeRatio * Math.pow(xc, 1.25);
+      if (xc >= 0.3) {
+        const u = Math.min(1, Math.max(0, (xc - 0.3) / 0.7));
+        const r = Math.min(1, u / 0.25);
+        const sr = r * r * (3 - 2 * r);
+        yt = Math.max(yt, 0.5 * minTeRatio * sr);
+      }
+    }
     let yc = 0;
     let dyc = 0;
     if (m > 0 && p > 0 && p < 1) {
@@ -1848,7 +1892,6 @@ export function renderAirfoilSectionSvgMarkup(
     `<line x1="${pivotX}" y1="12" x2="${pivotX}" y2="${h - 8}" stroke="${pitchColor}" stroke-width="1" stroke-dasharray="2 2" />`,
   ];
 
-  const rootChordMm = Math.max(resolveStationsPreview(design)[0]?.effective_chord_mm ?? 70, 5);
   const maxThickMm = t * rootChordMm;
   let coreXc = 0.3;
   let coreYc = 0.75 * m;
@@ -3888,6 +3931,12 @@ export function applyBladeWindPreset(
   }
 
   next = applySectionAirfoils(next, spec.sections, center);
+  // Ensure every preset blade has a slicer-printable trailing-edge & aft-tail floor (>= 0.8 mm for 0.4 mm FDM nozzles)
+  const currentTe = next.manufacturing?.min_trailing_edge_mm ?? 0.05;
+  next.manufacturing = {
+    ...next.manufacturing,
+    min_trailing_edge_mm: currentTe <= 0.1 ? 0.8 : currentTe,
+  };
   return { design: next, spec };
 }
 

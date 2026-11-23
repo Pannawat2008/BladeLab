@@ -48,6 +48,7 @@ import {
   shiftAllChordsMm,
   updateBezierControlPoint,
   updateBladeLengthMm,
+  updateMinTrailingEdgeMm,
   updatePitchAxisRatio,
   updatePrimaryAirfoil,
   updateRotorField,
@@ -2515,7 +2516,46 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
     assert.ok(splitStep.includes("RATIONAL_B_SPLINE_SURFACE"), `split part ${partIdx} must carry analytical spar bore`);
   }
 
-  // 8. Verify web/index.html DOM markers
+  // 8. Printable Trailing-Edge & Aft-Tail Wedge Thickening (min_trailing_edge_mm >= 0.8 mm)
+  assert.equal(asiaPresetDesign.manufacturing.min_trailing_edge_mm, 0.8);
+  const { build_mesh } = require("../../target/glue-node/blade_wasm.js");
+  const asiaMesh = build_mesh(JSON.stringify(asiaPresetDesign), "{}");
+  const pos = asiaMesh.positions;
+  const vCount = asiaMesh.vertex_count;
+  assert.equal(vCount, 13 * 161);
+  // Check every station (0..12) of the 161-point contour:
+  // TE gap (pt 0 to pt 160) and aft 35% tail (d = 52..80 from LE index 80) must be >= 0.8 mm!
+  for (let s = 0; s < 13; s++) {
+    const base = s * 161;
+    const teDx = pos[base * 3] - pos[(base + 160) * 3];
+    const teDy = pos[base * 3 + 1] - pos[(base + 160) * 3 + 1];
+    const teGap = Math.hypot(teDx, teDy);
+    assert.ok(
+      teGap + 1e-4 >= 0.8,
+      `Station ${s} trailing-edge gap ${teGap.toFixed(3)} mm < 0.8 mm`,
+    );
+    for (let d = 52; d <= 80; d++) {
+      const iu = base + (80 - d);
+      const il = base + (80 + d);
+      const gap = Math.hypot(pos[iu * 3] - pos[il * 3], pos[iu * 3 + 1] - pos[il * 3 + 1]);
+      assert.ok(
+        gap + 1e-4 >= 0.8,
+        `Station ${s} aft station d=${d} gap ${gap.toFixed(3)} mm < 0.8 mm`,
+      );
+    }
+  }
+  const customTeDesign = updateMinTrailingEdgeMm(asiaPresetDesign, 1.0);
+  assert.equal(customTeDesign.manufacturing.min_trailing_edge_mm, 1.0);
+  const customTeMesh = build_mesh(JSON.stringify(customTeDesign), "{}");
+  const pos1 = customTeMesh.positions;
+  const tipBase = 12 * 161;
+  const tipTeGap = Math.hypot(
+    pos1[tipBase * 3] - pos1[(tipBase + 160) * 3],
+    pos1[tipBase * 3 + 1] - pos1[(tipBase + 160) * 3 + 1],
+  );
+  assert.ok(tipTeGap + 1e-4 >= 1.0, `Expected tip TE >= 1.0 mm, got ${tipTeGap}`);
+
+  // 9. Verify web/index.html DOM markers
   const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   for (const snippet of [
     'id="btn-preset-asia-2026"',
@@ -2523,6 +2563,7 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
     'id="gen-kidwind-rule-set"',
     'value="asia_2026_vesvl"',
     'id="gen-kidwind-rules-label"',
+    'id="mfg-min-te"',
   ]) {
     assert.ok(html.includes(snippet), `Missing expected HTML marker ${snippet}`);
   }

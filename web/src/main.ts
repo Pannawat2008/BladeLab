@@ -111,6 +111,7 @@ import {
   type UiStyleMode,
   updateBezierControlPoint,
   updateBladeLengthMm,
+  updateMinTrailingEdgeMm,
   updatePitchAxisRatio,
   updatePrimaryAirfoil,
   updateRotorField,
@@ -489,6 +490,7 @@ const btnFitLoose = document.getElementById("btn-fit-loose") as HTMLButtonElemen
 const alignStatus = document.getElementById("align-status")!;
 const selectPrinterPreset = document.getElementById("printer-preset") as HTMLSelectElement;
 const inputPrinterMaxZ = document.getElementById("printer-max-z") as HTMLInputElement;
+const inputMfgMinTe = document.getElementById("mfg-min-te") as HTMLInputElement | null;
 const btnAutoFitPrinter = document.getElementById("btn-auto-fit-printer") as HTMLButtonElement;
 const printerFitStatus = document.getElementById("printer-fit-status")!;
 
@@ -1055,9 +1057,11 @@ function updatePrinterFitStatus(design: Design) {
     preset,
     customZ,
   );
-  printerFitStatus.textContent = fit.summary;
-  printerFitStatus.classList.toggle("ok", fit.all_fit);
-  printerFitStatus.classList.toggle("warn", !fit.all_fit);
+  const minTe = design.manufacturing?.min_trailing_edge_mm ?? 0.8;
+  const teTag = minTe >= 0.4 ? ` · TE ≥ ${minTe.toFixed(2)} mm` : ` · TE ${minTe.toFixed(2)} mm (thin)`;
+  printerFitStatus.textContent = `${fit.summary}${teTag}`;
+  printerFitStatus.classList.toggle("ok", fit.all_fit && minTe >= 0.4);
+  printerFitStatus.classList.toggle("warn", !fit.all_fit || minTe < 0.4);
   btnAutoFitPrinter.disabled = fit.all_fit;
 }
 
@@ -2789,7 +2793,12 @@ function renderSectionsPanel(design: Design) {
       : "";
   for (const r of [secChord, secTwist, secThick]) setRangeFill(r);
 
-  secStack.innerHTML = renderSectionStackSvgMarkup(sections, activeSection, activeUiStyle);
+  secStack.innerHTML = renderSectionStackSvgMarkup(
+    sections,
+    activeSection,
+    activeUiStyle,
+    design.manufacturing?.min_trailing_edge_mm ?? 0.05,
+  );
 }
 
 function commitSectionAirfoil() {
@@ -2880,6 +2889,9 @@ function syncControlsFromDesign(design: Design) {
   sliderBladeLength.value = String(Math.round(bladeLenMm));
   bladeLengthVal.textContent = `${bladeLenMm.toFixed(0)} mm`;
   inputPitchAxis.value = String(rotor.pitch_axis_ratio);
+  if (inputMfgMinTe && document.activeElement !== inputMfgMinTe) {
+    inputMfgMinTe.value = Number(design.manufacturing?.min_trailing_edge_mm ?? 0.8).toFixed(2);
+  }
 
   const primaryAirfoil = design.airfoils[0]?.airfoil;
   if (primaryAirfoil) {
@@ -4040,6 +4052,13 @@ inputPrinterMaxZ.addEventListener("change", () => {
   selectPrinterPreset.value = "custom";
   updatePrinterFitStatus(workingDesign);
   scheduleAutoSave();
+});
+
+inputMfgMinTe?.addEventListener("change", () => {
+  const raw = Number.parseFloat(inputMfgMinTe.value);
+  if (Number.isFinite(raw)) {
+    commitDesign(updateMinTrailingEdgeMm(workingDesign, raw));
+  }
 });
 
 btnAutoFitPrinter.addEventListener("click", () => {

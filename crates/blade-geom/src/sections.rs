@@ -132,14 +132,8 @@ pub fn build_blended_sections(
             0.0,
             SECTION_SAMPLES_PER_SURFACE,
         )?;
-        let blended = blend_airfoils(&root_contour, &tip_contour, weight)?;
-        let actual_mm = blended.trailing_edge_thickness_mm();
-        if actual_mm < min_te_mm {
-            return Err(GeomError::TrailingEdgeTooThin {
-                actual_mm,
-                min_mm: min_te_mm,
-            });
-        }
+        let blended = blend_airfoils(&root_contour, &tip_contour, weight)?
+            .with_min_trailing_edge_mm(min_te_mm)?;
         sections.push(Section3D::from_airfoil(
             &blended,
             station.chord_mm,
@@ -158,19 +152,18 @@ fn eval_resolved_airfoil(
     min_te_mm: f64,
     samples_per_surface: usize,
 ) -> Result<Airfoil, GeomError> {
-    if let Some(name) = &resolved.name {
+    let raw = if let Some(name) = &resolved.name {
         let dat = library_airfoil(name)?;
-        dat.check_trailing_edge(chord_mm, min_te_mm)?;
-        dat.surface(chord_mm, samples_per_surface)
+        dat.surface(chord_mm, samples_per_surface)?
     } else {
         let profile = Naca4::new(
             resolved.max_camber,
             resolved.camber_position,
             resolved.thickness_ratio,
         )?;
-        profile.check_trailing_edge(chord_mm, min_te_mm)?;
-        profile.surface(chord_mm, samples_per_surface)
-    }
+        profile.surface(chord_mm, samples_per_surface)?
+    };
+    raw.with_min_trailing_edge_mm(min_te_mm)
 }
 
 #[cfg(test)]
@@ -217,14 +210,66 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_design_whose_trailing_edge_is_too_thin() {
+    fn thickens_printable_trailing_edge_and_rejects_excessive_min_te() {
         let mut design = Design::from_json(FIXTURE).expect("fixture parses");
-        design.manufacturing.min_trailing_edge_mm = 1.0;
-        let blade = resolve(&design).expect("still resolves");
+        design.manufacturing.min_trailing_edge_mm = 0.8;
+        let blade = resolve(&design).expect("resolves with 0.8 mm printable TE");
+        let sections = build_sections(&blade).expect("sections thicken cleanly to 0.8 mm");
+        for section in &sections {
+            assert!(
+                section.trailing_edge_thickness_mm() + 1e-6 >= 0.8,
+                "expected TE >= 0.8 mm, got {}",
+                section.trailing_edge_thickness_mm()
+            );
+        }
+
+        // Non-physical min_trailing_edge_mm (> 65% of max airfoil thickness) is rejected.
+        design.manufacturing.min_trailing_edge_mm = 10.0;
+        let bad_blade = resolve(&design).expect("still resolves");
         assert!(matches!(
-            build_sections(&blade),
+            build_sections(&bad_blade),
             Err(GeomError::TrailingEdgeTooThin { .. })
         ));
+    }
+
+    #[test]
+    fn thickens_thin_aft_cambered_sg6043_and_e387_profiles_for_slicers() {
+        use blade_model::AirfoilSpec;
+
+        for name in ["SG6043", "E387"] {
+            let mut design = Design::from_json(FIXTURE).expect("fixture parses");
+            design.manufacturing.min_trailing_edge_mm = 0.8;
+            design.distributions.chord_mm = blade_model::CurveSource::Linear {
+                root: 36.0,
+                tip: 21.0,
+            };
+            design.overrides.clear();
+            for st in &mut design.airfoils {
+                st.airfoil = AirfoilSpec::Named {
+                    name: name.to_string(),
+                };
+            }
+            let blade = resolve(&design).expect("resolves thin named airfoil blade");
+            let sections = build_sections(&blade).expect("sections thicken to 0.8 mm");
+            for (idx, sec) in sections.iter().enumerate() {
+                assert!(
+                    sec.trailing_edge_thickness_mm() + 1e-6 >= 0.8,
+                    "{name} station {idx}: expected TE >= 0.8 mm, got {}",
+                    sec.trailing_edge_thickness_mm()
+                );
+                // Verify the aft 35% of the contour (stations d >= 50..=80 around TE)
+                // never pinches below 0.8 mm!
+                let pts = sec.points();
+                let n_le = pts.len() / 2;
+                for d in (n_le * 65 / 100)..=n_le {
+                    let gap = pts[n_le - d].distance_to(&pts[n_le + d]);
+                    assert!(
+                        gap + 1e-6 >= 0.8,
+                        "{name} station {idx} aft d={d}: gap {gap:.3} mm < 0.8 mm"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

@@ -137,9 +137,10 @@ fn is_locked(span_ratio: f64, locked: &[f64]) -> bool {
 }
 
 fn min_chord_for_station(design: &Design, airfoil: &ResolvedAirfoil, cfg_min_chord: f64) -> f64 {
-    // Open-TE NACA thickness is 0.021 * t * c; ensure min_trailing_edge_mm is respected with margin.
+    // `Airfoil::with_min_trailing_edge_mm` thickens the aft wedge up to 65% of
+    // max airfoil thickness (`t_ratio * c`), so require `0.5 * t_ratio * c >= min_te_mm`.
     let t_ratio = airfoil.thickness_ratio.max(0.08);
-    let te_min_chord = (design.manufacturing.min_trailing_edge_mm / (0.021 * t_ratio)) * 1.02;
+    let te_min_chord = (design.manufacturing.min_trailing_edge_mm / (0.50 * t_ratio)) * 1.02;
     let wall_min_chord = (design.manufacturing.wall_thickness_mm * 4.0).max(5.0);
     cfg_min_chord.max(te_min_chord).max(wall_min_chord).max(6.0)
 }
