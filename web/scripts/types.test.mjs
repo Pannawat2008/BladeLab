@@ -1002,6 +1002,21 @@ test("Gearbox Prototype 3-gear CAD mesh builder, ratio solver, and binary STL ex
   );
   assert.equal(g2Hole6Bundle.submeshes.length, 7);
 
+  // Verify Gear 1 hub boss base skirt (<= 11.85 mm) clears the 4xØ20 mm holes (r_min = 12.0 mm) and G2 collar is crisp (<= 4.05 mm)
+  const g1Boss = bundle.submeshes.find((s) => s.id === "gear1-hub-boss");
+  let g1BossMaxR = 0;
+  for (let i = 0; i < g1Boss.positions.length; i += 3) {
+    g1BossMaxR = Math.max(g1BossMaxR, Math.hypot(g1Boss.positions[i], g1Boss.positions[i + 1]));
+  }
+  const holeMinR = (cfg.g1_hole_bcd_radius_mm ?? 22.0) - 0.5 * (cfg.g1_hole_dia_mm ?? 20.0);
+  assert.ok(g1BossMaxR <= holeMinR - 0.15, `G1 hub boss max radius ${g1BossMaxR.toFixed(2)} must clear hole inner edge ${holeMinR}`);
+  const g2Collar = bundle.submeshes.find((s) => s.id === "gear2-collar");
+  let g2CollarMaxR = 0;
+  for (let i = 0; i < g2Collar.positions.length; i += 3) {
+    g2CollarMaxR = Math.max(g2CollarMaxR, Math.hypot(g2Collar.positions[i], g2Collar.positions[i + 1]));
+  }
+  assert.ok(g2CollarMaxR <= 4.05, `G2 collar max radius ${g2CollarMaxR.toFixed(2)} must stay <= 4.05 mm`);
+
   // Verify tooth solver for compound_2stage targeting 25.0:1 and 4.5:1
   const solved25 = solveGearTeethForTargetRatio(cfg, 25.0);
   assert.ok(Math.abs(computeGearboxMetrics(solved25).total_ratio - 25.0) < 0.1);

@@ -5244,49 +5244,8 @@ interface PolyNode2D {
   next: PolyNode2D;
 }
 
-function sameXY2D(ax: number, ay: number, bx: number, by: number): boolean {
-  return Math.abs(ax - bx) <= 1e-8 && Math.abs(ay - by) <= 1e-8;
-}
-
 function cross2D(ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number {
   return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-}
-
-function segmentsProperlyCross2D(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  cx: number,
-  cy: number,
-  dx: number,
-  dy: number,
-): boolean {
-  const c1 = cross2D(ax, ay, bx, by, cx, cy);
-  const c2 = cross2D(ax, ay, bx, by, dx, dy);
-  const c3 = cross2D(cx, cy, dx, dy, ax, ay);
-  const c4 = cross2D(cx, cy, dx, dy, bx, by);
-  const eps = 1e-9;
-  return (
-    ((c1 > eps && c2 < -eps) || (c1 < -eps && c2 > eps)) &&
-    ((c3 > eps && c4 < -eps) || (c3 < -eps && c4 > eps))
-  );
-}
-
-function pointOnSegment2D(
-  px: number,
-  py: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-): boolean {
-  if (Math.abs(cross2D(ax, ay, bx, by, px, py)) > 1e-8) return false;
-  const minX = Math.min(ax, bx) - 1e-8;
-  const maxX = Math.max(ax, bx) + 1e-8;
-  const minY = Math.min(ay, by) - 1e-8;
-  const maxY = Math.max(ay, by) + 1e-8;
-  return px >= minX && px <= maxX && py >= minY && py <= maxY;
 }
 
 function pointInOrOnTri2D(
@@ -5308,86 +5267,16 @@ function pointInOrOnTri2D(
 }
 
 /**
- * Triangulates a single-hole planar region by finding a mutually visible exterior bridge
- * from `outerCCW` to `holeCW`, splicing with zero-width twin bridge edges, and running a
- * multi-pass CCW ear-clipper. Returned triangles are `[a, b, c]` in CCW (`+z`) order.
+ * Triangulates a simple CCW 2D polygon via multi-pass ear clipping.
+ * Returned triangles are `[a, b, c]` in CCW (`+z`) order.
  */
-function triangulateSectorWithHole2D(
-  outerCCW: Array<{ vIdx: number; x: number; y: number }>,
-  holeCW: Array<{ vIdx: number; x: number; y: number }>,
-  holeCenterX: number,
-  holeCenterY: number,
+function triangulateSimplePolygon2D(
+  ring: Array<{ vIdx: number; x: number; y: number }>,
 ): Array<[number, number, number]> {
-  const nO = outerCCW.length;
-  const nH = holeCW.length;
+  const m = ring.length;
+  if (m < 3) return [];
 
-  const isValidBridge = (io: number, ih: number): boolean => {
-    const o = outerCCW[io]!;
-    const h = holeCW[ih]!;
-    // Bridge must leave hole radially into metal exterior, never through the hole interior.
-    const dotOut = (o.x - h.x) * (h.x - holeCenterX) + (o.y - h.y) * (h.y - holeCenterY);
-    if (dotOut <= 1e-6) return false;
-
-    for (let k = 0; k < nO; k++) {
-      const kNext = (k + 1) % nO;
-      if (k === io || kNext === io) continue;
-      const p0 = outerCCW[k]!;
-      const p1 = outerCCW[kNext]!;
-      if (segmentsProperlyCross2D(o.x, o.y, h.x, h.y, p0.x, p0.y, p1.x, p1.y)) return false;
-      if (pointOnSegment2D(p0.x, p0.y, o.x, o.y, h.x, h.y)) return false;
-    }
-    for (let k = 0; k < nH; k++) {
-      const kNext = (k + 1) % nH;
-      if (k === ih || kNext === ih) continue;
-      const q0 = holeCW[k]!;
-      const q1 = holeCW[kNext]!;
-      if (segmentsProperlyCross2D(o.x, o.y, h.x, h.y, q0.x, q0.y, q1.x, q1.y)) return false;
-      if (pointOnSegment2D(q0.x, q0.y, o.x, o.y, h.x, h.y)) return false;
-    }
-    return true;
-  };
-
-  // Prefer shortest visible bridge (often hole[0] at thetaMid to the adjacent rim vertex).
-  const pairs: Array<{ io: number; ih: number; d2: number }> = [];
-  for (let io = 0; io < nO; io++) {
-    const o = outerCCW[io]!;
-    for (let ih = 0; ih < nH; ih++) {
-      const h = holeCW[ih]!;
-      const dx = o.x - h.x;
-      const dy = o.y - h.y;
-      pairs.push({ io, ih, d2: dx * dx + dy * dy });
-    }
-  }
-  pairs.sort((a, b) => a.d2 - b.d2);
-
-  let bestIo = 0;
-  let bestIh = 0;
-  let found = false;
-  for (const cand of pairs) {
-    if (isValidBridge(cand.io, cand.ih)) {
-      bestIo = cand.io;
-      bestIh = cand.ih;
-      found = true;
-      break;
-    }
-  }
-  if (!found && pairs.length > 0) {
-    bestIo = pairs[0]!.io;
-    bestIh = pairs[0]!.ih;
-  }
-
-  // Splice outerCCW[bestIo] -> holeCW[bestIh..bestIh-1] -> holeCW[bestIh] -> outerCCW[bestIo..bestIo-1]
-  const loop: Array<{ vIdx: number; x: number; y: number }> = [];
-  loop.push(outerCCW[bestIo]!);
-  for (let k = 0; k <= nH; k++) {
-    loop.push(holeCW[(bestIh + k) % nH]!);
-  }
-  for (let k = 0; k < nO; k++) {
-    loop.push(outerCCW[(bestIo + k) % nO]!);
-  }
-
-  const m = loop.length;
-  const nodes: PolyNode2D[] = loop.map((p) => ({
+  const nodes: PolyNode2D[] = ring.map((p) => ({
     vIdx: p.vIdx,
     x: p.x,
     y: p.y,
@@ -5407,19 +5296,13 @@ function triangulateSectorWithHole2D(
     const a = cur.prev;
     const b = cur;
     const c = cur.next;
-    if (sameXY2D(a.x, a.y, c.x, c.y)) return false;
     const area2 = cross2D(a.x, a.y, b.x, b.y, c.x, c.y);
     if (area2 <= areaEps) return false;
     if (!checkPoints) return true;
 
     let q = c.next;
     while (q !== a) {
-      if (
-        !sameXY2D(q.x, q.y, a.x, a.y) &&
-        !sameXY2D(q.x, q.y, b.x, b.y) &&
-        !sameXY2D(q.x, q.y, c.x, c.y) &&
-        pointInOrOnTri2D(q.x, q.y, a.x, a.y, b.x, b.y, c.x, c.y)
-      ) {
+      if (pointInOrOnTri2D(q.x, q.y, a.x, a.y, b.x, b.y, c.x, c.y)) {
         return false;
       }
       q = q.next;
@@ -5564,15 +5447,24 @@ function buildToothedWheelMesh(opts: {
   mb.stitchRings(rimTop, outerRings[zLayers]!, n, true);
 
   if (canUseCircularHoles) {
-    // Circular lightening holes (Gear4 style, e.g. 4 x Ø20 mm), partitioned along exact existing ring vertices
-    const nHole = 32;
+    // Circular lightening holes (Gear4 style, e.g. 4 x Ø20 mm), split cleanly along exact radial rays
+    const nHole = 48;
+    const halfHole = nHole / 2;
+    const buildPolyPts = (indices: number[]) =>
+      indices.map((vIdx) => ({
+        vIdx,
+        x: mb.positions[vIdx * 3]!,
+        y: mb.positions[vIdx * 3 + 1]!,
+      }));
+
     for (let s = 0; s < holeCount; s++) {
       const iStart = Math.round((s * n) / holeCount);
       const iEnd = Math.round(((s + 1) * n) / holeCount);
+      const iMid = Math.floor(0.5 * (iStart + iEnd));
       const theta0 = (2 * Math.PI * iStart) / n;
+      const thetaMid = (2 * Math.PI * iMid) / n;
       const theta1 = (2 * Math.PI * iEnd) / n;
-      const thetaMid = 0.5 * (theta0 + theta1);
-      const dThetaHalf = 0.5 * (theta1 - theta0);
+      const dThetaHalf = Math.min(thetaMid - theta0, theta1 - thetaMid);
 
       const radialClear = Math.min(bcdR - hubR - minHoleMargin, rimInnerR - bcdR - minHoleMargin);
       const angularClear = bcdR * Math.sin(Math.min(Math.PI * 0.48, dThetaHalf)) - minHoleMargin;
@@ -5581,7 +5473,7 @@ function buildToothedWheelMesh(opts: {
       const cx = bcdR * Math.cos(thetaMid);
       const cy = bcdR * Math.sin(thetaMid);
 
-      // Build bottom & top hole vertex rings in CCW order around (cx, cy) starting at thetaMid
+      // Build bottom & top hole vertex rings in CCW order around (cx, cy) starting at thetaMid (k=0 -> outer, k=24 -> inner)
       const holeBot = mb.positions.length / 3;
       for (let k = 0; k < nHole; k++) {
         const phi = thetaMid + (2 * Math.PI * k) / nHole;
@@ -5596,59 +5488,35 @@ function buildToothedWheelMesh(opts: {
       // Hole cylindrical bore wall (normals inward toward hole center (cx, cy))
       mb.stitchRings(holeBot, holeTop, nHole, true);
 
-      // Assemble CCW outer sector polygon on hub [iStart..iEnd] and rim [iStart..iEnd]
-      const buildSectorLoop = (hubBase: number, rimBase: number) => {
-        const outerCCW: Array<{ vIdx: number; x: number; y: number }> = [];
-        const pushRingV = (vIdx: number) => {
-          outerCCW.push({
-            vIdx,
-            x: mb.positions[vIdx * 3]!,
-            y: mb.positions[vIdx * 3 + 1]!,
-          });
-        };
-        pushRingV(hubBase + (iStart % n));
-        for (let i = iStart; i <= iEnd; i++) {
-          pushRingV(rimBase + (i % n));
-        }
-        for (let i = iEnd; i > iStart; i--) {
-          pushRingV(hubBase + (i % n));
-        }
-        return outerCCW;
+      const buildSectorHalfIdx = (hubBase: number, rimBase: number, holeBase: number) => {
+        const halfA: number[] = [];
+        halfA.push(hubBase + (iStart % n));
+        for (let i = iStart; i <= iMid; i++) halfA.push(rimBase + (i % n));
+        halfA.push(holeBase);
+        for (let k = nHole - 1; k >= halfHole; k--) halfA.push(holeBase + k);
+        for (let i = iMid; i > iStart; i--) halfA.push(hubBase + (i % n));
+
+        const halfB: number[] = [];
+        halfB.push(hubBase + (iMid % n));
+        for (let k = halfHole; k >= 0; k--) halfB.push(holeBase + k);
+        for (let i = iMid; i <= iEnd; i++) halfB.push(rimBase + (i % n));
+        for (let i = iEnd; i > iMid; i--) halfB.push(hubBase + (i % n));
+
+        return [halfA, halfB] as const;
       };
 
-      const buildHoleCW = (holeBase: number) => {
-        const holeCW: Array<{ vIdx: number; x: number; y: number }> = [];
-        for (let k = 0; k < nHole; k++) {
-          const idx = holeBase + ((nHole - k) % nHole);
-          holeCW.push({
-            vIdx: idx,
-            x: mb.positions[idx * 3]!,
-            y: mb.positions[idx * 3 + 1]!,
-          });
+      const [topHalfA, topHalfB] = buildSectorHalfIdx(hubTop, rimTop, holeTop);
+      for (const poly of [topHalfA, topHalfB]) {
+        for (const [a, b, c] of triangulateSimplePolygon2D(buildPolyPts(poly))) {
+          mb.addTri(a, b, c);
         }
-        return holeCW;
-      };
-
-      // Top planar face (+z normal, CCW triangles)
-      const topTris = triangulateSectorWithHole2D(
-        buildSectorLoop(hubTop, rimTop),
-        buildHoleCW(holeTop),
-        cx,
-        cy,
-      );
-      for (const [a, b, c] of topTris) {
-        mb.addTri(a, b, c);
       }
 
-      // Bottom planar face (-z normal, reversed winding)
-      const botTris = triangulateSectorWithHole2D(
-        buildSectorLoop(hubBot, rimBot),
-        buildHoleCW(holeBot),
-        cx,
-        cy,
-      );
-      for (const [a, b, c] of botTris) {
-        mb.addTri(a, c, b);
+      const [botHalfA, botHalfB] = buildSectorHalfIdx(hubBot, rimBot, holeBot);
+      for (const poly of [botHalfA, botHalfB]) {
+        for (const [a, b, c] of triangulateSimplePolygon2D(buildPolyPts(poly))) {
+          mb.addTri(a, c, b);
+        }
       }
     }
     return mb;
@@ -5705,6 +5573,7 @@ function buildSteppedRotorHubBossMesh(opts: {
   hubHeightMm: number;
   zBaseMm: number;
   style?: "rotor_hub" | "collar";
+  maxBaseRadiusMm?: number;
 }): MeshBuilder {
   const mb = new MeshBuilder();
   const n = 96;
@@ -5720,26 +5589,30 @@ function buildSteppedRotorHubBossMesh(opts: {
   const style = opts.style ?? "rotor_hub";
   const minMargin = style === "collar" ? 0.35 : 0.6;
   const rMain = Math.max(boreMaxR + minMargin, 0.5 * opts.hubDiaMm);
-  const rSkirt = rMain * 1.24;
+  const rSkirt = Math.max(rMain, Math.min(rMain * 1.18, opts.maxBaseRadiusMm ?? rMain * 1.18));
+  const rCollarBase = Math.max(rMain, Math.min(rMain * 1.12, opts.maxBaseRadiusMm ?? rMain * 1.12));
+  const rTop = Math.max(boreMaxR + 0.45, rMain * 0.40);
   const h = Math.max(0.5, opts.hubHeightMm);
   const z0 = opts.zBaseMm;
 
   const profile: Array<{ z: number; r: number }> =
     style === "collar"
       ? [
-          { z: z0, r: rMain * 1.12 },
+          { z: z0, r: rCollarBase },
           { z: z0 + 0.25 * h, r: rMain },
           { z: z0 + 0.88 * h, r: rMain },
           { z: z0 + 1.0 * h, r: Math.max(boreMaxR + 0.25, rMain * 0.92) },
         ]
       : [
           { z: z0, r: rSkirt },
-          { z: z0 + 0.22 * h, r: rMain },
+          { z: z0 + 0.04 * h, r: rMain + (rSkirt - rMain) * 0.52 },
+          { z: z0 + 0.10 * h, r: rMain + (rSkirt - rMain) * 0.18 },
+          { z: z0 + 0.175 * h, r: rMain },
           { z: z0 + 0.78 * h, r: rMain },
-          { z: z0 + 0.84 * h, r: Math.max(boreMaxR + 0.35, rMain * 0.86) },
-          { z: z0 + 0.9 * h, r: Math.max(boreMaxR + 0.35, rMain * 0.86) },
-          { z: z0 + 0.94 * h, r: Math.max(boreMaxR + 0.3, rMain * 0.68) },
-          { z: z0 + 1.0 * h, r: Math.max(boreMaxR + 0.3, rMain * 0.68) },
+          { z: z0 + 0.84 * h, r: Math.max(boreMaxR + 0.45, rMain * 0.94) },
+          { z: z0 + 0.88 * h, r: Math.max(boreMaxR + 0.45, rMain * 0.83) },
+          { z: z0 + 0.90 * h, r: rTop },
+          { z: z0 + 1.0 * h, r: rTop },
         ];
 
   const extRings: number[] = [];
@@ -5887,6 +5760,13 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
   );
 
   if (cfg.g1_hub_height_mm > 0.5) {
+    const g1MaxBossBaseR =
+      cfg.g1_spokes >= 3 && cutoutStyle === "circular_holes"
+        ? Math.max(
+            0.5 * cfg.g1_hub_diameter_mm,
+            (cfg.g1_hole_bcd_radius_mm ?? 22.0) - 0.5 * (cfg.g1_hole_dia_mm ?? 20.0) - 0.2,
+          )
+        : undefined;
     const g1BossBuilder = buildSteppedRotorHubBossMesh({
       boreDiaMm: cfg.g1_bore_mm,
       dFlatMm: cfg.g1_d_flat_mm,
@@ -5894,6 +5774,7 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
       hubHeightMm: cfg.g1_hub_height_mm,
       zBaseMm: cfg.g1_face_width_mm,
       style: "rotor_hub",
+      maxBaseRadiusMm: g1MaxBossBaseR,
     });
     submeshes.push(
       g1BossBuilder.toSubMesh({
@@ -5993,14 +5874,16 @@ export function buildGearboxMeshes(cfg: GearboxConfig): GearboxMeshBundle {
     );
 
     const g2CollarH = cfg.g2_collar_height_mm ?? 2.0;
+    const g2CollarDia = cfg.g2_collar_dia_mm ?? Math.max(cfg.g2_bore_mm + 2.4, 8.0);
     if (g2CollarH > 0.4) {
       const g2CollarBuilder = buildSteppedRotorHubBossMesh({
         boreDiaMm: cfg.g2_bore_mm,
         dFlatMm: cfg.g2_d_flat_mm,
-        hubDiaMm: cfg.g2_collar_dia_mm ?? Math.max(cfg.g2_bore_mm + 2.4, 8.0),
+        hubDiaMm: g2CollarDia,
         hubHeightMm: g2CollarH,
         zBaseMm: cfg.g2_wheel_face_mm + cfg.g2_pinion_face_mm,
         style: "collar",
+        maxBaseRadiusMm: 0.5 * g2CollarDia,
       });
       submeshes.push(
         g2CollarBuilder.toSubMesh({

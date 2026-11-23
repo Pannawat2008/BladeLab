@@ -1918,10 +1918,7 @@ function rebuild3D(design: Design) {
           rotorGroup.add(pivot);
         }
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(sub.positions, 3));
-        geo.setAttribute("normal", new THREE.BufferAttribute(sub.normals, 3));
-        geo.setIndex(new THREE.BufferAttribute(sub.indices, 1));
+        const geo = buildCleanBladeGeometry(sub.positions, sub.indices, 32);
         // Rotate gear local Z height axis onto Three.js +Y vertical axis
         geo.rotateX(-Math.PI / 2);
 
@@ -1930,7 +1927,7 @@ function rebuild3D(design: Design) {
           metalness: sub.metalness,
           roughness: sub.roughness,
           wireframe: wireframeMode,
-          side: THREE.DoubleSide,
+          side: THREE.FrontSide,
           polygonOffset: true,
           polygonOffsetFactor: 1,
           polygonOffsetUnits: 1,
@@ -1943,7 +1940,7 @@ function rebuild3D(design: Design) {
         pivot.add(mesh);
 
         if (!wireframeMode) {
-          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat);
+          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 34), edgeMat);
           pivot.add(edges);
         }
       }
