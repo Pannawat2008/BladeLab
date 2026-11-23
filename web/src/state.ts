@@ -1980,6 +1980,7 @@ export interface WingletConfig {
 }
 export type PrinterPresetKey = "bambu_256" | "prusa_mk4" | "ender3" | "voron_350" | "custom";
 export type BladeWindPresetKey =
+  | "asia_2026_scimitar"
   | "low_wind"
   | "med_kidwind"
   | "scimitar_belly"
@@ -3558,6 +3559,51 @@ export interface BladeWindPresetSpec {
 }
 
 export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec> = {
+  asia_2026_scimitar: {
+    key: "asia_2026_scimitar",
+    name: "KidWind Asia 2026 Slender Scimitar (R 490 mm · 38→52→21 mm · KW-GEN3 · 10.5:1)",
+    badge: "Asia 2026 R490",
+    description:
+      "Tuned 490 mm (98 cm Ø) Slender Scimitar (38→52→21 mm, 16°→7.5°→1.0°, S833 root + SG6043 mid/tip, 5 mm CF spar) for KidWind Asia 2026 KW-GEN3 (Kv 366 · 40.1 Ω) + VES-VL (2–200 Ω). Self-starts at 2.0 m/s on 2 Ω up to 16:1; universal 10.5:1 gear stays legal from 2.0 to 4.0 m/s (up to 2.71 W).",
+    rotor: {
+      radius_mm: 490,
+      hub_radius_mm: 30,
+      blade_count: 3,
+      design_tsr: 5.5,
+      wind_speed_mps: 3.5,
+      station_count: 13,
+      pitch_axis_ratio: 0.25,
+    },
+    planform: {
+      cosine: true,
+      center_pct: 40,
+      width_pct: 22,
+    },
+    sections: {
+      root: {
+        chord_mm: 38,
+        twist_deg: 16.0,
+        airfoil: { type: "named", name: "S833" },
+      },
+      mid: {
+        chord_mm: 52,
+        twist_deg: 7.5,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+      tip: {
+        chord_mm: 21,
+        twist_deg: 1.0,
+        airfoil: { type: "named", name: "SG6043" },
+      },
+    },
+    recommended_drivetrain: {
+      gen_preset: "kidwind_asia_2026",
+      gear_ratio: 10.5,
+      r_load_ohm: 44.0,
+      site_avg_wind_mps: 3.5,
+    },
+    recommended_spar_mm: 5.0,
+  },
   low_wind: {
     key: "low_wind",
     name: "Low-Speed Wind (3.5 m/s · High Starting Torque · λ 3.5)",

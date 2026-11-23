@@ -518,6 +518,7 @@ const optStatusEl = document.getElementById("opt-status")!;
 const btnSnapshotA = document.getElementById("btn-snapshot-a") as HTMLButtonElement;
 const btnClearA = document.getElementById("btn-clear-a") as HTMLButtonElement;
 const abDeltaSummary = document.getElementById("ab-delta-summary")!;
+const btnPresetAsia2026 = document.getElementById("btn-preset-asia-2026") as HTMLButtonElement | null;
 const btnPresetLowWind = document.getElementById("btn-preset-low-wind") as HTMLButtonElement | null;
 const btnPresetKidwind = document.getElementById("btn-preset-kidwind") as HTMLButtonElement | null;
 const btnPresetScimitar = document.getElementById("btn-preset-scimitar") as HTMLButtonElement | null;
@@ -3354,6 +3355,7 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
 function syncBladePresetButtons(presetKey: BladeWindPresetKey) {
   activeBladePreset = presetKey;
   for (const [btn, key] of [
+    [btnPresetAsia2026, "asia_2026_scimitar"],
     [btnPresetLowWind, "low_wind"],
     [btnPresetKidwind, "med_kidwind"],
     [btnPresetScimitar, "scimitar_belly"],
@@ -5381,6 +5383,7 @@ function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
   commitDesign(design);
 }
 
+btnPresetAsia2026?.addEventListener("click", () => applySelectedBladePreset("asia_2026_scimitar"));
 btnPresetLowWind?.addEventListener("click", () => applySelectedBladePreset("low_wind"));
 btnPresetKidwind?.addEventListener("click", () => applySelectedBladePreset("med_kidwind"));
 btnPresetScimitar?.addEventListener("click", () => applySelectedBladePreset("scimitar_belly"));

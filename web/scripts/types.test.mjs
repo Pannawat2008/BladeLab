@@ -836,8 +836,9 @@ test("Competition Blade Presets, Generator Presets, Gear Ratio & Max-Out Optimiz
   const require = createRequire(import.meta.url);
   const { build_mesh, simulate_aero } = require("../../target/glue-node/blade_wasm.js");
 
-  // 1. Verify all 5 blade presets build valid 3D meshes and have tailored parameters
+  // 1. Verify all 6 blade presets build valid 3D meshes and have tailored parameters
   for (const presetKey of [
+    "asia_2026_scimitar",
     "low_wind",
     "med_kidwind",
     "scimitar_belly",
@@ -2414,9 +2415,74 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
   assert.equal(parsedAsiaSnap.workbench.gen_kidwind_ruleset, "asia_2026_vesvl");
   assert.equal(parsedAsiaSnap.workbench.gen_r_load, 55.0);
 
-  // 6. Verify web/index.html DOM markers
+  // 6. Baked Asia 2026 Slender Scimitar 1-click preset checks
+  const asiaPresetSpec = BLADE_WIND_PRESETS.asia_2026_scimitar;
+  assert.ok(asiaPresetSpec, "Missing asia_2026_scimitar blade preset");
+  assert.equal(asiaPresetSpec.rotor.radius_mm, 490);
+  assert.equal(asiaPresetSpec.rotor.hub_radius_mm, 30);
+  assert.equal(asiaPresetSpec.rotor.blade_count, 3);
+  assert.equal(asiaPresetSpec.rotor.design_tsr, 5.5);
+  assert.equal(asiaPresetSpec.sections.root.chord_mm, 38);
+  assert.equal(asiaPresetSpec.sections.mid.chord_mm, 52);
+  assert.equal(asiaPresetSpec.sections.tip.chord_mm, 21);
+  assert.equal(asiaPresetSpec.recommended_drivetrain.gen_preset, "kidwind_asia_2026");
+  assert.equal(asiaPresetSpec.recommended_drivetrain.gear_ratio, 10.5);
+  assert.equal(asiaPresetSpec.recommended_drivetrain.r_load_ohm, 44.0);
+  assert.equal(asiaPresetSpec.recommended_spar_mm, 5.0);
+
+  const { design: asiaPresetDesign } = applyBladeWindPreset(initialDesign, "asia_2026_scimitar");
+  const asiaPresetBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(asiaPresetDesign),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: asiaGen.kv_rpm_per_v,
+        generator_r_int: asiaGen.r_int_ohm,
+        generator_r_load: asiaPresetSpec.recommended_drivetrain.r_load_ohm,
+        generator_gear_ratio: asiaPresetSpec.recommended_drivetrain.gear_ratio,
+        generator_i0: asiaGen.no_load_current_a,
+      }),
+    ),
+  );
+  assert.equal(asiaPresetBundle.generator_match.stalled, false);
+  assert.ok(asiaPresetBundle.generator_match.generator.terminal_voltage_v <= 10.0);
+  assert.ok(asiaPresetBundle.generator_match.generator.current_a <= 0.3);
+  assert.ok(asiaPresetBundle.generator_match.generator.electrical_power_w >= 2.0);
+  const asiaPresetOpt = optimizeGeneratorAndGearbox(asiaPresetDesign, asiaPresetBundle, {
+    kv: asiaGen.kv_rpm_per_v,
+    r_int: asiaGen.r_int_ohm,
+    r_load: asiaPresetSpec.recommended_drivetrain.r_load_ohm,
+    gear_ratio: asiaPresetSpec.recommended_drivetrain.gear_ratio,
+    i0: asiaGen.no_load_current_a,
+    kidwind_rules: true,
+    kidwind_ruleset: "asia_2026_vesvl",
+  });
+  assert.equal(asiaPresetOpt.kidwind_compliant, true);
+  assert.equal(asiaPresetOpt.current_over_radius, false);
+
+  const asiaStartBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(updateRotorField(asiaPresetDesign, "wind_speed_mps", 2.0)),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: asiaGen.kv_rpm_per_v,
+        generator_r_int: asiaGen.r_int_ohm,
+        generator_r_load: 2.0,
+        generator_gear_ratio: asiaPresetSpec.recommended_drivetrain.gear_ratio,
+        generator_i0: asiaGen.no_load_current_a,
+      }),
+    ),
+  );
+  assert.equal(asiaStartBundle.generator_match.stalled, false);
+
+  // 7. Verify web/index.html DOM markers
   const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   for (const snippet of [
+    'id="btn-preset-asia-2026"',
     'value="kidwind_asia_2026"',
     'id="gen-kidwind-rule-set"',
     'value="asia_2026_vesvl"',
