@@ -54,8 +54,10 @@ import {
   upsertSavedSlot,
   applyBladeWindPreset,
   BLADE_WIND_PRESETS,
+  defaultRulesetForGeneratorPreset,
   GENERATOR_PRESETS,
   isKidwindGeneratorPreset,
+  KIDWIND_ASIA_2026_RULES,
   KIDWIND_OFFICIAL_RULES,
   optimizeGeneratorAndGearbox,
   defaultGearboxConfig,
@@ -2248,5 +2250,178 @@ test("Task 10: Stalled-generator WASM fix, 16:1 drivetrain optimizer & official 
   const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   for (const id of ["gen-kidwind-rules", "btn-gear-8", "btn-gear-12"]) {
     assert.ok(html.includes(`id="${id}"`), `Missing expected DOM id="${id}"`);
+  }
+});
+
+test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, <=0.3A, R<=500mm) ruleset", () => {
+  const require = createRequire(import.meta.url);
+  const { simulate_aero } = require("../../target/glue-node/blade_wasm.js");
+
+  // 1. Official KW-GEN3 preset & ruleset defaults
+  const asiaGen = GENERATOR_PRESETS.kidwind_asia_2026;
+  assert.ok(asiaGen, "Missing kidwind_asia_2026 generator preset");
+  assert.equal(asiaGen.kv_rpm_per_v, 366);
+  assert.equal(asiaGen.r_int_ohm, 40.1);
+  assert.equal(asiaGen.no_load_current_a, 0.011);
+  assert.equal(isKidwindGeneratorPreset("kidwind_asia_2026"), true);
+  assert.equal(defaultRulesetForGeneratorPreset("kidwind_asia_2026"), "asia_2026_vesvl");
+  assert.equal(defaultRulesetForGeneratorPreset("kidwind_red"), "us_30ohm");
+  assert.equal(defaultRulesetForGeneratorPreset("kidwind_gen2"), "us_30ohm");
+  assert.equal(KIDWIND_ASIA_2026_RULES.min_load_ohm, 2.0);
+  assert.equal(KIDWIND_ASIA_2026_RULES.max_load_ohm, 200.0);
+  assert.equal(KIDWIND_ASIA_2026_RULES.max_voltage_v, 10.0);
+  assert.equal(KIDWIND_ASIA_2026_RULES.max_current_a, 0.3);
+  assert.equal(KIDWIND_ASIA_2026_RULES.max_rotor_radius_mm, 500.0);
+
+  // 2. Scimitar R=490mm (hub=30mm, blade=460mm) in Tunnel B (3.5 m/s) & Tunnel A (2.5 m/s)
+  let { design: scimitarAsia } = applyBladeWindPreset(initialDesign, "scimitar_belly");
+  scimitarAsia = updateRotorField(scimitarAsia, "hub_radius_mm", 30);
+  scimitarAsia = updateBladeLengthMm(scimitarAsia, 460); // R = 490 mm <= 500 mm
+  assert.equal(scimitarAsia.rotor.radius_mm, 490);
+
+  for (const windMps of [3.5, 2.5]) {
+    const tunedRotor = updateRotorField(scimitarAsia, "wind_speed_mps", windMps);
+    const bundle = JSON.parse(
+      simulate_aero(
+        JSON.stringify(tunedRotor),
+        JSON.stringify({
+          tsr_min: 1.5,
+          tsr_max: 9.0,
+          tsr_steps: 16,
+          generator_kv: asiaGen.kv_rpm_per_v,
+          generator_r_int: asiaGen.r_int_ohm,
+          generator_r_load: 45.0,
+          generator_gear_ratio: 8.0,
+          generator_i0: asiaGen.no_load_current_a,
+        }),
+      ),
+    );
+    const opt = optimizeGeneratorAndGearbox(tunedRotor, bundle, {
+      kv: asiaGen.kv_rpm_per_v,
+      r_int: asiaGen.r_int_ohm,
+      r_load: 45.0,
+      gear_ratio: 8.0,
+      i0: asiaGen.no_load_current_a,
+      kidwind_rules: true,
+      kidwind_ruleset: "asia_2026_vesvl",
+    });
+    assert.equal(opt.kidwind_rules_active, true);
+    assert.equal(opt.kidwind_ruleset, "asia_2026_vesvl");
+    assert.equal(opt.current_over_radius, false);
+    assert.equal(opt.kidwind_compliant, true);
+    assert.ok(
+      opt.opt_r_load_ohm >= 20 && opt.opt_r_load_ohm <= 200,
+      `expected Asia VES-VL opt_r_load_ohm in [20, 200] at ${windMps} m/s, got ${opt.opt_r_load_ohm}`,
+    );
+    assert.ok(
+      opt.best_r_load_at_current_gear_ohm >= 2 && opt.best_r_load_at_current_gear_ohm <= 200,
+      `expected VES-VL best load in [2, 200], got ${opt.best_r_load_at_current_gear_ohm}`,
+    );
+    assert.ok(opt.opt_voltage_v <= 10.0 + 1e-6, `expected opt_voltage_v <= 10V, got ${opt.opt_voltage_v}`);
+    const optCurrent = opt.opt_elec_power_w / Math.max(1e-6, opt.opt_voltage_v);
+    assert.ok(optCurrent <= 0.3 + 1e-6, `expected opt current <= 0.3A, got ${optCurrent}`);
+    assert.equal(opt.how_to_max_out_steps.length, 3);
+    assert.ok(
+      opt.how_to_max_out_steps[2].includes("2 Ω") && opt.how_to_max_out_steps[2].includes("VES-VL"),
+      `expected step 3 to mention 2 Ω reset & VES-VL, got: ${opt.how_to_max_out_steps[2]}`,
+    );
+  }
+
+  // 3. High-wind (12 m/s) Asia 2026 10 V / 0.3 A cap enforcement
+  const highWindAsia = updateRotorField(scimitarAsia, "wind_speed_mps", 12.0);
+  const highBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(highWindAsia),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: asiaGen.kv_rpm_per_v,
+        generator_r_int: asiaGen.r_int_ohm,
+        generator_r_load: 150.0,
+        generator_gear_ratio: 16.0,
+        generator_i0: asiaGen.no_load_current_a,
+      }),
+    ),
+  );
+  const highOpt = optimizeGeneratorAndGearbox(highWindAsia, highBundle, {
+    kv: asiaGen.kv_rpm_per_v,
+    r_int: asiaGen.r_int_ohm,
+    r_load: 150.0,
+    gear_ratio: 16.0,
+    i0: asiaGen.no_load_current_a,
+    kidwind_rules: true,
+    kidwind_ruleset: "asia_2026_vesvl",
+  });
+  assert.equal(highOpt.current_over_voltage || highOpt.current_over_current, true);
+  assert.equal(highOpt.kidwind_compliant, false);
+  assert.ok(highOpt.opt_voltage_v <= 10.0 + 1e-6, `expected opt <= 10 V, got ${highOpt.opt_voltage_v}`);
+  const highOptCurr = highOpt.opt_elec_power_w / Math.max(1e-6, highOpt.opt_voltage_v);
+  assert.ok(highOptCurr <= 0.3 + 1e-6, `expected opt <= 0.3 A, got ${highOptCurr}`);
+
+  // 4. R > 500 mm size DQ check under asia_2026_vesvl
+  const oversizeAsia = updateRotorField(
+    updateBladeLengthMm(scimitarAsia, 520), // R = 550 mm > 500 mm
+    "wind_speed_mps",
+    3.5,
+  );
+  const overBundle = JSON.parse(
+    simulate_aero(
+      JSON.stringify(oversizeAsia),
+      JSON.stringify({
+        tsr_min: 1.5,
+        tsr_max: 9.0,
+        tsr_steps: 16,
+        generator_kv: asiaGen.kv_rpm_per_v,
+        generator_r_int: asiaGen.r_int_ohm,
+        generator_r_load: 55.0,
+        generator_gear_ratio: 12.0,
+        generator_i0: asiaGen.no_load_current_a,
+      }),
+    ),
+  );
+  const overOpt = optimizeGeneratorAndGearbox(oversizeAsia, overBundle, {
+    kv: asiaGen.kv_rpm_per_v,
+    r_int: asiaGen.r_int_ohm,
+    r_load: 55.0,
+    gear_ratio: 12.0,
+    i0: asiaGen.no_load_current_a,
+    kidwind_rules: true,
+    kidwind_ruleset: "asia_2026_vesvl",
+  });
+  assert.equal(overOpt.current_over_radius, true);
+  assert.equal(overOpt.kidwind_compliant, false);
+  assert.ok(
+    overOpt.compliance_note.includes("500 mm"),
+    `expected compliance_note to mention 500 mm, got: ${overOpt.compliance_note}`,
+  );
+
+  // 5. Snapshot round-trip preserves Asia 2026 fields
+  const asiaSnap = createWorkbenchSnapshot(
+    scimitarAsia,
+    {},
+    {
+      gen_preset: "kidwind_asia_2026",
+      gen_kidwind_rules: true,
+      gen_kidwind_ruleset: "asia_2026_vesvl",
+      gen_gear_ratio: 12.0,
+      gen_r_load: 55.0,
+    },
+  );
+  const parsedAsiaSnap = parseLoadedProjectJson(JSON.stringify(asiaSnap));
+  assert.equal(parsedAsiaSnap.workbench.gen_preset, "kidwind_asia_2026");
+  assert.equal(parsedAsiaSnap.workbench.gen_kidwind_rules, true);
+  assert.equal(parsedAsiaSnap.workbench.gen_kidwind_ruleset, "asia_2026_vesvl");
+  assert.equal(parsedAsiaSnap.workbench.gen_r_load, 55.0);
+
+  // 6. Verify web/index.html DOM markers
+  const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
+  for (const snippet of [
+    'value="kidwind_asia_2026"',
+    'id="gen-kidwind-rule-set"',
+    'value="asia_2026_vesvl"',
+    'id="gen-kidwind-rules-label"',
+  ]) {
+    assert.ok(html.includes(snippet), `Missing expected HTML marker ${snippet}`);
   }
 });

@@ -1986,11 +1986,13 @@ export type BladeWindPresetKey =
   | "high_wind"
   | "schmitz_600";
 export type GeneratorPresetKey =
+  | "kidwind_asia_2026"
   | "kidwind_red"
   | "kidwind_gen2"
   | "outrunner_bldc"
   | "low_rpm_pmg"
   | "custom";
+export type KidwindRulesetKey = "us_30ohm" | "asia_2026_vesvl";
 
 export interface WorkbenchUiSnapshot {
   ui_style?: UiStyleMode;
@@ -2013,6 +2015,7 @@ export interface WorkbenchUiSnapshot {
   blade_preset?: BladeWindPresetKey;
   gen_preset?: GeneratorPresetKey;
   gen_kidwind_rules?: boolean;
+  gen_kidwind_ruleset?: KidwindRulesetKey;
   gen_gear_ratio?: number;
   gen_kv: number;
   gen_r_int: number;
@@ -2097,6 +2100,7 @@ export function defaultWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     blade_preset: "schmitz_600",
     gen_preset: "low_rpm_pmg",
     gen_kidwind_rules: false,
+    gen_kidwind_ruleset: "us_30ohm",
     gen_gear_ratio: 1.0,
     gen_kv: 35,
     gen_r_int: 0.8,
@@ -3848,8 +3852,22 @@ export const KIDWIND_OFFICIAL_RULES = {
   max_gear_ratio: 16.0,
 } as const;
 
+export const KIDWIND_ASIA_2026_RULES = {
+  min_load_ohm: 2.0,
+  max_load_ohm: 200.0,
+  initial_load_ohm: 2.0,
+  max_voltage_v: 10.0,
+  max_current_a: 0.3,
+  max_rotor_radius_mm: 500.0,
+  max_gear_ratio: 16.0,
+} as const;
+
 export function isKidwindGeneratorPreset(key: GeneratorPresetKey): boolean {
-  return key === "kidwind_red" || key === "kidwind_gen2";
+  return key === "kidwind_asia_2026" || key === "kidwind_red" || key === "kidwind_gen2";
+}
+
+export function defaultRulesetForGeneratorPreset(key: GeneratorPresetKey): KidwindRulesetKey {
+  return key === "kidwind_asia_2026" ? "asia_2026_vesvl" : "us_30ohm";
 }
 
 export interface GeneratorPresetSpec {
@@ -3864,6 +3882,17 @@ export interface GeneratorPresetSpec {
 }
 
 export const GENERATOR_PRESETS: Record<GeneratorPresetKey, GeneratorPresetSpec> = {
+  kidwind_asia_2026: {
+    key: "kidwind_asia_2026",
+    name: "KidWind Asia 2026 KW-GEN3 (Kv 366 · R_int 40.1 Ω)",
+    kv_rpm_per_v: 366,
+    r_int_ohm: 40.1,
+    no_load_current_a: 0.011,
+    default_gear_ratio: 12.0,
+    default_r_load_ohm: 55.0,
+    notes:
+      "Official 2026 KidWind Challenge in Asia v2.4 organizer-supplied Vernier KW-GEN3 (5.9 V rated, 2000 RPM / 0.011 A no-load, 40 g·cm / 0.147 A stall -> Kv 366 RPM/V, R_int 40.1 Ω). Paired with Vernier Variable Load VES-VL (2-200 Ω, reset to 2 Ω pre-run, ≤10 V, ≤0.3 A) in a 100 cm (R ≤ 500 mm) tunnel envelope.",
+  },
   kidwind_red: {
     key: "kidwind_red",
     name: "KidWind Red Generator (Kv 240 · R_int 6.2 Ω)",
@@ -3943,9 +3972,11 @@ export interface DrivetrainMaxOutReport {
   gain_power_w: number;
   gain_pct: number;
   kidwind_rules_active: boolean;
+  kidwind_ruleset: KidwindRulesetKey;
   current_stalled: boolean;
   current_over_voltage: boolean;
   current_over_current: boolean;
+  current_over_radius: boolean;
   kidwind_compliant: boolean;
   compliance_note: string;
   how_to_max_out_steps: string[];
@@ -4083,7 +4114,7 @@ function evalCoupledPointOnSweep(
  * Solves for the optimal Gear Ratio (`G:1` up to `16:1`) and Load Resistance (`R_load` in Ω)
  * that maximize electrical power output ($P_{\text{elec}} = V_{\text{load}} I$)
  * for the active blade BEM sweep and generator specification, enforcing official
- * KidWind Generator Division rules (`30 Ω` Vernier sensor load, `<= 30 V`, `<= 1 A`)
+ * KidWind rulesets (`us_30ohm`: `30 Ω` <= 30 V <= 1 A, or `asia_2026_vesvl`: `2–200 Ω` <= 10 V <= 0.3 A, R <= 500 mm)
  * when `spec.kidwind_rules` is enabled.
  */
 export function optimizeGeneratorAndGearbox(
@@ -4096,11 +4127,24 @@ export function optimizeGeneratorAndGearbox(
     gear_ratio: number;
     i0?: number;
     kidwind_rules?: boolean;
+    kidwind_ruleset?: KidwindRulesetKey;
   },
 ): DrivetrainMaxOutReport {
   const kv = Math.max(1, spec.kv || 35);
   const rInt = Math.max(0.05, spec.r_int || 0.8);
   const kidwindRules = Boolean(spec.kidwind_rules);
+  const ruleSet: KidwindRulesetKey = spec.kidwind_ruleset ?? "us_30ohm";
+  const usRulesActive = kidwindRules && ruleSet === "us_30ohm";
+  const asiaRulesActive = kidwindRules && ruleSet === "asia_2026_vesvl";
+  const maxV = asiaRulesActive
+    ? KIDWIND_ASIA_2026_RULES.max_voltage_v
+    : KIDWIND_OFFICIAL_RULES.max_voltage_v;
+  const maxI = asiaRulesActive
+    ? KIDWIND_ASIA_2026_RULES.max_current_a
+    : KIDWIND_OFFICIAL_RULES.max_current_a;
+  // Reserve ~10% headroom inside competition DQ caps so exact Rust BEM equilibrium stays strictly legal
+  const safeMaxV = maxV * 0.9;
+  const safeMaxI = maxI * 0.9;
   const curRLoad = Math.max(0.1, spec.r_load || 5.0);
   const curGear = Math.max(0.25, spec.gear_ratio || 1.0);
   const i0 = Math.max(0, spec.i0 ?? 0.04);
@@ -4140,25 +4184,78 @@ export function optimizeGeneratorAndGearbox(
     ? 0
     : (bundle.generator_match?.generator.efficiency ?? curEval.efficiency) * 100;
 
-  // Candidate load resistances from 0.5 Ω to 120 Ω (locked to 30 Ω under KidWind Rules)
+  // Candidate load resistances from 0.5 Ω to 200 Ω (Open), or integer 2..200 Ω for Asia 2026 VES-VL
   const loadGrid: number[] = [];
   for (let r = 0.5; r <= 15.0; r += 0.5) loadGrid.push(Number(r.toFixed(2)));
   for (let r = 16.0; r <= 50.0; r += 1.0) loadGrid.push(Number(r.toFixed(2)));
-  for (let r = 55.0; r <= 120.0; r += 5.0) loadGrid.push(Number(r.toFixed(2)));
+  for (let r = 55.0; r <= 200.0; r += 5.0) loadGrid.push(Number(r.toFixed(2)));
+
+  const vesvlLoadGrid: number[] = [];
+  for (let r = 2; r <= 50; r += 1) vesvlLoadGrid.push(r);
+  for (let r = 52; r <= 100; r += 2) vesvlLoadGrid.push(r);
+  for (let r = 105; r <= 200; r += 5) vesvlLoadGrid.push(r);
 
   // 1. Best load resistor at current gear ratio
-  let bestRLoadAtCurGear = kidwindRules ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm : curRLoad;
-  if (!kidwindRules) {
-    let bestPowerAtCurGear = -1;
-    for (const rL of loadGrid) {
+  let bestRLoadAtCurGear = usRulesActive
+    ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm
+    : asiaRulesActive
+      ? Math.min(KIDWIND_ASIA_2026_RULES.max_load_ohm, Math.max(KIDWIND_ASIA_2026_RULES.min_load_ohm, curRLoad))
+      : curRLoad;
+  if (!usRulesActive) {
+    const loadsAtCurGear = asiaRulesActive ? vesvlLoadGrid : loadGrid;
+    let bestSafePowerAtCurGear = -1;
+    let bestSafeLoadAtCurGear = bestRLoadAtCurGear;
+    let foundSafeAtCurGear = false;
+    let bestStrictPowerAtCurGear = -1;
+    let bestStrictLoadAtCurGear = bestRLoadAtCurGear;
+    let foundStrictAtCurGear = false;
+    let lowestExcessAtCurGear = Number.POSITIVE_INFINITY;
+    let fallbackLoadAtCurGear = bestRLoadAtCurGear;
+
+    for (const rL of loadsAtCurGear) {
       const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, curGear, rL);
       if (ev.stalled) continue;
       const stabilityBonus = ev.tsr >= 0.9 * peakTsr ? 1.0 : 0.72;
       const score = ev.elec_power_w * stabilityBonus;
-      if (score > bestPowerAtCurGear) {
-        bestPowerAtCurGear = score;
-        bestRLoadAtCurGear = rL;
+      if (asiaRulesActive) {
+        const excess = Math.max(ev.voltage_v / maxV, ev.current_a / maxI);
+        if (excess < lowestExcessAtCurGear) {
+          lowestExcessAtCurGear = excess;
+          fallbackLoadAtCurGear = rL;
+        }
+        if (ev.voltage_v > maxV || ev.current_a > maxI) {
+          continue;
+        }
+        foundStrictAtCurGear = true;
+        if (score > bestStrictPowerAtCurGear) {
+          bestStrictPowerAtCurGear = score;
+          bestStrictLoadAtCurGear = rL;
+        }
+        if (ev.voltage_v <= safeMaxV && ev.current_a <= safeMaxI) {
+          foundSafeAtCurGear = true;
+          if (score > bestSafePowerAtCurGear) {
+            bestSafePowerAtCurGear = score;
+            bestSafeLoadAtCurGear = rL;
+          }
+        }
+      } else {
+        foundStrictAtCurGear = true;
+        if (score > bestStrictPowerAtCurGear) {
+          bestStrictPowerAtCurGear = score;
+          bestStrictLoadAtCurGear = rL;
+        }
       }
+    }
+    if (asiaRulesActive) {
+      bestRLoadAtCurGear = foundSafeAtCurGear
+        ? bestSafeLoadAtCurGear
+        : foundStrictAtCurGear
+          ? bestStrictLoadAtCurGear
+          : Number.isFinite(lowestExcessAtCurGear)
+            ? fallbackLoadAtCurGear
+            : bestRLoadAtCurGear;
+    } else if (foundStrictAtCurGear) {
+      bestRLoadAtCurGear = bestStrictLoadAtCurGear;
     }
   }
   const curGearOptEval = evalCoupledPointOnSweep(
@@ -4176,72 +4273,111 @@ export function optimizeGeneratorAndGearbox(
     1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 4.0,
     4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
   ];
-  const candidateLoads = kidwindRules ? [KIDWIND_OFFICIAL_RULES.fixed_load_ohm] : loadGrid;
+  const candidateLoads = usRulesActive
+    ? [KIDWIND_OFFICIAL_RULES.fixed_load_ohm]
+    : asiaRulesActive
+      ? vesvlLoadGrid
+      : loadGrid;
 
   let optGear = curGear;
   let optRLoad = bestRLoadAtCurGear;
   let optEval = curGearOptEval;
-  let bestGlobalScore = -1;
+  let bestSafeScore = -1;
+  let optSafeGear = curGear;
+  let optSafeLoad = bestRLoadAtCurGear;
+  let optSafeEval = curGearOptEval;
+  let foundSafe = false;
+
+  let bestStrictScore = -1;
+  let optStrictGear = curGear;
+  let optStrictLoad = bestRLoadAtCurGear;
+  let optStrictEval = curGearOptEval;
   let foundLegal = false;
 
-  let lowestVolt = Number.POSITIVE_INFINITY;
-  let lowestVoltGear = curGear;
-  let lowestVoltLoad = bestRLoadAtCurGear;
-  let lowestVoltEval = curGearOptEval;
+  let lowestExcess = Number.POSITIVE_INFINITY;
+  let lowestExcessGear = curGear;
+  let lowestExcessLoad = bestRLoadAtCurGear;
+  let lowestExcessEval = curGearOptEval;
 
   for (const g of gearCandidates) {
     for (const rL of candidateLoads) {
       const ev = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, g, rL);
       if (ev.stalled || ev.elec_power_w <= 0) continue;
 
-      if (kidwindRules && ev.voltage_v < lowestVolt) {
-        lowestVolt = ev.voltage_v;
-        lowestVoltGear = g;
-        lowestVoltLoad = rL;
-        lowestVoltEval = ev;
-      }
-
-      if (
-        kidwindRules &&
-        (ev.voltage_v > KIDWIND_OFFICIAL_RULES.max_voltage_v ||
-          ev.current_a > KIDWIND_OFFICIAL_RULES.max_current_a)
-      ) {
-        continue;
+      if (kidwindRules) {
+        const excess = Math.max(ev.voltage_v / maxV, ev.current_a / maxI);
+        if (excess < lowestExcess) {
+          lowestExcess = excess;
+          lowestExcessGear = g;
+          lowestExcessLoad = rL;
+          lowestExcessEval = ev;
+        }
+        if (ev.voltage_v > maxV || ev.current_a > maxI) {
+          continue;
+        }
       }
 
       foundLegal = true;
       // Prefer operating near or slightly above peak_tsr (0.92..1.18 * peakTsr) so the turbine never stalls in tunnel gusts
       const inSweetSpot = ev.tsr >= 0.92 * peakTsr && ev.tsr <= 1.18 * peakTsr;
       const score = ev.elec_power_w * (inSweetSpot ? 1.05 : 0.9);
-      if (score > bestGlobalScore) {
-        bestGlobalScore = score;
-        optGear = g;
-        optRLoad = rL;
-        optEval = ev;
+      if (score > bestStrictScore) {
+        bestStrictScore = score;
+        optStrictGear = g;
+        optStrictLoad = rL;
+        optStrictEval = ev;
+      }
+      if (!kidwindRules || (ev.voltage_v <= safeMaxV && ev.current_a <= safeMaxI)) {
+        foundSafe = true;
+        if (score > bestSafeScore) {
+          bestSafeScore = score;
+          optSafeGear = g;
+          optSafeLoad = rL;
+          optSafeEval = ev;
+        }
       }
     }
   }
 
-  if (!foundLegal) {
-    if (kidwindRules && Number.isFinite(lowestVolt)) {
-      optGear = lowestVoltGear;
-      optRLoad = lowestVoltLoad;
-      optEval = lowestVoltEval;
+  if (foundSafe) {
+    optGear = optSafeGear;
+    optRLoad = optSafeLoad;
+    optEval = optSafeEval;
+  } else if (foundLegal) {
+    optGear = optStrictGear;
+    optRLoad = optStrictLoad;
+    optEval = optStrictEval;
+  } else {
+    if (kidwindRules && Number.isFinite(lowestExcess)) {
+      optGear = lowestExcessGear;
+      optRLoad = lowestExcessLoad;
+      optEval = lowestExcessEval;
     } else {
       optGear = 1.0;
-      optRLoad = kidwindRules ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm : curRLoad;
+      optRLoad = usRulesActive
+        ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm
+        : asiaRulesActive
+          ? Math.min(KIDWIND_ASIA_2026_RULES.max_load_ohm, Math.max(KIDWIND_ASIA_2026_RULES.min_load_ohm, curRLoad))
+          : curRLoad;
       optEval = evalCoupledPointOnSweep(bundle.sweep, peakTsr, kv, rInt, i0, optGear, optRLoad);
     }
   }
 
-  const currentOverVoltage = curVolt > KIDWIND_OFFICIAL_RULES.max_voltage_v + 1e-6;
-  const currentOverCurrent = curCurr > KIDWIND_OFFICIAL_RULES.max_current_a + 1e-6;
-  const loadMatchesRule =
-    !kidwindRules || Math.abs(curRLoad - KIDWIND_OFFICIAL_RULES.fixed_load_ohm) < 0.05;
-  const kidwindCompliant = !currentOverVoltage && !currentOverCurrent && loadMatchesRule;
+  const currentOverVoltage = curVolt > maxV + 1e-6;
+  const currentOverCurrent = curCurr > maxI + 1e-6;
+  const currentOverRadius =
+    asiaRulesActive && design.rotor.radius_mm > KIDWIND_ASIA_2026_RULES.max_rotor_radius_mm + 1e-6;
+  const loadMatchesRule = usRulesActive
+    ? Math.abs(curRLoad - KIDWIND_OFFICIAL_RULES.fixed_load_ohm) < 0.05
+    : asiaRulesActive
+      ? curRLoad >= KIDWIND_ASIA_2026_RULES.min_load_ohm - 1e-6 &&
+        curRLoad <= KIDWIND_ASIA_2026_RULES.max_load_ohm + 1e-6
+      : true;
+  const kidwindCompliant =
+    !currentOverVoltage && !currentOverCurrent && !currentOverRadius && loadMatchesRule;
 
   let complianceNote = "";
-  if (kidwindRules) {
+  if (usRulesActive) {
     if (currentOverVoltage || currentOverCurrent) {
       complianceNote = `DQ RISK: ${curVolt.toFixed(1)} V / ${(curCurr * 1000).toFixed(0)} mA exceeds KidWind 30 V / 1000 mA limit — lower Gear Ratio, pitch blades (+°), or shrink R`;
     } else if (!loadMatchesRule) {
@@ -4250,6 +4386,21 @@ export function optimizeGeneratorAndGearbox(
       complianceNote = "30 Ω Compliant · Stalled — lower Gear G (:1) so rotor can spin";
     } else {
       complianceNote = `KidWind Legal (${curVolt.toFixed(1)} V ≤ 30 V · ${(curCurr * 1000).toFixed(0)} mA ≤ 1000 mA @ 30 Ω)`;
+    }
+  } else if (asiaRulesActive) {
+    if (currentOverVoltage || currentOverCurrent) {
+      const radiusSuffix = currentOverRadius
+        ? ` and R=${design.rotor.radius_mm.toFixed(0)} mm > 500 mm (100 cm Ø)`
+        : "";
+      complianceNote = `DQ RISK: ${curVolt.toFixed(1)} V / ${(curCurr * 1000).toFixed(0)} mA exceeds Asia 2026 KW-GEN3 10 V / 300 mA limit${radiusSuffix} — tune VES-VL Ω or lower Gear Ratio`;
+    } else if (currentOverRadius) {
+      complianceNote = `DQ RISK: R=${design.rotor.radius_mm.toFixed(0)} mm exceeds Asia 2026 500 mm (100 cm Ø) tunnel envelope — shorten blade or hub`;
+    } else if (!loadMatchesRule) {
+      complianceNote = `Rule Check: Load R=${curRLoad.toFixed(1)} Ω must be inside VES-VL 2–200 Ω range`;
+    } else if (curStalled) {
+      complianceNote = "VES-VL Compliant · Stalled — raise VES-VL Ω or lower Gear G (:1) so rotor can spin";
+    } else {
+      complianceNote = `Asia 2026 Legal (${curVolt.toFixed(1)} V ≤ 10 V · ${(curCurr * 1000).toFixed(0)} mA ≤ 300 mA · VES-VL ${curRLoad.toFixed(0)} Ω)`;
     }
   } else if (currentOverVoltage || currentOverCurrent) {
     complianceNote = `Vernier 30 V / 1 A sensor limit exceeded (${curVolt.toFixed(1)} V · ${(curCurr * 1000).toFixed(0)} mA)`;
@@ -4274,11 +4425,10 @@ export function optimizeGeneratorAndGearbox(
 
   // Build 3 clear "How to Max Out" steps tailored to current state & rules
   const steps: string[] = [];
-  if (kidwindRules) {
+  if (usRulesActive) {
     if (
       !foundLegal &&
-      (optEval.voltage_v > KIDWIND_OFFICIAL_RULES.max_voltage_v ||
-        optEval.current_a > KIDWIND_OFFICIAL_RULES.max_current_a)
+      (optEval.voltage_v > maxV || optEval.current_a > maxI)
     ) {
       steps.push(
         `1. Avoid KidWind Sensor DQ (>30 V / >1 A): Even at ${optGear.toFixed(2)}:1 on the fixed 30 Ω Vernier load, output reaches ${optEval.voltage_v.toFixed(1)} V / ${(optEval.current_a * 1000).toFixed(0)} mA. Pitch blades positive (+3° to +8°) or reduce rotor radius.`,
@@ -4294,6 +4444,16 @@ export function optimizeGeneratorAndGearbox(
     } else {
       steps.push(
         `1. Fine-Tune Gear Ratio on 30 Ω Load: Keep Load R = 30 Ω (Vernier Go Direct Sensor) and set Gear Ratio = ${optGear.toFixed(2)}:1 for ${optEval.elec_power_w.toFixed(2)} W (${optEval.voltage_v.toFixed(1)} V, ${(optEval.current_a * 1000).toFixed(0)} mA).`,
+      );
+    }
+  } else if (asiaRulesActive) {
+    if (!foundLegal && (optEval.voltage_v > maxV || optEval.current_a > maxI)) {
+      steps.push(
+        `1. Keep KW-GEN3 Within ≤10 V / ≤300 mA: Closest point (${optGear.toFixed(2)}:1 @ VES-VL ${optRLoad.toFixed(0)} Ω) reaches ${optEval.voltage_v.toFixed(1)} V / ${(optEval.current_a * 1000).toFixed(0)} mA. Pitch blades positive (+3° to +8°) or adjust Gear G.`,
+      );
+    } else {
+      steps.push(
+        `1. Dial VES-VL & Gear Ratio for KW-GEN3: Set Gear Ratio = ${optGear.toFixed(2)}:1 and adjust Vernier Variable Load VES-VL to ${optRLoad.toFixed(0)} Ω (within ≤10 V, ≤300 mA) to reach ${optEval.elec_power_w.toFixed(2)} W (${optEval.voltage_v.toFixed(1)} V, ${(optEval.current_a * 1000).toFixed(0)} mA).`,
       );
     }
   } else if (regime === "stalled_overload") {
@@ -4318,7 +4478,7 @@ export function optimizeGeneratorAndGearbox(
     `2. Match Blade Design TSR to Tunnel Equilibrium: Set Rotor Design TSR λ = ${peakTsr.toFixed(2)} and click "Auto-Optimize Cp" so every station sits at its peak Cl/Cd glide angle (~6°).${gearboxNote}`,
   );
 
-  if (kidwindRules) {
+  if (usRulesActive) {
     if (design.rotor.wind_speed_mps <= 4.5) {
       steps.push(
         `3. Low-Wind KidWind Tunnel Rule Tip: You must start connected to the fixed 30 Ω Vernier load on a single unmodified KidWind generator. At ${design.rotor.wind_speed_mps.toFixed(1)} m/s, check that blades self-start against ${optGear.toFixed(1)}× gearbox friction.`,
@@ -4328,6 +4488,13 @@ export function optimizeGeneratorAndGearbox(
         `3. High-Wind KidWind Rule Tip: Stay strictly below Vernier sensor DQ caps (30 V, 1000 mA); optimized point predicts ${optEval.voltage_v.toFixed(1)} V / ${(optEval.current_a * 1000).toFixed(0)} mA @ 30 Ω. Enable a CF spar tube in 04 Print.`,
       );
     }
+  } else if (asiaRulesActive) {
+    const sizeWarn = currentOverRadius
+      ? ` Trim rotor R (${design.rotor.radius_mm.toFixed(0)} mm) <= 500 mm (100 cm Ø)!`
+      : ` Keep R <= 500 mm with no shroud/duct.`;
+    steps.push(
+      `3. Asia 2026 Pre-Run Reset & Tunnel Tip: Reset VES-VL dials to 2 Ω before start, then dial up toward ${optRLoad.toFixed(0)} Ω once spinning.${sizeWarn} Add a yaw tail vane for Tunnel B's 90° turntable.`,
+    );
   } else if (design.rotor.wind_speed_mps <= 4.5) {
     steps.push(
       `3. Low-Wind Tunnel Tip: At ${design.rotor.wind_speed_mps.toFixed(1)} m/s, keep R_load ≥ ${(1.6 * rInt).toFixed(1)} Ω during start-up so current draw doesn't brake the hub before the blades pass Cut-In.`,
@@ -4361,9 +4528,11 @@ export function optimizeGeneratorAndGearbox(
     gain_power_w: gainPowerW,
     gain_pct: gainPct,
     kidwind_rules_active: kidwindRules,
+    kidwind_ruleset: ruleSet,
     current_stalled: curStalled,
     current_over_voltage: currentOverVoltage,
     current_over_current: currentOverCurrent,
+    current_over_radius: currentOverRadius,
     kidwind_compliant: kidwindCompliant,
     compliance_note: complianceNote,
     how_to_max_out_steps: steps,

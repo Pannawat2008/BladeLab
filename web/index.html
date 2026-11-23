@@ -4076,6 +4076,7 @@
             <div class="field" style="margin-bottom: 8px">
               <label for="gen-preset">Generator Preset</label>
               <select id="gen-preset">
+                <option value="kidwind_asia_2026">KidWind Asia 2026 KW-GEN3 (Kv 366 · 40.1 Ω)</option>
                 <option value="kidwind_red">KidWind Red (Kv 240 · 6.2 Ω)</option>
                 <option value="kidwind_gen2">KidWind GEN2 (Kv 320 · 4.8 Ω)</option>
                 <option value="outrunner_bldc">Outrunner BLDC (Kv 100 · 1.4 Ω)</option>
@@ -4083,11 +4084,15 @@
                 <option value="custom">Custom Generator Spec</option>
               </select>
             </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px">
-              <label class="toggle-label" for="gen-kidwind-rules" title="Official KidWind Generator Division rules: fixed 30 Ω Vernier Go Direct Energy Sensor load, ≤30 V &amp; ≤1 A limit, single unmodified KidWind generator">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px">
+              <label class="toggle-label" for="gen-kidwind-rules" style="flex: 1; min-width: 0" title="Competition rules: US KidWind (fixed 30 Ω, ≤30 V, ≤1 A) or KidWind Asia 2026 (VES-VL 2–200 Ω, ≤10 V, ≤0.3 A, R ≤ 500 mm)">
                 <input id="gen-kidwind-rules" class="switch-toggle" type="checkbox" />
-                <span>KidWind Rules (30 Ω · ≤30 V · ≤1 A)</span>
+                <span id="gen-kidwind-rules-label" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">KidWind Rules (US / Asia)</span>
               </label>
+              <select id="gen-kidwind-rule-set" class="compact-select" aria-label="KidWind Competition Ruleset" style="width: auto; max-width: 132px; flex-shrink: 0; display: none">
+                <option value="us_30ohm">US 30 Ω</option>
+                <option value="asia_2026_vesvl">Asia VES-VL</option>
+              </select>
             </div>
             <div class="grid-2">
               <div class="field">

@@ -75,13 +75,16 @@ import {
   type GearboxLayoutMode,
   type GearboxStageMode,
   solveGearTeethForTargetRatio,
+  defaultRulesetForGeneratorPreset,
   GENERATOR_PRESETS,
   type GeneratorPresetKey,
   type HeatmapMode,
   inspectCpTsrAtSvgX,
   inspectWindPowerAtSvgX,
   isKidwindGeneratorPreset,
+  KIDWIND_ASIA_2026_RULES,
   KIDWIND_OFFICIAL_RULES,
+  type KidwindRulesetKey,
   optimizeGeneratorAndGearbox,
   parseExperimentalDataLog,
   parseLoadedProjectJson,
@@ -524,6 +527,8 @@ const bladePresetDesc = document.getElementById("blade-preset-desc");
 
 const selectGenPreset = document.getElementById("gen-preset") as HTMLSelectElement;
 const inputGenKidwindRules = document.getElementById("gen-kidwind-rules") as HTMLInputElement | null;
+const labelGenKidwindRules = document.getElementById("gen-kidwind-rules-label") as HTMLSpanElement | null;
+const selectGenKidwindRuleSet = document.getElementById("gen-kidwind-rule-set") as HTMLSelectElement | null;
 const inputGenKv = document.getElementById("gen-kv") as HTMLInputElement;
 const inputGenRInt = document.getElementById("gen-r-int") as HTMLInputElement;
 const inputGenGearRatio = document.getElementById("gen-gear-ratio") as HTMLInputElement;
@@ -2329,53 +2334,110 @@ function syncGearQuickButtons(gearRatio: number) {
   }
 }
 
+function getActiveKidwindRuleset(): KidwindRulesetKey {
+  return selectGenKidwindRuleSet?.value === "asia_2026_vesvl" ? "asia_2026_vesvl" : "us_30ohm";
+}
+
 function syncKidwindRulesUiState() {
   const rulesOn = Boolean(inputGenKidwindRules?.checked);
+  const ruleSet = getActiveKidwindRuleset();
+  const usFixed = rulesOn && ruleSet === "us_30ohm";
+  const asiaVesvl = rulesOn && ruleSet === "asia_2026_vesvl";
   const presetKey = (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey;
   const lockMotorFields = rulesOn && isKidwindGeneratorPreset(presetKey);
+  if (selectGenKidwindRuleSet) {
+    selectGenKidwindRuleSet.style.display = rulesOn ? "" : "none";
+  }
+  if (labelGenKidwindRules) {
+    labelGenKidwindRules.textContent = rulesOn ? "KidWind Rules" : "KidWind Rules (US / Asia)";
+  }
   if (inputGenRLoad) {
-    if (rulesOn) {
+    if (usFixed) {
       inputGenRLoad.value = String(KIDWIND_OFFICIAL_RULES.fixed_load_ohm);
+      inputGenRLoad.min = "0.1";
+      inputGenRLoad.max = "200";
+      inputGenRLoad.step = "0.25";
       inputGenRLoad.disabled = true;
       inputGenRLoad.title =
-        "Locked at 30 Ω by KidWind Generator Division rules (Vernier Go Direct Energy Sensor)";
+        "Locked at 30 Ω by US KidWind Generator Division rules (Vernier Go Direct Energy Sensor)";
+    } else if (asiaVesvl) {
+      inputGenRLoad.disabled = false;
+      inputGenRLoad.min = String(KIDWIND_ASIA_2026_RULES.min_load_ohm);
+      inputGenRLoad.max = String(KIDWIND_ASIA_2026_RULES.max_load_ohm);
+      inputGenRLoad.step = "1";
+      const curLoad = Number.parseFloat(inputGenRLoad.value);
+      if (
+        !Number.isFinite(curLoad) ||
+        curLoad < KIDWIND_ASIA_2026_RULES.min_load_ohm ||
+        curLoad > KIDWIND_ASIA_2026_RULES.max_load_ohm
+      ) {
+        inputGenRLoad.value = String(
+          Math.min(
+            KIDWIND_ASIA_2026_RULES.max_load_ohm,
+            Math.max(KIDWIND_ASIA_2026_RULES.min_load_ohm, Number.isFinite(curLoad) ? Math.round(curLoad) : 55),
+          ),
+        );
+      }
+      inputGenRLoad.title =
+        "Vernier Variable Load VES-VL (2–200 Ω; reset to 2 Ω pre-run, ≤10 V, ≤0.3 A)";
     } else {
       inputGenRLoad.disabled = false;
+      inputGenRLoad.min = "0.1";
+      inputGenRLoad.max = "200";
+      inputGenRLoad.step = "0.25";
       inputGenRLoad.title = "External resistive load in Ohms (Ω)";
     }
   }
   if (inputGenKv) {
     inputGenKv.disabled = lockMotorFields;
     inputGenKv.title = lockMotorFields
-      ? "Locked to stock KidWind generator Kv under KidWind Generator Division rules"
+      ? asiaVesvl
+        ? "Locked to organizer-supplied KidWind Asia 2026 KW-GEN3 Kv (366 RPM/V)"
+        : "Locked to stock KidWind generator Kv under KidWind Generator Division rules"
       : "";
   }
   if (inputGenRInt) {
     inputGenRInt.disabled = lockMotorFields;
     inputGenRInt.title = lockMotorFields
-      ? "Locked to stock KidWind generator R_int under KidWind Generator Division rules"
+      ? asiaVesvl
+        ? "Locked to organizer-supplied KidWind Asia 2026 KW-GEN3 R_int (40.1 Ω)"
+        : "Locked to stock KidWind generator R_int under KidWind Generator Division rules"
       : "";
   }
   if (btnMaxOutDrivetrain) {
-    btnMaxOutDrivetrain.textContent = rulesOn ? "Max Out Gear (30 Ω)" : "Max Out Gear & Load";
+    btnMaxOutDrivetrain.textContent = usFixed
+      ? "Max Out Gear (30 Ω)"
+      : asiaVesvl
+        ? "Max Out (VES-VL)"
+        : "Max Out Gear & Load";
   }
   if (btnMatchLoadOnly) {
-    btnMatchLoadOnly.disabled = rulesOn;
-    btnMatchLoadOnly.title = rulesOn
-      ? "Load R is fixed at 30 Ω under KidWind Generator Division rules"
-      : "Set Load R to optimal match at current gear ratio";
+    btnMatchLoadOnly.disabled = usFixed;
+    btnMatchLoadOnly.title = usFixed
+      ? "Load R is fixed at 30 Ω under US KidWind Generator Division rules"
+      : asiaVesvl
+        ? "Optimize VES-VL load resistance (2–200 Ω) within ≤10 V / ≤0.3 A at current gear"
+        : "Set Load R to optimal match at current gear ratio";
   }
 }
 
 function updateAeroPanel(design: Design) {
   try {
     const kidwindRules = Boolean(inputGenKidwindRules?.checked);
+    const ruleSet = getActiveKidwindRuleset();
     const kv = Number.parseFloat(inputGenKv.value) || 35;
     const rInt = Number.parseFloat(inputGenRInt.value) || 0.8;
     const gearRatio = Math.max(0.25, Number.parseFloat(inputGenGearRatio.value) || 1.0);
-    const rLoad = kidwindRules
-      ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm
-      : Math.max(0.1, Number.parseFloat(inputGenRLoad.value) || 5.0);
+    const rawRLoad = Math.max(0.1, Number.parseFloat(inputGenRLoad.value) || 5.0);
+    const rLoad =
+      kidwindRules && ruleSet === "us_30ohm"
+        ? KIDWIND_OFFICIAL_RULES.fixed_load_ohm
+        : kidwindRules && ruleSet === "asia_2026_vesvl"
+          ? Math.min(
+              KIDWIND_ASIA_2026_RULES.max_load_ohm,
+              Math.max(KIDWIND_ASIA_2026_RULES.min_load_ohm, rawRLoad),
+            )
+          : rawRLoad;
     const presetKey = (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey;
     const presetI0 = GENERATOR_PRESETS[presetKey]?.no_load_current_a ?? 0.05;
     syncGearQuickButtons(gearRatio);
@@ -2459,13 +2521,14 @@ function updateAeroPanel(design: Design) {
       gear_ratio: gearRatio,
       i0: presetI0,
       kidwind_rules: kidwindRules,
+      kidwind_ruleset: ruleSet,
     });
     latestMaxOutReport = maxOut;
     if (genOptTarget) {
       genOptTarget.textContent = `${maxOut.opt_gear_ratio.toFixed(1)}:1 · ${maxOut.opt_r_load_ohm.toFixed(0)}Ω (${maxOut.opt_elec_power_w.toFixed(1)}W)`;
     }
     if (genRegimeBadge) {
-      if (maxOut.current_over_voltage || maxOut.current_over_current) {
+      if (maxOut.current_over_voltage || maxOut.current_over_current || maxOut.current_over_radius) {
         genRegimeBadge.textContent = maxOut.compliance_note;
         genRegimeBadge.classList.toggle("ok", false);
         genRegimeBadge.classList.toggle("warn", false);
@@ -3271,6 +3334,7 @@ function readCurrentWorkbenchUiSnapshot(): WorkbenchUiSnapshot {
     blade_preset: activeBladePreset,
     gen_preset: (selectGenPreset?.value || "low_rpm_pmg") as GeneratorPresetKey,
     gen_kidwind_rules: Boolean(inputGenKidwindRules?.checked),
+    gen_kidwind_ruleset: getActiveKidwindRuleset(),
     gen_gear_ratio: Math.max(0.25, Number.parseFloat(inputGenGearRatio?.value) || 1.0),
     gen_kv: Number.parseFloat(inputGenKv.value) || 35,
     gen_r_int: Number.parseFloat(inputGenRInt.value) || 0.8,
@@ -3433,6 +3497,10 @@ function applyWorkbenchUiSnapshotToDom(wb: WorkbenchUiSnapshot) {
       wb.gen_kidwind_rules !== undefined
         ? Boolean(wb.gen_kidwind_rules)
         : isKidwindGeneratorPreset(presetKey);
+  }
+  if (selectGenKidwindRuleSet) {
+    selectGenKidwindRuleSet.value =
+      wb.gen_kidwind_ruleset ?? defaultRulesetForGeneratorPreset(presetKey);
   }
   if (inputGenGearRatio) {
     inputGenGearRatio.value = String(wb.gen_gear_ratio ?? 1.0);
@@ -5293,6 +5361,9 @@ function applySelectedBladePreset(presetKey: BladeWindPresetKey) {
   if (inputGenKidwindRules) {
     inputGenKidwindRules.checked = isKidwindGeneratorPreset(genPresetKey);
   }
+  if (selectGenKidwindRuleSet && isKidwindGeneratorPreset(genPresetKey)) {
+    selectGenKidwindRuleSet.value = defaultRulesetForGeneratorPreset(genPresetKey);
+  }
   if (genSpec) {
     inputGenKv.value = String(genSpec.kv_rpm_per_v);
     inputGenRInt.value = String(genSpec.r_int_ohm);
@@ -5322,6 +5393,9 @@ selectGenPreset.addEventListener("change", () => {
   if (inputGenKidwindRules) {
     inputGenKidwindRules.checked = isKidwindGeneratorPreset(key);
   }
+  if (selectGenKidwindRuleSet && isKidwindGeneratorPreset(key)) {
+    selectGenKidwindRuleSet.value = defaultRulesetForGeneratorPreset(key);
+  }
   if (spec && key !== "custom") {
     inputGenKv.value = String(spec.kv_rpm_per_v);
     inputGenRInt.value = String(spec.r_int_ohm);
@@ -5340,6 +5414,12 @@ inputGenKidwindRules?.addEventListener("change", () => {
   scheduleAutoSave();
 });
 
+selectGenKidwindRuleSet?.addEventListener("change", () => {
+  syncKidwindRulesUiState();
+  updateAeroPanel(workingDesign);
+  scheduleAutoSave();
+});
+
 [inputGenKv, inputGenRInt, inputGenGearRatio, inputGenRLoad, inputSiteAvgWind].forEach((el) => {
   el.addEventListener("change", () => {
     if (el === inputGenKv || el === inputGenRInt) {
@@ -5349,6 +5429,17 @@ inputGenKidwindRules?.addEventListener("change", () => {
       const g = Math.max(0.25, Math.min(16, parseFloat(inputGenGearRatio.value) || 1.0));
       inputGenGearRatio.value = String(g);
       syncGearQuickButtons(g);
+    }
+    if (
+      el === inputGenRLoad &&
+      inputGenKidwindRules?.checked &&
+      getActiveKidwindRuleset() === "asia_2026_vesvl"
+    ) {
+      const r = Math.max(
+        KIDWIND_ASIA_2026_RULES.min_load_ohm,
+        Math.min(KIDWIND_ASIA_2026_RULES.max_load_ohm, parseFloat(inputGenRLoad.value) || 55.0),
+      );
+      inputGenRLoad.value = String(r);
     }
     updateAeroPanel(workingDesign);
     scheduleAutoSave();
