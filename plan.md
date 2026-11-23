@@ -3,8 +3,8 @@
 > This file is the single source of truth for the project.
 > It acts as the master plan, agent rulebook, and shared memory system (§9).
 >
-> **MEMORY_VERSION: 111**
-> **LAST_UPDATED: 2026-11-23 12:20 (UTC+7) by geom-1**
+> **MEMORY_VERSION: 112**
+> **LAST_UPDATED: 2026-11-23 13:07 (UTC+7) by geom-1**
 
 ---
 
@@ -596,6 +596,9 @@ pub fn simulate(b: &ResolvedBlade, polars: &PolarSet, op: &OperatingPoint) -> Re
 - **F-geom1-081** | 2026-11-23 12:20 | geom-1 | T-105
   Baked the tuned 1-click **KidWind Asia 2026 Slender Scimitar (`asia_2026_scimitar`)** preset into Quick Wind Presets (`web/src/state.ts`, `web/index.html`, `web/src/main.ts`, `web/scripts/types.test.mjs`): (1) added `asia_2026_scimitar` to `BladeWindPresetKey` & `BLADE_WIND_PRESETS` (`R = 490 mm`, `hub = 30 mm`, `L = 460 mm`, `3B`, `TSR 5.5`, cosine `38 → 52 → 21 mm` @ `40% / 22%`, `16.0° → 7.5° → 1.0°`, `S833` root + `SG6043` mid/tip, `5 mm` CF spar, paired with `kidwind_asia_2026`, `10.5:1` gear, `44 Ω` VES-VL load); tip chord was raised from `18 mm` to **`21 mm`** after `blade_wasm::build_mesh` enforced `SG6043`'s `0.0024` trailing-edge ratio (`0.05 / 0.0024 = 20.83 mm`, yielding `0.0504 mm ≥ 0.05 mm` printable TE while preserving `2.04 W @ 3.5 m/s`, `2.71 W @ 4.0 m/s`, and non-stalling `2.0 m/s @ 2 Ω` start up to `16:1`); (2) updated `.preset-strip` to `repeat(3, minmax(0, 1fr))` 3×2 grid and wired `#btn-preset-asia-2026` (`Asia 2026`); (3) verified `npm.cmd run lint/typecheck`, `31/31` Node tests (`build_mesh` + WASM aero legal & startup checks), Vite build (`484 ms`), and headless Chrome CDP checks at `1366×768` (Atelier) and `1280×720` (Dark) (`0` errors, `0` overflows in both left & right docks, `#btn-preset-asia-2026` live telemetry `2.0 W · 9.5 V ≤ 10 V · 215 mA ≤ 300 mA`).
   refs: web/src/state.ts, web/index.html, web/src/main.ts, web/scripts/types.test.mjs | supersedes: –
+- **F-geom1-082** | 2026-11-23 13:07 | geom-1 | T-105
+  Updated the baked 1-click **KidWind Asia 2026 Slender Scimitar (`asia_2026_scimitar`)** preset to a sub-400 mm blade span (`L = 390 mm`, `hub = 30 mm`, `R = 420 mm` / `84 cm Ø`) across `web/src/state.ts`, `web/index.html`, and `web/scripts/types.test.mjs`: cosine belly `40% / 22%`, `36 → 48 → 21 mm` chords (`17.0° → 8.0° → 1.5°` twist, `S833` root + `SG6043` mid/tip, `5 mm` CF spar) paired with `kidwind_asia_2026` at `11:1 @ 42 Ω` VES-VL (`2.16 W` / `9.54 V` / `227 mA` @ `3.5 m/s`, `2.89 W @ 4.0 m/s`, non-stalling `2.0 m/s @ 2 Ω` startup up to `12:1`). Verified `npm.cmd run lint/typecheck`, `31/31` Node tests, Vite build (`642 ms`), and headless Chrome CDP checks at `1366×768` (Atelier) and `1280×720` (Dark) (`0` errors, `0` overflows, `#btn-preset-asia-2026` live telemetry `2.2 W · 9.5 V ≤ 10 V · 227 mA ≤ 300 mA · Asia 2026 Legal`).
+  refs: web/src/state.ts, web/index.html, web/scripts/types.test.mjs | supersedes: F-geom1-081
 
 ### 9.3 Decisions (D)
 
@@ -1087,3 +1090,6 @@ note="user reported: 'now the model export as Step are also has ripple rought se
 [ACK] 2026-11-23T12:14:35+07:00 agent=geom-1 mem=v110 last_entry=F-geom1-080 task=T-105
 [ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-080 (KidWind Asia 2026 KW-GEN3 + VES-VL ruleset). Baking 1-click Asia 2026 Slender Scimitar (`asia_2026_scimitar`) blade + drivetrain preset (`R=490`, `38->52->18`, `10.5:1 @ 44 ohm`, `5 mm CF spar`) into `web/`.
 [END] 2026-11-23T12:20:00+07:00 agent=geom-1 mem=v111 note="Baked 1-click KidWind Asia 2026 Slender Scimitar preset (#btn-preset-asia-2026 / asia_2026_scimitar: R 490mm, Hub 30mm, L 460mm, 38->52->21mm S833/SG6043 printable TE>=0.05mm, 5mm CF spar, KW-GEN3 + 10.5:1 @ 44 ohm VES-VL) in 3x2 Quick Wind Presets strip; verified npm lint/typecheck, 31/31 Node tests, Vite build (484ms), and headless Chrome CDP checks at 1366x768 & 1280x720 (0 errors, 0 overflows in both docks); F-geom1-081 recorded"
+[ACK] 2026-11-23T13:05:25+07:00 agent=geom-1 mem=v111 last_entry=F-geom1-081 task=T-105
+[ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-081 (baked asia_2026_scimitar preset). Updating `asia_2026_scimitar` to sub-400 mm blade length (`L = 390 mm`, `Hub = 30 mm`, `R = 420 mm`, `36->48->21 mm`, `17->8.0->1.5 deg`, `11:1 @ 42 ohm`) across `web/src/state.ts`, `web/index.html`, and `web/scripts/types.test.mjs`.
+[END] 2026-11-23T13:07:30+07:00 agent=geom-1 mem=v112 note="Updated baked asia_2026_scimitar preset to sub-400mm blade length (L 390mm, Hub 30mm, R 420mm, 36->48->21mm S833/SG6043, 17->8.0->1.5 deg, 11:1 @ 42 ohm VES-VL, 5mm CF spar); verified npm lint/typecheck, 31/31 Node tests, Vite build (642ms), and headless Chrome CDP checks at 1366x768 & 1280x720 (0 errors, 0 overflows, Asia 2026 Legal 2.2 W / 9.5 V / 227 mA); F-geom1-082 recorded"

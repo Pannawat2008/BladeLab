@@ -3561,12 +3561,12 @@ export interface BladeWindPresetSpec {
 export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec> = {
   asia_2026_scimitar: {
     key: "asia_2026_scimitar",
-    name: "KidWind Asia 2026 Slender Scimitar (R 490 mm · 38→52→21 mm · KW-GEN3 · 10.5:1)",
-    badge: "Asia 2026 R490",
+    name: "KidWind Asia 2026 Slender Scimitar (L 390 mm · R 420 mm · 36→48→21 mm · KW-GEN3 · 11:1)",
+    badge: "Asia 2026 L390",
     description:
-      "Tuned 490 mm (98 cm Ø) Slender Scimitar (38→52→21 mm, 16°→7.5°→1.0°, S833 root + SG6043 mid/tip, 5 mm CF spar) for KidWind Asia 2026 KW-GEN3 (Kv 366 · 40.1 Ω) + VES-VL (2–200 Ω). Self-starts at 2.0 m/s on 2 Ω up to 16:1; universal 10.5:1 gear stays legal from 2.0 to 4.0 m/s (up to 2.71 W).",
+      "Tuned sub-400 mm blade (L = 390 mm, Hub = 30 mm, R = 420 mm / 84 cm Ø) Slender Scimitar (36→48→21 mm, 17°→8.0°→1.5°, S833 root + SG6043 mid/tip, 5 mm CF spar) for KidWind Asia 2026 KW-GEN3 (Kv 366 · 40.1 Ω) + VES-VL (2–200 Ω). Self-starts at 2.0 m/s on 2 Ω up to 12:1; universal 11:1 stays legal from 2.0 to 4.0 m/s (2.16 W @ 3.5 m/s, 2.89 W @ 4.0 m/s).",
     rotor: {
-      radius_mm: 490,
+      radius_mm: 420,
       hub_radius_mm: 30,
       blade_count: 3,
       design_tsr: 5.5,
@@ -3581,25 +3581,25 @@ export const BLADE_WIND_PRESETS: Record<BladeWindPresetKey, BladeWindPresetSpec>
     },
     sections: {
       root: {
-        chord_mm: 38,
-        twist_deg: 16.0,
+        chord_mm: 36,
+        twist_deg: 17.0,
         airfoil: { type: "named", name: "S833" },
       },
       mid: {
-        chord_mm: 52,
-        twist_deg: 7.5,
+        chord_mm: 48,
+        twist_deg: 8.0,
         airfoil: { type: "named", name: "SG6043" },
       },
       tip: {
         chord_mm: 21,
-        twist_deg: 1.0,
+        twist_deg: 1.5,
         airfoil: { type: "named", name: "SG6043" },
       },
     },
     recommended_drivetrain: {
       gen_preset: "kidwind_asia_2026",
-      gear_ratio: 10.5,
-      r_load_ohm: 44.0,
+      gear_ratio: 11.0,
+      r_load_ohm: 42.0,
       site_avg_wind_mps: 3.5,
     },
     recommended_spar_mm: 5.0,

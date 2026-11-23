@@ -2415,19 +2415,21 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
   assert.equal(parsedAsiaSnap.workbench.gen_kidwind_ruleset, "asia_2026_vesvl");
   assert.equal(parsedAsiaSnap.workbench.gen_r_load, 55.0);
 
-  // 6. Baked Asia 2026 Slender Scimitar 1-click preset checks
+  // 6. Baked Asia 2026 Slender Scimitar 1-click preset checks (< 400 mm blade length)
   const asiaPresetSpec = BLADE_WIND_PRESETS.asia_2026_scimitar;
   assert.ok(asiaPresetSpec, "Missing asia_2026_scimitar blade preset");
-  assert.equal(asiaPresetSpec.rotor.radius_mm, 490);
+  assert.equal(asiaPresetSpec.rotor.radius_mm, 420);
   assert.equal(asiaPresetSpec.rotor.hub_radius_mm, 30);
+  assert.equal(asiaPresetSpec.rotor.radius_mm - asiaPresetSpec.rotor.hub_radius_mm, 390);
+  assert.ok(asiaPresetSpec.rotor.radius_mm - asiaPresetSpec.rotor.hub_radius_mm < 400);
   assert.equal(asiaPresetSpec.rotor.blade_count, 3);
   assert.equal(asiaPresetSpec.rotor.design_tsr, 5.5);
-  assert.equal(asiaPresetSpec.sections.root.chord_mm, 38);
-  assert.equal(asiaPresetSpec.sections.mid.chord_mm, 52);
+  assert.equal(asiaPresetSpec.sections.root.chord_mm, 36);
+  assert.equal(asiaPresetSpec.sections.mid.chord_mm, 48);
   assert.equal(asiaPresetSpec.sections.tip.chord_mm, 21);
   assert.equal(asiaPresetSpec.recommended_drivetrain.gen_preset, "kidwind_asia_2026");
-  assert.equal(asiaPresetSpec.recommended_drivetrain.gear_ratio, 10.5);
-  assert.equal(asiaPresetSpec.recommended_drivetrain.r_load_ohm, 44.0);
+  assert.equal(asiaPresetSpec.recommended_drivetrain.gear_ratio, 11.0);
+  assert.equal(asiaPresetSpec.recommended_drivetrain.r_load_ohm, 42.0);
   assert.equal(asiaPresetSpec.recommended_spar_mm, 5.0);
 
   const { design: asiaPresetDesign } = applyBladeWindPreset(initialDesign, "asia_2026_scimitar");
@@ -2449,7 +2451,7 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
   assert.equal(asiaPresetBundle.generator_match.stalled, false);
   assert.ok(asiaPresetBundle.generator_match.generator.terminal_voltage_v <= 10.0);
   assert.ok(asiaPresetBundle.generator_match.generator.current_a <= 0.3);
-  assert.ok(asiaPresetBundle.generator_match.generator.electrical_power_w >= 2.0);
+  assert.ok(asiaPresetBundle.generator_match.generator.electrical_power_w >= 2.1);
   const asiaPresetOpt = optimizeGeneratorAndGearbox(asiaPresetDesign, asiaPresetBundle, {
     kv: asiaGen.kv_rpm_per_v,
     r_int: asiaGen.r_int_ohm,
