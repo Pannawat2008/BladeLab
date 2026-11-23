@@ -216,7 +216,7 @@ Statuses: `todo` | `in-progress` | `blocked` | `review` | `done`
 | T-102 | Hub (cylinder + shaft bore + D-flat) via 2D extrusion | cad | geom-1 | done | 2026-11-05 20:40 | T-010 | Generates STEP without requiring boolean operations |
 | T-103 | Axum API: `POST /api/v1/export` (stl, 3mf, step) with blake3 caching | server | geom-1 | done | 2026-11-05 23:43 | T-005, T-006 | Integration tests pass; panics do not crash server |
 | T-104 | blade-cli: `bladelab export design.json --format step` | server | geom-1 | done | 2026-11-05 23:36 | T-005, T-006 | Generates valid files for all formats |
-| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | done | 2026-11-21 17:58 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
+| T-105 | UI: Layer 1 controls + Layer 3 per-station table | web | geom-1 | in-progress | 2026-11-23 10:37 | T-008 | Live updates 3D model on parameter edit, supports undo/redo |
 | T-106 | ts-rs: Automated generation of TS types from blade-model | web | geom-1 | done | 2026-11-06 00:20 | T-002 | CI checks that generated types match latest Rust structs |
 | T-107 | Golden tests: 5 fixtures + volume/bounding box snapshots | qa | geom-1 | done | 2026-11-06 00:40 | T-005 | CI fails if geometry changes unexpectedly |
 
@@ -1069,3 +1069,5 @@ note="user reported: 'now the model export as Step are also has ripple rought se
 [ACK] 2026-11-21T17:40:00+07:00 agent=geom-1 mem=v107 last_entry=F-geom1-077 task=T-105
 [ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards, and F-geom1-077 (Nose Cone v2.1). Integrating Manifold-3D swept blade-root fairings (Delta Strake default, Root Boot, Twist Fillet, Off) with Fairing Span & Curve Blend sliders across web/src/nosecone.ts, web/index.html, web/src/main.ts, and web/scripts/types.test.mjs.
 [END] 2026-11-21T17:58:00+07:00 agent=geom-1 mem=v108 note="Integrated Manifold-3D swept blade-root fairings (Off, 1. Delta Strake [default], 2. Root Boot, 3. Twist Fillet + Fairing Span 10-48mm + Curve Blend 0-100%) in Nose Cone Studio with corner-covering pCorner spline, 42-deg skirt bevel lift, widened outboard cutter sector, and 2D blueprint overlay; verified lint/typecheck/29/29 tests (all 3 fairing styles + 1Solid-v2 STL watertightness components=1)/vite build (408ms) and 7 Chrome captures (captures-nose-v3, 0 errors/0 overflows); F-geom1-078 recorded"
+[ACK] 2026-11-23T10:37:50+07:00 agent=geom-1 mem=v108 last_entry=F-geom1-078 task=T-105
+[ACK-NOTE] geom-1: Confirmed D-lead1-001..006, D-geom1-009, §6.1 standards (f64, I/O-free wasm32-clean core crates, no panics/NaN), and F-geom1-078. Fixing the stalled-generator solver bug in `crates/blade-aero`, expanding the drivetrain optimizer search to `16:1`, and enforcing official KidWind Generator Division rules (`30 ohm` fixed Vernier Go Direct Energy Sensor load, `<= 30 V`, `<= 1 A`, single unmodified KidWind generator) across `blade-aero` and `web/`.
