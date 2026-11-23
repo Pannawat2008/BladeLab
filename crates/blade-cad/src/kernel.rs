@@ -75,6 +75,96 @@ impl TruckKernel {
         Self
     }
 
+    /// Builds a smooth B-spline blade solid (`blade_solid`) optionally pierced
+    /// by an exact analytical cylindrical carbon-fiber spar bore `[x0, y0, z0, x1, y1, z1, r]`
+    /// with zero boolean operations (`F-lead1-002`) and zero facet ripples.
+    pub fn blade_solid_with_spar_bore(
+        &self,
+        surface: &BladeSurface,
+        bore: Option<[f64; 7]>,
+    ) -> Result<Solid, CadError> {
+        let Some([x0, y0, z0, x1, y1, z1, r]) = bore else {
+            return self.blade_solid(surface);
+        };
+        if ![x0, y0, z0, x1, y1, z1, r].iter().all(|v| v.is_finite()) || r <= 0.05 || z1 <= z0 + 0.1
+        {
+            return self.blade_solid(surface);
+        }
+
+        let section_count = surface.section_count();
+        let point_count = surface.point_count();
+        if section_count < 2 {
+            return Err(CadError::TooFewSections { got: section_count });
+        }
+        if point_count < 3 {
+            return Err(CadError::TooFewContourPoints { got: point_count });
+        }
+        if surface.control_points().len() != section_count {
+            return Err(CadError::InconsistentTopology {
+                sections: section_count,
+                control_rows: surface.control_points().len(),
+            });
+        }
+
+        let root_points = surface.section_at(0)?;
+        let tip_points = surface.section_at(section_count - 1)?;
+        let z_root = root_points[0].z;
+        let z_tip = tip_points[0].z;
+
+        let seg_z0 = z0.max(z_root);
+        let seg_z1_raw = z1.min(z_tip);
+        if seg_z1_raw <= seg_z0 + 0.1 || (seg_z0 - z_root).abs() > 1e-3 {
+            return self.blade_solid(surface);
+        }
+        let seg_z0 = z_root;
+        let opens_tip = (z_tip - seg_z1_raw).abs() <= 1e-3;
+        let seg_z1 = if opens_tip { z_tip } else { seg_z1_raw };
+
+        let t0 = ((seg_z0 - z0) / (z1 - z0)).clamp(0.0, 1.0);
+        let t1 = ((seg_z1 - z0) / (z1 - z0)).clamp(0.0, 1.0);
+        let bx0 = x0 + t0 * (x1 - x0);
+        let by0 = y0 + t0 * (y1 - y0);
+        let bx1 = x0 + t1 * (x1 - x0);
+        let by1 = y0 + t1 * (y1 - y0);
+
+        let (side, te, root_wire, tip_wire) =
+            build_blade_outer_parts(surface, &root_points, &tip_points)?;
+
+        let bore_root_ccw = circle_wire_at(bx0, by0, seg_z0, r);
+        let root_cap =
+            builder::try_attach_plane(&[root_wire, bore_root_ccw.clone()]).map_err(topology)?;
+        let wall_shell = builder::tsweep(
+            &bore_root_ccw.inverse(),
+            Vector3::new(bx1 - bx0, by1 - by0, seg_z1 - seg_z0),
+        );
+        let top_wire_wall = wall_shell
+            .extract_boundaries()
+            .into_iter()
+            .find(|w| {
+                w.front_vertex()
+                    .is_some_and(|v| (v.point().z - seg_z1).abs() < 1e-3)
+            })
+            .ok_or_else(|| {
+                CadError::Topology("failed to locate top boundary wire of spar bore wall".into())
+            })?;
+        let bore_top_cw = top_wire_wall.inverse();
+
+        let mut faces = vec![side, te, root_cap];
+        if opens_tip {
+            let tip_cap = builder::try_attach_plane(&[tip_wire, bore_top_cw]).map_err(topology)?;
+            faces.push(tip_cap);
+        } else {
+            let tip_cap = builder::try_attach_plane(&[tip_wire]).map_err(topology)?;
+            let bore_end_cap = builder::try_attach_plane(&[bore_top_cw]).map_err(topology)?;
+            faces.push(tip_cap);
+            faces.push(bore_end_cap);
+        }
+        faces.extend(wall_shell);
+
+        let shell: Shell = faces.into_iter().collect();
+        Solid::try_new(vec![shell]).map_err(topology)
+    }
+
     /// Converts a closed, watertight, manifold triangle [`blade_mesh::Mesh`] into a [`Solid`].
     pub fn mesh_solid(&self, mesh: &blade_mesh::Mesh) -> Result<Solid, CadError> {
         let vertices: Vec<Vertex> = mesh
@@ -159,85 +249,8 @@ impl CadKernel for TruckKernel {
 
         let root_points = surface.section_at(0)?;
         let tip_points = surface.section_at(section_count - 1)?;
-
-        // One vertex per contour point on each end, shared by side, cap and
-        // trailing-edge faces.
-        let root_vertices: Vec<Vertex> = root_points
-            .iter()
-            .map(|point| Ok(builder::vertex(to_point(*point)?)))
-            .collect::<Result<_, CadError>>()?;
-        let tip_vertices: Vec<Vertex> = tip_points
-            .iter()
-            .map(|point| Ok(builder::vertex(to_point(*point)?)))
-            .collect::<Result<_, CadError>>()?;
-
-        let root_edges: Vec<Edge> = (0..point_count)
-            .map(|index| {
-                line_edge(
-                    &root_vertices[index],
-                    &root_vertices[(index + 1) % point_count],
-                )
-            })
-            .collect::<Result<_, _>>()?;
-        let tip_edges: Vec<Edge> = (0..point_count)
-            .map(|index| {
-                line_edge(
-                    &tip_vertices[index],
-                    &tip_vertices[(index + 1) % point_count],
-                )
-            })
-            .collect::<Result<_, _>>()?;
-
-        // Span-direction boundary curves at the upper (index 0) and lower
-        // (index P−1) trailing-edge points.
-        let upper_te = Edge::try_new(&root_vertices[0], &tip_vertices[0], span_curve(surface, 0)?)
-            .map_err(topology)?;
-        let lower_te = Edge::try_new(
-            &root_vertices[point_count - 1],
-            &tip_vertices[point_count - 1],
-            span_curve(surface, point_count - 1)?,
-        )
-        .map_err(topology)?;
-
-        // Side face: root contour (0 → P−2), lower TE, tip contour reversed,
-        // upper TE reversed.
-        let mut side_edges = Vec::with_capacity(2 * point_count);
-        side_edges.extend(root_edges[..point_count - 1].iter().cloned());
-        side_edges.push(lower_te.clone());
-        side_edges.extend(tip_edges[..point_count - 1].iter().rev().map(Edge::inverse));
-        side_edges.push(upper_te.inverse());
-        let side_wire: Wire = side_edges.into();
-        let side = Face::try_new(
-            vec![side_wire],
-            Surface::BSplineSurface(side_surface(surface)?),
-        )
-        .map_err(topology)?;
-
-        // Trailing-edge face: upper TE, tip TE segment, lower TE reversed,
-        // root TE segment.
-        let te_wire: Wire = vec![
-            upper_te,
-            tip_edges[point_count - 1].inverse(),
-            lower_te.inverse(),
-            root_edges[point_count - 1].clone(),
-        ]
-        .into();
-        let te = Face::try_new(vec![te_wire], Surface::BSplineSurface(te_surface(surface)?))
-            .map_err(topology)?;
-
-        // Root cap traverses the contour clockwise (outward normal −z).
-        let mut root_wire_edges = Vec::with_capacity(point_count);
-        root_wire_edges.push(root_edges[point_count - 1].inverse());
-        root_wire_edges.extend(
-            root_edges[..point_count - 1]
-                .iter()
-                .rev()
-                .map(Edge::inverse),
-        );
-        let root_wire: Wire = root_wire_edges.into();
-
-        // Tip cap traverses the contour counter-clockwise (outward normal +z).
-        let tip_wire: Wire = tip_edges.into();
+        let (side, te, root_wire, tip_wire) =
+            build_blade_outer_parts(surface, &root_points, &tip_points)?;
 
         let root_cap = builder::try_attach_plane(&[root_wire]).map_err(topology)?;
         let tip_cap = builder::try_attach_plane(&[tip_wire]).map_err(topology)?;
@@ -357,26 +370,115 @@ fn to_point(point: blade_geom::Point3) -> Result<Point3, CadError> {
     Ok(Point3::new(point.x, point.y, point.z))
 }
 
-/// Point with polar angle (radians) on the unit flat z = 0.
-fn polar(radius: f64, angle: f64) -> Point3 {
-    Point3::new(radius * angle.cos(), radius * angle.sin(), 0.0)
+/// Builds shared side B-spline face, trailing-edge face, CW root boundary wire, and CCW tip wire.
+fn build_blade_outer_parts(
+    surface: &BladeSurface,
+    root_points: &[blade_geom::Point3],
+    tip_points: &[blade_geom::Point3],
+) -> Result<(Face, Face, Wire, Wire), CadError> {
+    let point_count = surface.point_count();
+    let root_vertices: Vec<Vertex> = root_points
+        .iter()
+        .map(|point| Ok(builder::vertex(to_point(*point)?)))
+        .collect::<Result<_, CadError>>()?;
+    let tip_vertices: Vec<Vertex> = tip_points
+        .iter()
+        .map(|point| Ok(builder::vertex(to_point(*point)?)))
+        .collect::<Result<_, CadError>>()?;
+
+    let root_edges: Vec<Edge> = (0..point_count)
+        .map(|index| {
+            line_edge(
+                &root_vertices[index],
+                &root_vertices[(index + 1) % point_count],
+            )
+        })
+        .collect::<Result<_, _>>()?;
+    let tip_edges: Vec<Edge> = (0..point_count)
+        .map(|index| {
+            line_edge(
+                &tip_vertices[index],
+                &tip_vertices[(index + 1) % point_count],
+            )
+        })
+        .collect::<Result<_, _>>()?;
+
+    let upper_te = Edge::try_new(&root_vertices[0], &tip_vertices[0], span_curve(surface, 0)?)
+        .map_err(topology)?;
+    let lower_te = Edge::try_new(
+        &root_vertices[point_count - 1],
+        &tip_vertices[point_count - 1],
+        span_curve(surface, point_count - 1)?,
+    )
+    .map_err(topology)?;
+
+    let mut side_edges = Vec::with_capacity(2 * point_count);
+    side_edges.extend(root_edges[..point_count - 1].iter().cloned());
+    side_edges.push(lower_te.clone());
+    side_edges.extend(tip_edges[..point_count - 1].iter().rev().map(Edge::inverse));
+    side_edges.push(upper_te.inverse());
+    let side_wire: Wire = side_edges.into();
+    let side = Face::try_new(
+        vec![side_wire],
+        Surface::BSplineSurface(side_surface(surface)?),
+    )
+    .map_err(topology)?;
+
+    let te_wire: Wire = vec![
+        upper_te,
+        tip_edges[point_count - 1].inverse(),
+        lower_te.inverse(),
+        root_edges[point_count - 1].clone(),
+    ]
+    .into();
+    let te = Face::try_new(vec![te_wire], Surface::BSplineSurface(te_surface(surface)?))
+        .map_err(topology)?;
+
+    let mut root_wire_edges = Vec::with_capacity(point_count);
+    root_wire_edges.push(root_edges[point_count - 1].inverse());
+    root_wire_edges.extend(
+        root_edges[..point_count - 1]
+            .iter()
+            .rev()
+            .map(Edge::inverse),
+    );
+    let root_wire: Wire = root_wire_edges.into();
+    let tip_wire: Wire = tip_edges.into();
+
+    Ok((side, te, root_wire, tip_wire))
 }
 
-/// Closed CCW wire tracing a full circle of `radius` as three 120° arcs.
-fn circle_wire(radius: f64) -> Wire {
+/// Point with polar angle (radians) at plane `z = cz`.
+fn polar_at(cx: f64, cy: f64, cz: f64, radius: f64, angle: f64) -> Point3 {
+    Point3::new(cx + radius * angle.cos(), cy + radius * angle.sin(), cz)
+}
+
+/// Point with polar angle (radians) on the unit flat z = 0.
+fn polar(radius: f64, angle: f64) -> Point3 {
+    polar_at(0.0, 0.0, 0.0, radius, angle)
+}
+
+/// Closed CCW wire tracing a full circle of `radius` at `(cx, cy, cz)` as three 120° arcs.
+fn circle_wire_at(cx: f64, cy: f64, cz: f64, radius: f64) -> Wire {
     let third = 2.0 * PI / 3.0;
     let points = [0.0_f64, third, 2.0 * third].map(|angle| {
-        let point = polar(radius, angle);
+        let point = polar_at(cx, cy, cz, radius, angle);
         let vertex = builder::vertex(point);
         (point, vertex)
     });
-    let transit = [third / 2.0, PI, 2.0 * third + third / 2.0].map(|angle| polar(radius, angle));
+    let transit = [third / 2.0, PI, 2.0 * third + third / 2.0]
+        .map(|angle| polar_at(cx, cy, cz, radius, angle));
     vec![
         builder::circle_arc(&points[0].1, &points[1].1, transit[0]),
         builder::circle_arc(&points[1].1, &points[2].1, transit[1]),
         builder::circle_arc(&points[2].1, &points[0].1, transit[2]),
     ]
     .into()
+}
+
+/// Closed CCW wire tracing a full circle of `radius` at origin `z = 0`.
+fn circle_wire(radius: f64) -> Wire {
+    circle_wire_at(0.0, 0.0, 0.0, radius)
 }
 
 /// Builds a hollow hub with a **D-shaped bore** by extruding a holed annular

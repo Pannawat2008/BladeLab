@@ -414,3 +414,46 @@ fn test_fabricated_split_mesh_to_solid_with_tube_and_joint_writes_step() {
         .expect("writes multi-solid step");
     assert_eq!(step.matches("MANIFOLD_SOLID_BREP").count(), 2);
 }
+
+#[test]
+fn smooth_blade_with_blind_and_through_spar_bore_writes_valid_step() {
+    let surface = fixture_surface();
+    let z0 = surface.span_start_mm();
+    let z1 = surface.span_end_mm();
+    let kernel = TruckKernel::new();
+
+    // 1. Blind analytical spar bore: 8 faces (side, TE, root cap w/ hole, tip cap, bore end cap, 3 cylindrical wall faces)
+    let blind = kernel
+        .blade_solid_with_spar_bore(&surface, Some([17.5, 0.0, z0, 17.5, 0.0, z0 + 180.0, 2.5]))
+        .expect("blind spar bore smooth solid builds");
+    assert_eq!(blind.boundaries()[0].len(), 8);
+    let step_blind = kernel.write_step(&[blind]).expect("writes blind bore step");
+    assert!(step_blind.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+    assert!(step_blind.contains("RATIONAL_B_SPLINE_SURFACE"));
+    let table_blind = Table::from_step(&step_blind).expect("truck STEP reader accepts blind bore");
+    let holder_blind = table_blind.shell.values().next().expect("one closed shell");
+    table_blind
+        .to_compressed_shell(holder_blind)
+        .expect("blind bore shell converts");
+
+    // 2. Through analytical spar bore: 7 faces (side, TE, root cap w/ hole, tip cap w/ hole, 3 cylindrical wall faces)
+    let through = kernel
+        .blade_solid_with_spar_bore(&surface, Some([17.5, 0.0, z0, 17.5, 0.0, z1, 1.5]))
+        .expect("through spar bore smooth solid builds");
+    assert_eq!(through.boundaries()[0].len(), 7);
+    let step_through = kernel
+        .write_step(&[through])
+        .expect("writes through bore step");
+    assert!(step_through.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+    assert!(step_through.contains("RATIONAL_B_SPLINE_SURFACE"));
+    let table_through =
+        Table::from_step(&step_through).expect("truck STEP reader accepts through bore");
+    let holder_through = table_through
+        .shell
+        .values()
+        .next()
+        .expect("one closed shell");
+    table_through
+        .to_compressed_shell(holder_through)
+        .expect("through bore shell converts");
+}

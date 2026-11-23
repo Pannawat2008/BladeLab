@@ -326,6 +326,7 @@ fn build_split_solids(
     let mode = overrides.step_mode.as_deref().unwrap_or("auto");
     let use_smooth_bspline =
         mode == "smooth" || (!has_fab_components && mode != "features" && mode != "fabricated");
+    let bore = spar_tube_axis_points(surface, &fab).map_err(as_string)?;
 
     let mut solids = Vec::with_capacity(part_range.len());
     for part_idx in part_range {
@@ -334,7 +335,14 @@ fn build_split_solids(
             let z_a = split_spans[part_idx];
             let z_b = split_spans[part_idx + 1];
             let seg_surf = build_segment_surface(surface, z_a, z_b, z_shift)?;
-            let solid = kernel.blade_solid(&seg_surf).map_err(as_string)?;
+            let seg_bore = bore.map(|mut b| {
+                b[2] += z_shift;
+                b[5] += z_shift;
+                b
+            });
+            let solid = kernel
+                .blade_solid_with_spar_bore(&seg_surf, seg_bore)
+                .map_err(as_string)?;
             solids.push(solid);
         } else {
             let mut part_spec = fab;
@@ -396,7 +404,10 @@ pub fn export_step_with_overrides(
             let mut solids = if overrides.split_parts.unwrap_or(1) > 1 || wants_unsplit_features {
                 build_split_solids(&surface, overrides, &kernel)?
             } else {
-                vec![kernel.blade_solid(&surface).map_err(as_string)?]
+                let bore = spar_tube_axis_points(&surface, &fab_spec).map_err(as_string)?;
+                vec![kernel
+                    .blade_solid_with_spar_bore(&surface, bore)
+                    .map_err(as_string)?]
             };
             solids.push(kernel.hub_solid(&resolved.hub).map_err(as_string)?);
             solids
@@ -417,7 +428,10 @@ pub fn export_step_with_overrides(
             if overrides.split_parts.unwrap_or(1) > 1 || wants_unsplit_features {
                 build_split_solids(&surface, overrides, &kernel)?
             } else {
-                vec![kernel.blade_solid(&surface).map_err(as_string)?]
+                let bore = spar_tube_axis_points(&surface, &fab_spec).map_err(as_string)?;
+                vec![kernel
+                    .blade_solid_with_spar_bore(&surface, bore)
+                    .map_err(as_string)?]
             }
         }
         other => {
@@ -817,5 +831,54 @@ mod tests {
             export_step(FIXTURE, "blade_part_18446744073709551615").is_err(),
             "blade_part_usize_max must return Err without overflow panic"
         );
+    }
+
+    #[test]
+    fn step_export_smooth_includes_analytical_spar_bore() {
+        let smooth_blind = Overrides {
+            split_parts: Some(1),
+            spar_hole_diameter_mm: Some(5.0),
+            spar_hole_depth_mm: Some(200.0),
+            step_mode: Some("smooth".to_string()),
+            ..Overrides::default()
+        };
+        let blade_step =
+            export_step_with_overrides(FIXTURE, &smooth_blind, "blade").expect("smooth blade STEP");
+        assert!(blade_step.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+        assert!(blade_step.contains("RATIONAL_B_SPLINE_SURFACE"));
+        assert_eq!(blade_step.matches("PLANE(").count(), 3);
+
+        let asm_step = export_step_with_overrides(FIXTURE, &smooth_blind, "assembly")
+            .expect("smooth assembly STEP");
+        assert_eq!(asm_step.matches("MANIFOLD_SOLID_BREP").count(), 2);
+        assert!(asm_step.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+        assert!(asm_step.contains("RATIONAL_B_SPLINE_SURFACE"));
+
+        // Depth 300 mm pierces Part 0 [60..330] completely (through bore: 2 planar caps)
+        // and continues smoothly into Part 1 [330..360] (blind bore: 3 planar caps).
+        let split_p0 = Overrides {
+            split_parts: Some(2),
+            split_ratio: Some(0.5),
+            active_part: Some(0),
+            spar_hole_diameter_mm: Some(5.0),
+            spar_hole_depth_mm: Some(300.0),
+            step_mode: Some("smooth".to_string()),
+            ..Overrides::default()
+        };
+        let p0_step =
+            export_step_with_overrides(FIXTURE, &split_p0, "blade").expect("split p0 smooth STEP");
+        assert!(p0_step.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+        assert!(p0_step.contains("RATIONAL_B_SPLINE_SURFACE"));
+        assert_eq!(p0_step.matches("PLANE(").count(), 2);
+
+        let split_p1 = Overrides {
+            active_part: Some(1),
+            ..split_p0
+        };
+        let p1_step =
+            export_step_with_overrides(FIXTURE, &split_p1, "blade").expect("split p1 smooth STEP");
+        assert!(p1_step.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+        assert!(p1_step.contains("RATIONAL_B_SPLINE_SURFACE"));
+        assert_eq!(p1_step.matches("PLANE(").count(), 3);
     }
 }

@@ -19,6 +19,7 @@ import init, {
   export_fabricated_step,
   export_fabricated_stl_bytes,
   export_part_3mf_bytes,
+  export_part_step,
   export_part_stl_bytes,
   export_step,
   export_stl_bytes,
@@ -4166,7 +4167,7 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     part === "blade" && splitParts > 1 && selectSplitActivePart.value !== "all"
       ? `-part${Number.parseInt(selectSplitActivePart.value, 10) + 1}`
       : "";
-  const holeSuffix = part === "blade" && format !== "step" && inputSparHoleEnabled.checked ? "-cfhole" : "";
+  const holeSuffix = part !== "hub" && inputSparHoleEnabled.checked ? "-cfhole" : "";
   const baseName = `bladelab-R${workingDesign.rotor.radius_mm}-B${workingDesign.rotor.blade_count}-${part}${holeSuffix}${activePartSuffix}`;
   exportStatus.textContent = `Exporting ${format.toUpperCase()}...`;
 
@@ -4177,12 +4178,13 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     if (format === "step") {
       try {
         const stepText =
-          part === "blade" && splitParts > 1
-            ? export_fabricated_step(
+          part === "hub"
+            ? export_step(JSON.stringify(workingDesign), "hub")
+            : export_part_step(
                 JSON.stringify(workingDesign),
                 buildFabricationOverridesJson(undefined, "smooth"),
-              )
-            : export_step(JSON.stringify(workingDesign), part);
+                part,
+              );
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
         exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
         return;
@@ -4270,12 +4272,13 @@ async function handleExport(format: "stl" | "3mf" | "step") {
     if (format === "step") {
       try {
         const stepText =
-          part === "blade" && splitParts > 1
-            ? export_fabricated_step(
+          part === "hub"
+            ? export_step(JSON.stringify(workingDesign), "hub")
+            : export_part_step(
                 JSON.stringify(workingDesign),
                 buildFabricationOverridesJson(undefined, "smooth"),
-              )
-            : export_step(JSON.stringify(workingDesign), part);
+                part,
+              );
         triggerBlobDownload(stepText, `${baseName}.step`, "application/step");
         exportStatus.textContent = `Saved ${baseName}.step (${(new Blob([stepText]).size / 1024).toFixed(1)} kB)`;
         return;
@@ -4451,7 +4454,7 @@ btnExportSplitAll.addEventListener("click", () => {
 
 function handleExportSplitAllStep(stepMode: "smooth" | "features" = "smooth") {
   const splitParts = Math.max(1, Number.parseInt(selectSplitParts.value, 10) || 1);
-  const holeSuffix = inputSparHoleEnabled.checked && stepMode === "features" ? "-cfhole" : "";
+  const holeSuffix = inputSparHoleEnabled.checked ? "-cfhole" : "";
   const modeSuffix = stepMode === "features" ? "-joints" : "-smooth";
   exportStatus.textContent = `Exporting ${splitParts} split STEP part(s) (${stepMode})...`;
   try {

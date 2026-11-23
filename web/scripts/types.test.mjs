@@ -2481,7 +2481,41 @@ test("Task 11: KidWind Asia 2026 KW-GEN3 preset and VES-VL (2–200 ohm, <=10V, 
   );
   assert.equal(asiaStartBundle.generator_match.stalled, false);
 
-  // 7. Verify web/index.html DOM markers
+  // 7. Smooth STEP analytical spar bore via WASM export_part_step on asia_2026_scimitar
+  const { export_part_step } = require("../../target/glue-node/blade_wasm.js");
+  const asiaStepFab = JSON.stringify({
+    spar_hole_diameter_mm: 5.0,
+    spar_hole_depth_mm: 240.0,
+    step_mode: "smooth",
+  });
+  const asiaBladeStep = export_part_step(JSON.stringify(asiaPresetDesign), asiaStepFab, "blade");
+  assert.ok(asiaBladeStep.includes("B_SPLINE_SURFACE_WITH_KNOTS"), "blade STEP must be smooth B-spline");
+  assert.ok(asiaBladeStep.includes("RATIONAL_B_SPLINE_SURFACE"), "blade STEP must include analytical NURBS spar bore");
+  assert.equal((asiaBladeStep.match(/PLANE\(/g) || []).length, 3, "blind bore blade STEP has root, tip, and bore end caps");
+
+  const asiaAsmStep = export_part_step(JSON.stringify(asiaPresetDesign), asiaStepFab, "assembly");
+  assert.equal((asiaAsmStep.match(/MANIFOLD_SOLID_BREP/g) || []).length, 2);
+  assert.ok(asiaAsmStep.includes("B_SPLINE_SURFACE_WITH_KNOTS"));
+  assert.ok(asiaAsmStep.includes("RATIONAL_B_SPLINE_SURFACE"));
+
+  for (const partIdx of [0, 1]) {
+    const splitStep = export_part_step(
+      JSON.stringify(asiaPresetDesign),
+      JSON.stringify({
+        spar_hole_diameter_mm: 5.0,
+        spar_hole_depth_mm: 240.0,
+        split_parts: 2,
+        split_ratio: 0.5,
+        active_part: partIdx,
+        step_mode: "smooth",
+      }),
+      "blade",
+    );
+    assert.ok(splitStep.includes("B_SPLINE_SURFACE_WITH_KNOTS"), `split part ${partIdx} must be smooth B-spline`);
+    assert.ok(splitStep.includes("RATIONAL_B_SPLINE_SURFACE"), `split part ${partIdx} must carry analytical spar bore`);
+  }
+
+  // 8. Verify web/index.html DOM markers
   const html = fs.readFileSync(path.resolve(__dirname, "../index.html"), "utf8");
   for (const snippet of [
     'id="btn-preset-asia-2026"',
